@@ -5,7 +5,7 @@
 	"author": "Uriah Galang <codeitlikemiley@gmail.com>",
 	"icon": "images/raz-logo.gif",
 	"license": "MIT",
-	"version": "0.1.7",
+	"version": "0.2.0",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/codeitlikemiley/raz"
