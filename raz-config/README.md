@@ -60,7 +60,7 @@ You can configure RAZ behavior using `.raz/config.toml`:
 
 Custom templates are defined in `.raz/templates/` directory in your workspace:
 
-```
+```text
 .raz/
 ├── templates/
 │   ├── my-framework.toml
@@ -183,7 +183,7 @@ For more complex frameworks, create a custom provider:
 
 ### Provider Structure
 
-```rust
+```rust,ignore
 // src/providers/my_framework.rs
 use raz_core::{
     Provider, FileExecutionContext, ExecutableCommand, 
@@ -276,7 +276,7 @@ impl MyFrameworkProvider {
 
 ### Registering Custom Providers
 
-```rust
+```rust,ignore
 // In your application or RAZ configuration
 use raz_core::ProviderRegistry;
 use my_framework::MyFrameworkProvider;
