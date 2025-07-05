@@ -5,7 +5,7 @@
 	"author": "Uriah Galang <codeitlikemiley@gmail.com>",
 	"icon": "images/raz-logo.gif",
 	"license": "MIT",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/codeitlikemiley/raz"
@@ -76,6 +76,16 @@
 				"command": "raz.setupBinary",
 				"title": "Setup RAZ Binary",
 				"category": "RAZ"
+			},
+			{
+				"command": "raz.toggleBreakpointDetection",
+				"title": "Toggle Breakpoint Detection",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.showDebugInfo",
+				"title": "Show Debug Info",
+				"category": "RAZ"
 			}
 		],
 		"keybindings": [
@@ -109,6 +119,31 @@
 					"type": "string",
 					"default": "",
 					"description": "Custom path to RAZ binary. Leave empty for automatic download, or set to 'raz' to use system PATH, or provide full path to binary. Use 'RAZ: Setup RAZ Binary' command for guided setup."
+				},
+				"raz.enableBreakpointDetection": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable automatic breakpoint detection for debugging integration"
+				},
+				"raz.useRustAnalyzerCodeLens": {
+					"type": "boolean", 
+					"default": true,
+					"description": "Use rust-analyzer codelens for debugging support"
+				},
+				"raz.prioritySymbolKinds": {
+					"type": "array",
+					"default": ["Function", "Enum", "Struct", "Object", "Module"],
+					"description": "Symbol kinds to prioritize for debugging context detection",
+					"items": {
+						"type": "string",
+						"enum": ["Module", "Object", "Struct", "Enum", "Function"]
+					}
+				},
+				"raz.logLevel": {
+					"type": "string",
+					"default": "error",
+					"description": "Set the logging level for RAZ debugging features",
+					"enum": ["debug", "info", "error"]
 				}
 			}
 		}

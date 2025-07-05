@@ -8,6 +8,7 @@ import * as https from "node:https";
 import * as zlib from "node:zlib";
 import * as tar from "tar";
 import { registerTaskProvider, executeRazAsTask } from "./taskProvider";
+import { executeWithDebuggingSupport, registerDebugCommands } from "./debugger";
 
 let outputChannel: vscode.OutputChannel;
 let terminal: vscode.Terminal | undefined;
@@ -308,6 +309,10 @@ export async function activate(
 			await setupRazBinary(context);
 		}),
 	);
+
+	// Register debugging-related commands
+	registerDebugCommands(context);
+	outputChannel.appendLine("✅ Debug commands registered");
 }
 
 async function setupRazBinary(_context: vscode.ExtensionContext): Promise<void> {
@@ -614,8 +619,15 @@ async function runRazCommand(context: vscode.ExtensionContext): Promise<void> {
 	const filePath = document.uri.fsPath;
 
 	try {
-		// Execute RAZ command normally - it will automatically load saved overrides from config
-		await executeRazCommand(context, filePath, cursorLine, cursorColumn);
+		// Check for breakpoints and use debugging integration when available
+		await executeWithDebuggingSupport(
+			document, 
+			selection.active,
+			async () => {
+				// Fallback to normal RAZ execution
+				await executeRazCommand(context, filePath, cursorLine, cursorColumn);
+			}
+		);
 	} catch (error) {
 		ensureOutputChannel().appendLine(`Error executing command: ${error}`);
 		vscode.window.showErrorMessage(`RAZ: Failed to execute command: ${error}`);
