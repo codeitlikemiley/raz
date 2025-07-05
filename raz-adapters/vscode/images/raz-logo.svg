@@ -1,0 +1,105 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Glitch gradients -->
+    <linearGradient id="glitch1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff0080;stop-opacity:1">
+        <animate attributeName="stop-color" values="#ff0080;#00ff80;#8000ff;#ff0080" dur="2s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" style="stop-color:#00ffff;stop-opacity:1">
+        <animate attributeName="stop-color" values="#00ffff;#ff00ff;#ffff00;#00ffff" dur="2s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    
+    <!-- Circuit pattern -->
+    <pattern id="circuit" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+      <rect width="40" height="40" fill="#000"/>
+      <circle cx="20" cy="20" r="3" fill="#00ff00" opacity="0.5"/>
+      <path d="M 20 0 L 20 40 M 0 20 L 40 20" stroke="#00ff00" stroke-width="0.5" opacity="0.3"/>
+    </pattern>
+    
+    <!-- Glitch filter -->
+    <filter id="glitch">
+      <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="1" result="turbulence">
+        <animate attributeName="baseFrequency" values="0.01;0.05;0.01" dur="0.1s" repeatCount="indefinite"/>
+      </feTurbulence>
+      <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    
+    <!-- Neon glow -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" fill="#000"/>
+  <rect width="512" height="512" fill="url(#circuit)" opacity="0.2"/>
+  
+  <!-- Glitchy hexagon frame -->
+  <g transform="translate(256, 256)">
+    <path d="M -150 -87 L -150 87 L 0 173 L 150 87 L 150 -87 L 0 -173 Z" 
+          fill="none" stroke="url(#glitch1)" stroke-width="4" filter="url(#glow)"/>
+    
+    <!-- Inner hexagon -->
+    <path d="M -120 -69 L -120 69 L 0 138 L 120 69 L 120 -69 L 0 -138 Z" 
+          fill="none" stroke="#00ff00" stroke-width="2" opacity="0.5"/>
+  </g>
+  
+  <!-- The RAZ text with glitch effect -->
+  <g transform="translate(256, 256)" filter="url(#glitch)">
+    <!-- R -->
+    <g transform="translate(-90, 0)">
+      <path d="M -30 -60 L -30 60 L -10 60 L -10 10 L 20 60 L 40 60 L 10 10 Q 30 10, 30 -25 Q 30 -60, 10 -60 Z M -10 -40 L 10 -40 Q 15 -40, 15 -25 Q 15 -10, 10 -10 L -10 -10 Z" 
+            fill="url(#glitch1)" filter="url(#glow)"/>
+    </g>
+    
+    <!-- A -->
+    <g transform="translate(0, 0)">
+      <path d="M -25 60 L -15 -60 L -5 -60 L 5 -60 L 15 -60 L 25 60 L 10 60 L 8 40 L -8 40 L -10 60 Z M -5 20 L 5 20 L 0 -30 Z" 
+            fill="url(#glitch1)" filter="url(#glow)"/>
+    </g>
+    
+    <!-- Z -->
+    <g transform="translate(90, 0)">
+      <path d="M -30 -60 L 30 -60 L 30 -40 L -5 40 L 30 40 L 30 60 L -30 60 L -30 40 L 5 -40 L -30 -40 Z" 
+            fill="url(#glitch1)" filter="url(#glow)"/>
+    </g>
+  </g>
+  
+  <!-- Scanning line -->
+  <line x1="0" y1="0" x2="512" y2="0" stroke="#00ff00" stroke-width="2" opacity="0.6" filter="url(#glow)">
+    <animateTransform attributeName="transform" type="translate" from="0 0" to="0 512" dur="3s" repeatCount="indefinite"/>
+  </line>
+  
+  <!-- Corner indicators -->
+  <g stroke="url(#glitch1)" stroke-width="2" fill="none" filter="url(#glow)">
+    <path d="M 20 20 L 20 40 L 40 40 M 492 20 L 492 40 L 472 40 M 20 492 L 20 472 L 40 472 M 492 492 L 492 472 L 472 472"/>
+  </g>
+  
+  <!-- Random glitch artifacts -->
+  <g opacity="0.6">
+    <rect x="100" y="200" width="50" height="2" fill="#ff0080">
+      <animate attributeName="x" values="100;400;100" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;0" dur="0.5s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="300" y="300" width="80" height="2" fill="#00ffff">
+      <animate attributeName="x" values="300;50;300" dur="2.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;0" dur="0.3s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  
+  <!-- Binary rain effect -->
+  <g font-family="monospace" font-size="10" fill="#00ff00" opacity="0.3">
+    <text x="50" y="0">10110101</text>
+    <text x="150" y="0">01001010</text>
+    <text x="250" y="0">11010110</text>
+    <text x="350" y="0">00101101</text>
+    <text x="450" y="0">10110010</text>
+    <animateTransform attributeName="transform" type="translate" from="0 0" to="0 512" dur="5s" repeatCount="indefinite"/>
+  </g>
+</svg>

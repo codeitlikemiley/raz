@@ -1,0 +1,10 @@
+out/
+dist/
+node_modules/
+target/
+*.vsix
+.vscode-test/
+.DS_Store
+src/raz.ts
+src/raz.d.ts
+bin/

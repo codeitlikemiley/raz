@@ -1,0 +1,50 @@
+# RAZ Configuration - Library Development Template
+# Optimized for library development with focus on testing and documentation
+
+# Core RAZ settings (optional - inherits from global config if not specified)
+# [raz]
+# version = "1.0"
+# enabled_providers = ["cargo", "doc"]
+# cache_enabled = true
+# cache_ttl_seconds = 300
+# max_analysis_time_ms = 5000
+# parallel_analysis = true
+
+[providers.cargo]
+enabled = true
+priority = 100
+
+[providers.doc]
+enabled = true
+priority = 80
+
+[filters]
+max_commands = 10
+smart_filtering = true
+exclude_patterns = ["target/**", "examples/**", ".git/**"]
+include_only_rust = true
+
+# Boost test and documentation commands
+[[filters.rules]]
+name = "prioritize-test-doc"
+enabled = true
+
+[[filters.rules.conditions]]
+ProjectType = "library"
+
+[[filters.rules.actions]]
+BoostPriority = { pattern = "test", boost = 20 }
+
+[[filters.rules.actions]]
+BoostPriority = { pattern = "doc", boost = 15 }
+
+[[filters.rules.actions]]
+BoostPriority = { pattern = "check", boost = 10 }
+
+[ui]
+max_commands = 10
+group_by_category = true
+show_descriptions = true
+show_estimated_duration = true
+compact_mode = false
+theme = "default"

@@ -1,0 +1,51 @@
+# RAZ Configuration - Game Development Template
+# Optimized for Bevy and other game development frameworks
+
+# Core RAZ settings (optional - inherits from global config if not specified)
+# [raz]
+# version = "1.0"
+# enabled_providers = ["cargo", "doc", "bevy"]
+# cache_enabled = true
+# cache_ttl_seconds = 300
+# max_analysis_time_ms = 5000
+# parallel_analysis = true
+
+[providers.cargo]
+enabled = true
+priority = 100
+
+[providers.bevy]
+enabled = true
+priority = 85
+
+[providers.doc]
+enabled = true
+priority = 60
+
+[filters]
+max_commands = 12
+smart_filtering = true
+exclude_patterns = ["target/**", "assets/**/*.meta", ".git/**"]
+include_only_rust = true
+
+# Boost run commands for game development
+[[filters.rules]]
+name = "boost-run-commands"
+enabled = true
+
+[[filters.rules.conditions]]
+ProjectType = "bevy"
+
+[[filters.rules.actions]]
+BoostPriority = { pattern = "run", boost = 25 }
+
+[[filters.rules.actions]]
+BoostPriority = { pattern = "dev", boost = 20 }
+
+[ui]
+max_commands = 12
+group_by_category = true
+show_descriptions = true
+show_estimated_duration = true
+compact_mode = false
+theme = "default"

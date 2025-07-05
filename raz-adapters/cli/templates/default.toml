@@ -1,0 +1,51 @@
+# RAZ Configuration - General Rust Development
+# This is a workspace-specific configuration file for RAZ
+# Suitable for general Rust projects
+
+# Core RAZ settings (optional - inherits from global config if not specified)
+# [raz]
+# version = "1.0"
+# enabled_providers = ["cargo", "doc"]
+# cache_enabled = true
+# cache_ttl_seconds = 300
+# max_analysis_time_ms = 5000
+# parallel_analysis = true
+
+[providers.cargo]
+enabled = true
+priority = 100
+
+[providers.doc]
+enabled = true
+priority = 60
+
+# Framework providers (enable as needed)
+# [providers.leptos]
+# enabled = false
+# priority = 90
+
+# [providers.dioxus] 
+# enabled = false
+# priority = 90
+
+# [providers.bevy]
+# enabled = false
+# priority = 85
+
+# [providers.tauri]
+# enabled = false
+# priority = 85
+
+[filters]
+max_commands = 15
+smart_filtering = true
+exclude_patterns = ["target/**", ".git/**", "node_modules/**"]
+include_only_rust = true
+
+[ui]
+max_commands = 15
+group_by_category = true
+show_descriptions = true
+show_estimated_duration = true
+compact_mode = false
+theme = "default"

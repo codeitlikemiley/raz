@@ -1,0 +1,28 @@
+[package]
+name = "raz-config"
+version = "0.1.3"
+edition = "2024"
+description = "Configuration management for RAZ - handles loading, saving, validation, and inheritance"
+license = "MIT"
+authors = ["Uriah Galang <codeitlikemiley@gmail.com>"]
+repository = "https://github.com/codeitlikemiley/raz"
+homepage = "https://github.com/codeitlikemiley/raz"
+documentation = "https://docs.rs/raz-config"
+keywords = ["config", "configuration", "toml", "validation"]
+categories = ["config", "development-tools"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+dirs = "6.0.0"
+chrono = { workspace = true }
+indexmap = { workspace = true }
+once_cell = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+pretty_assertions = { workspace = true }
+proptest = { workspace = true }

@@ -1,0 +1,22 @@
+[package]
+name = "raz-common"
+version = "0.1.3"
+edition = "2024"
+authors = ["raz contributors"]
+description = "Common utilities and shared types for the raz project"
+repository = "https://github.com/raz-rs/raz"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+shell-words = { workspace = true }
+colored = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+once_cell = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+pretty_assertions = { workspace = true }

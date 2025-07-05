@@ -1,0 +1,22 @@
+[package]
+name = "raz-validation"
+version = "0.1.3"
+edition = "2021"
+description = "Smart options validation system for raz"
+license = "MIT"
+repository = "https://github.com/raz-rs/raz"
+homepage = "https://github.com/raz-rs/raz"
+documentation = "https://docs.rs/raz-validation"
+keywords = ["rust", "cargo", "validation", "cli", "commands"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["raz contributors"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+regex = "1.0"
+once_cell = "1.19"
+fuzzy-matcher = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"

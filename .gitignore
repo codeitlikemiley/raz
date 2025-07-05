@@ -1,0 +1,68 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Archives
+/*.tar.gz
+/*.zip
+/*.tar
+/*.tar.bz2
+/*.tar.xz
+/archives/
+/.claude/
+
+# Ignore all markdown files in root except README, CONTRIBUTING, MAINTAINING
+/*.md
+!README.md
+!CONTRIBUTING.md
+!MAINTAINING.md
+
+# VS Code Extension
+vscode/node_modules/
+vscode/out/
+vscode/bin/
+vscode/target/
+vscode/*.vsix
+vscode/tsconfig.tsbuildinfo
+
+# RAZ Config
+.raz/
+
+# Serena AI assistant
+.serena/
+.gemini/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.#*
+
+# Build artifacts
+*.exe
+*.pdb
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
+
+# Test outputs
+test_*
+debug_*
+!**/tests/
+!**/test_commands.rs
+EOF < /dev/null

@@ -1,0 +1,203 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Glitch gradients -->
+    <linearGradient id="glitch1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff0080;stop-opacity:1">
+        <animate attributeName="stop-color" values="#ff0080;#00ff80;#8000ff;#ff0080" dur="2s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" style="stop-color:#00ffff;stop-opacity:1">
+        <animate attributeName="stop-color" values="#00ffff;#ff00ff;#ffff00;#00ffff" dur="2s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    
+    <linearGradient id="glitch2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00ff00;stop-opacity:1">
+        <animate attributeName="stop-color" values="#00ff00;#ff00ff;#00ffff;#00ff00" dur="3s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" style="stop-color:#ff00ff;stop-opacity:1">
+        <animate attributeName="stop-color" values="#ff00ff;#ffff00;#00ff00;#ff00ff" dur="3s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    
+    <!-- Circuit pattern -->
+    <pattern id="circuit" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+      <rect width="40" height="40" fill="#000"/>
+      <circle cx="20" cy="20" r="3" fill="#00ff00" opacity="0.5"/>
+      <path d="M 20 0 L 20 40 M 0 20 L 40 20" stroke="#00ff00" stroke-width="0.5" opacity="0.3"/>
+    </pattern>
+    
+    <!-- Glitch filter -->
+    <filter id="glitch">
+      <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="1" result="turbulence">
+        <animate attributeName="baseFrequency" values="0.01;0.05;0.01" dur="0.1s" repeatCount="indefinite"/>
+      </feTurbulence>
+      <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    
+    <!-- Heavy glow -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Digital noise -->
+    <filter id="noise">
+      <feTurbulence baseFrequency="0.9" numOctaves="4" seed="5"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="discrete" tableValues="0 .5 .5 .5 .5 .5 .5 .5 .5 .5 .5 .5 .5 .5 .5 1"/>
+      </feComponentTransfer>
+      <feComposite operator="over" in2="SourceGraphic"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1280" height="640" fill="#000"/>
+  <rect width="1280" height="640" fill="url(#circuit)" opacity="0.15"/>
+  
+  <!-- Grid lines -->
+  <g stroke="#00ff00" stroke-width="0.5" opacity="0.2">
+    <path d="M 0 160 L 1280 160 M 0 320 L 1280 320 M 0 480 L 1280 480"/>
+    <path d="M 320 0 L 320 640 M 640 0 L 640 640 M 960 0 L 960 640"/>
+  </g>
+  
+  <!-- Main hexagon logo -->
+  <g transform="translate(320, 320)">
+    <!-- Outer hexagon -->
+    <path d="M -120 -69 L -120 69 L 0 138 L 120 69 L 120 -69 L 0 -138 Z" 
+          fill="none" stroke="url(#glitch1)" stroke-width="6" filter="url(#glow)"/>
+    
+    <!-- Inner hexagon -->
+    <path d="M -90 -52 L -90 52 L 0 104 L 90 52 L 90 -52 L 0 -104 Z" 
+          fill="none" stroke="#00ff00" stroke-width="2" opacity="0.5"/>
+    
+    <!-- The RAZ text with glitch effect -->
+    <g filter="url(#glitch)">
+      <!-- R -->
+      <g transform="translate(-60, 0)">
+        <path d="M -20 -40 L -20 40 L -5 40 L -5 10 L 15 40 L 30 40 L 10 10 Q 25 10, 25 -15 Q 25 -40, 10 -40 Z M -5 -25 L 10 -25 Q 15 -25, 15 -15 Q 15 -5, 10 -5 L -5 -5 Z" 
+              fill="url(#glitch1)" filter="url(#glow)"/>
+      </g>
+      
+      <!-- A -->
+      <g transform="translate(0, 0)">
+        <path d="M -15 40 L -10 -40 L 0 -40 L 10 -40 L 15 40 L 5 40 L 4 20 L -4 20 L -5 40 Z M -2 10 L 2 10 L 0 -20 Z" 
+              fill="url(#glitch1)" filter="url(#glow)"/>
+      </g>
+      
+      <!-- Z -->
+      <g transform="translate(60, 0)">
+        <path d="M -20 -40 L 20 -40 L 20 -30 L -5 30 L 20 30 L 20 40 L -20 40 L -20 30 L 5 -30 L -20 -30 Z" 
+              fill="url(#glitch1)" filter="url(#glow)"/>
+      </g>
+    </g>
+  </g>
+  
+  <!-- Title section -->
+  <g transform="translate(800, 200)">
+    <!-- Main title with glitch -->
+    <text font-family="monospace" font-size="72" font-weight="bold" text-anchor="middle" 
+          fill="url(#glitch2)" filter="url(#glow)" letter-spacing="8">RAZ</text>
+    
+    <!-- Subtitle -->
+    <text y="50" font-family="monospace" font-size="24" text-anchor="middle" 
+          fill="#00ff00" opacity="0.8">RUST ACTION ZAPPER</text>
+    
+    <!-- Tagline with typewriter effect -->
+    <text y="90" font-family="monospace" font-size="18" text-anchor="middle" 
+          fill="#ff0080" filter="url(#glow)">RUN ANYWHERE. TEST ANYTHING. BREAK NOTHING.</text>
+  </g>
+  
+  <!-- Terminal window -->
+  <g transform="translate(640, 380)">
+    <rect x="0" y="0" width="600" height="220" rx="4" fill="#0a0a0a" stroke="url(#glitch1)" stroke-width="2" opacity="0.9"/>
+    
+    <!-- Terminal header -->
+    <rect x="0" y="0" width="600" height="30" fill="#1a1a1a"/>
+    <circle cx="15" cy="15" r="5" fill="#ff0000"/>
+    <circle cx="30" cy="15" r="5" fill="#ffaa00"/>
+    <circle cx="45" cy="15" r="5" fill="#00ff00"/>
+    
+    <!-- Commands -->
+    <g font-family="monospace" font-size="14" fill="#00ff00">
+      <text x="10" y="50"># Run any Rust file from anywhere</text>
+      <text x="10" y="70" fill="#fff">$ raz /tmp/hack.rs:42:1</text>
+      <text x="10" y="90" fill="#ff0080">✓ Test detected at line 42</text>
+      
+      <text x="10" y="120" fill="#00ff00"># No cargo needed</text>
+      <text x="10" y="140" fill="#fff">$ raz standalone.rs</text>
+      <text x="10" y="160" fill="#ff0080">✓ Compiled with rustc</text>
+      
+      <text x="10" y="190" fill="#00ff00"># Smart context detection</text>
+      <text x="10" y="210" fill="#fff">$ raz src/lib.rs:15:1 --save-override</text>
+    </g>
+  </g>
+  
+  <!-- Scanning lines -->
+  <g opacity="0.6">
+    <line x1="0" y1="0" x2="1280" y2="0" stroke="#00ff00" stroke-width="2" filter="url(#glow)">
+      <animateTransform attributeName="transform" type="translate" from="0 0" to="0 640" dur="4s" repeatCount="indefinite"/>
+    </line>
+    <line x1="0" y1="0" x2="1280" y2="0" stroke="#ff0080" stroke-width="2" filter="url(#glow)">
+      <animateTransform attributeName="transform" type="translate" from="0 320" to="0 960" dur="4s" repeatCount="indefinite"/>
+    </line>
+  </g>
+  
+  <!-- Corner indicators -->
+  <g stroke="url(#glitch1)" stroke-width="2" fill="none" filter="url(#glow)">
+    <path d="M 10 10 L 10 40 L 40 40 M 1270 10 L 1270 40 L 1240 40 M 10 630 L 10 600 L 40 600 M 1270 630 L 1270 600 L 1240 600"/>
+  </g>
+  
+  <!-- Random glitch artifacts -->
+  <g opacity="0.4">
+    <rect x="100" y="200" width="80" height="3" fill="#ff0080">
+      <animate attributeName="x" values="100;1000;100" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;0" dur="0.5s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="800" y="400" width="120" height="3" fill="#00ffff">
+      <animate attributeName="x" values="800;200;800" dur="3.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;0" dur="0.3s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="500" y="100" width="60" height="3" fill="#ffff00">
+      <animate attributeName="x" values="500;900;500" dur="2.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;1;0" dur="0.4s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  
+  <!-- Binary rain -->
+  <g font-family="monospace" font-size="10" fill="#00ff00" opacity="0.2">
+    <g>
+      <text x="100" y="0">10110101</text>
+      <text x="300" y="0">01001010</text>
+      <text x="500" y="0">11010110</text>
+      <text x="700" y="0">00101101</text>
+      <text x="900" y="0">10110010</text>
+      <text x="1100" y="0">01101001</text>
+      <animateTransform attributeName="transform" type="translate" from="0 0" to="0 640" dur="8s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <text x="200" y="-320">11001101</text>
+      <text x="400" y="-320">10010110</text>
+      <text x="600" y="-320">01101011</text>
+      <text x="800" y="-320">11010010</text>
+      <text x="1000" y="-320">00110101</text>
+      <animateTransform attributeName="transform" type="translate" from="0 0" to="0 640" dur="8s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  
+  <!-- Features -->
+  <g transform="translate(640, 60)" font-family="monospace" font-size="16" text-anchor="middle" fill="url(#glitch2)" filter="url(#glow)">
+    <text x="-400">STATELESS</text>
+    <text x="-200">UNIVERSAL</text>
+    <text x="0">CURSOR-AWARE</text>
+    <text x="200">ZERO-CONFIG</text>
+    <text x="400">RUST-NATIVE</text>
+  </g>
+  
+  <!-- Digital interference -->
+  <rect width="1280" height="640" fill="none" stroke="none" filter="url(#noise)" opacity="0.05"/>
+</svg>

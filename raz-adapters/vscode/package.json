@@ -1,0 +1,141 @@
+{
+	"name": "raz-vscode",
+	"displayName": "RAZ - Rust Action Zapper",
+	"description": "⚡ Run ANY Rust file from ANYWHERE instantly. Smart test detection. Zero config. Just hit Cmd+R and watch it fly 🚀",
+	"author": "Uriah Galang <codeitlikemiley@gmail.com>",
+	"icon": "images/raz-logo.gif",
+	"license": "MIT",
+	"version": "0.1.3",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/codeitlikemiley/raz"
+	},
+	"publisher": "masterustacean",
+	"galleryBanner": {
+		"color": "#0a0a0a",
+		"theme": "dark"
+	},
+	"categories": ["Programming Languages", "Other"],
+	"keywords": [
+		"rust",
+		"command",
+		"runner",
+		"test",
+		"cargo"
+	],
+	"engines": {
+		"vscode": "^1.89.0"
+	},
+	"main": "./out/extension",
+	"activationEvents": [
+		"onLanguage:rust"
+	],
+	"contributes": {
+		"commands": [
+			{
+				"command": "raz.runCommand",
+				"title": "Run RAZ Command",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.selectAndRunCommand",
+				"title": "Select and Run RAZ Command",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.runCommandWithOverride",
+				"title": "Run RAZ Command with Override",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.clearOverrides",
+				"title": "Clear Saved Overrides",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.listOverrides",
+				"title": "List All Overrides",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.debugOverride",
+				"title": "Debug Override Resolution",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.overrideStats",
+				"title": "Show Override Statistics",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.openSettings",
+				"title": "Open RAZ Settings",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.setupBinary",
+				"title": "Setup RAZ Binary",
+				"category": "RAZ"
+			}
+		],
+		"keybindings": [
+			{
+				"command": "raz.runCommand",
+				"key": "cmd+r",
+				"mac": "cmd+r",
+				"when": "editorTextFocus && resourceExtname == .rs"
+			},
+			{
+				"command": "raz.runCommandWithOverride",
+				"key": "cmd+shift+r",
+				"mac": "cmd+shift+r",
+				"when": "editorTextFocus && resourceExtname == .rs"
+			}
+		],
+		"configuration": {
+			"title": "RAZ",
+			"properties": {
+				"raz.showOutput": {
+					"type": "boolean",
+					"default": true,
+					"description": "Show output in terminal"
+				},
+				"raz.useTaskRunner": {
+					"type": "boolean",
+					"default": true,
+					"description": "Use VS Code tasks for better concurrency (allows multiple commands to run simultaneously)"
+				},
+				"raz.path": {
+					"type": "string",
+					"default": "",
+					"description": "Custom path to RAZ binary. Leave empty for automatic download, or set to 'raz' to use system PATH, or provide full path to binary. Use 'RAZ: Setup RAZ Binary' command for guided setup."
+				}
+			}
+		}
+	},
+	"dependencies": {
+		"tar": "^7.4.3"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@stylistic/eslint-plugin": "^2.9.0",
+		"@types/node": "^20",
+		"@types/tar": "^6.1.13",
+		"@types/vscode": "1.89.0",
+		"esbuild": "^0.25.0",
+		"eslint": "^9.13.0",
+		"typescript": "^5.8.2",
+		"typescript-eslint": "^8.26.0"
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run package-ext",
+		"compile": "tsc -b",
+		"watch": "node esbuild.js --watch",
+		"package-ext": "node esbuild.js --production",
+		"lint": "eslint",
+		"package": "vsce package",
+		"publish": "vsce publish",
+		"build": "npm run compile && npm run package-ext",
+		"bundle": "npm run compile && npm run package"
+	}
+}

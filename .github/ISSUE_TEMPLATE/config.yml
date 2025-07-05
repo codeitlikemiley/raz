@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/raz-rs/raz/discussions
+    about: Ask questions, share ideas, and discuss raz with the community
+  - name: 📖 Documentation
+    url: https://github.com/raz-rs/raz/blob/main/README.md
+    about: Read the documentation for usage guides and examples
+  - name: 🚀 VS Code Extension
+    url: https://marketplace.visualstudio.com/items?itemName=raz.raz
+    about: Install the VS Code extension for the best raz experience

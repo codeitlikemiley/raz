@@ -1,0 +1,50 @@
+[package]
+name = "raz-core"
+version = "0.1.3"
+edition = "2024"
+description = "Universal command generator for Rust projects - Core library with stateless file analysis and cursor-aware execution"
+license = "MIT"
+authors = ["Uriah Galang <codeitlikemiley@gmail.com>"]
+repository = "https://github.com/codeitlikemiley/raz"
+homepage = "https://github.com/codeitlikemiley/raz"
+documentation = "https://docs.rs/raz-core"
+readme = "README.md"
+keywords = ["rust", "cargo", "command", "testing", "cli"]
+categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
+exclude = ["tests/fixtures/", "benches/"]
+
+[dependencies]
+raz-common = { path = "../raz-common", version = "0.1.3" }
+raz-config = { path = "../raz-config", version = "0.1.3" }
+raz-override = { path = "../raz-override", version = "0.1.3" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tokio = { workspace = true, optional = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-rust = { workspace = true, optional = true }
+regex = { workspace = true }
+indexmap = { workspace = true }
+shell-words = { workspace = true }
+lru = { workspace = true }
+notify = { workspace = true, optional = true }
+glob = { workspace = true }
+async-trait = { version = "0.1", optional = true }
+once_cell = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+pretty_assertions = { workspace = true }
+criterion = { workspace = true }
+proptest = { workspace = true }
+
+
+[features]
+default = ["full"]
+full = ["tree-sitter-support", "tokio", "async-trait", "notify"]
+tree-sitter-support = ["tree-sitter", "tree-sitter-rust"]
+advanced-analysis = ["tree-sitter-support"]
+wasm = []

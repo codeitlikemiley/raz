@@ -1,0 +1,51 @@
+# RAZ Configuration - Desktop Application Template
+# Optimized for Tauri, Egui, and other desktop application frameworks
+
+# Core RAZ settings (optional - inherits from global config if not specified)
+# [raz]
+# version = "1.0"
+# enabled_providers = ["cargo", "doc", "tauri"]
+# cache_enabled = true
+# cache_ttl_seconds = 300
+# max_analysis_time_ms = 5000
+# parallel_analysis = true
+
+[providers.cargo]
+enabled = true
+priority = 100
+
+[providers.tauri]
+enabled = true
+priority = 85
+
+[providers.doc]
+enabled = true
+priority = 65
+
+[filters]
+max_commands = 12
+smart_filtering = true
+exclude_patterns = ["target/**", "src-tauri/target/**", "dist/**", ".git/**", "node_modules/**"]
+include_only_rust = false
+
+# Boost app development commands
+[[filters.rules]]
+name = "boost-app-commands"
+enabled = true
+
+[[filters.rules.conditions]]
+ProjectType = "tauri"
+
+[[filters.rules.actions]]
+BoostPriority = { pattern = "dev", boost = 25 }
+
+[[filters.rules.actions]]
+BoostPriority = { pattern = "build", boost = 20 }
+
+[ui]
+max_commands = 12
+group_by_category = true
+show_descriptions = true
+show_estimated_duration = true
+compact_mode = false
+theme = "default"
