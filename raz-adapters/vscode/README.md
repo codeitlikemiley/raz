@@ -2,20 +2,18 @@
 
 ⚡ Run ANY Rust file from ANYWHERE instantly. Smart test detection. Zero config. Just hit Cmd+R and watch it fly 🚀
 
-## Features
+## VS Code Features
 
-- **Cmd+R to Run**: Press Cmd+R (Mac) or Ctrl+R (Windows/Linux) in any Rust file to instantly run it
-- **Cmd+Shift+R to Override**: Run with custom environment variables, options, and arguments
-- **Universal Execution**: Works with any Rust file from any directory:
-  - Cargo workspaces and packages
-  - Single Rust files (compiled with rustc)
-  - Cargo scripts with embedded manifests
-  - Integration tests, examples, and benchmarks
+- **`Cmd+R` to Run**: Press `Cmd+R` (Mac) or `Ctrl+R` (Windows/Linux) in any Rust file to instantly run it
+- **`Cmd+Shift+R` to Override**: Run with custom environment variables, options, and arguments
+- **Auto-Breakpoint Debug Mode**: Set breakpoints and press `Cmd+R` - switches to debug mode automatically
+- **Binary Auto-Download**: Downloads correct binary for your platform automatically
+- **Task Runner Integration**: Better concurrency with VS Code's task system
+- **Override Persistence**: Custom command configurations persist across sessions
+- **Extension Dependencies**: Auto-installs rust-analyzer and CodeLLDB
 - **Smart Test Detection**: Automatically detects and runs the test at your cursor position
 - **Framework Aware**: Specialized commands for Leptos, Dioxus, Tauri, Bevy, Yew, and more
-- **Task Runner Support**: Run multiple commands concurrently using VS Code's task system
-- **🔥 Cross-IDE Override Persistence**: Save overrides in VS Code, use them in terminal, Vim, IntelliJ, or anywhere!
-- **🐛 Intelligent Debugging**: Automatic rust-analyzer debug integration with breakpoint detection and seamless debug/run mode switching
+- **Cross-IDE Override Persistence**: Save overrides in VS Code, use them in terminal, Vim, IntelliJ, or anywhere
 - **Zero Configuration**: Works immediately without any setup
 
 ## Usage
@@ -30,17 +28,16 @@
    - **Automatically switch to debug mode** if breakpoints are detected
    - Use rust-analyzer's debug codelens for debugging or fallback to RAZ execution
 
-### Intelligent Debugging (Automatic)
+### VS Code Debugging Integration
 
-RAZ v0.1.4 introduces **breakpoint-driven debugging** that seamlessly integrates with rust-analyzer:
+**Auto-Breakpoint Debug Mode**: Set breakpoints and press `Cmd+R` - switches to debug mode automatically
 
 1. **Set breakpoints** in your Rust code by clicking in the gutter
-2. **Press Cmd+R** as normal - RAZ automatically detects breakpoints
+2. **Press `Cmd+R`** as normal - RAZ automatically detects breakpoints
 3. **Debug mode activates** when breakpoints are found in the current symbol
 4. **Run mode** is used when no breakpoints are present
 
 #### How It Works
-
 - **Symbol Detection**: RAZ finds the symbol at your cursor position
 - **Breakpoint Scanning**: Checks for breakpoints within that symbol's range  
 - **Smart Switching**: 
@@ -182,7 +179,7 @@ RAZ automatically downloads and manages the binary for your platform:
 
 ### Debugging Integration
 
-RAZ v0.1.4 seamlessly integrates with rust-analyzer and CodeLLDB for debugging:
+RAZ seamlessly integrates with rust-analyzer and CodeLLDB for debugging:
 
 - **Direct Codelens Execution**: Simply executes rust-analyzer's "Debug" codelens command when breakpoints are found
 - **Automatic Detection**: Detects breakpoints within symbol ranges automatically  
@@ -295,7 +292,7 @@ See [INSTALL.md](INSTALL.md) for detailed installation instructions.
    ```
 4. Install the extension:
    ```bash
-   code --install-extension raz-vscode-0.1.4.vsix
+   code --install-extension raz-vscode-x.x.x.vsix
    ```
 
 ### For Development/Contributing

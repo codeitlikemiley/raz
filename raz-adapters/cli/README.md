@@ -78,6 +78,68 @@ raz src/lib.rs:test_fn  # Uses saved RUST_BACKTRACE=1 --exact
 - **Single Files**: Standalone Rust files compiled with rustc
 - **Build Scripts**: Special handling for build.rs files
 
+## Override Management
+
+RAZ provides comprehensive override management with deferred save - overrides are only saved after successful execution.
+
+### Basic Commands
+```bash
+# Save override (only saved after success)
+raz --save-override src/lib.rs:test_fn RUST_BACKTRACE=1 --exact
+
+# List and inspect
+raz override list
+raz override list --file src/main.rs
+raz override inspect "src/main.rs:handle_request"
+raz override stats
+
+# Backup and recovery
+raz override rollback
+raz override export --output backup.toml
+raz override import backup.toml
+
+# Debug and management
+raz override debug src/lib.rs 25 10
+raz override delete src/lib.rs:test_fn
+raz override clear [--force]
+
+# Migration from legacy format
+raz override migrate --auto
+raz override migrate --file legacy.toml --dry-run
+```
+
+## Template Commands
+
+```bash
+# Initialize project with template
+raz init --template web      # Leptos, Dioxus projects
+raz init --template game     # Bevy projects  
+raz init --template library  # Library development
+raz init --template desktop  # Tauri, Egui projects
+
+# Template management (planned features)
+raz template list
+raz template show my-framework
+raz template validate .raz/templates/my-framework.toml
+raz template init my-framework
+raz template export --output my-project-template.toml
+```
+
+## Framework Integration
+
+RAZ automatically detects and provides framework-specific commands:
+
+```bash
+# Leptos projects
+raz src/app.rs           # Runs leptos serve
+
+# Tauri projects  
+raz src-tauri/src/main.rs    # Runs tauri dev
+
+# Bevy projects
+raz src/main.rs          # Runs with proper game features
+```
+
 ## Documentation
 
 For complete documentation, examples, and VS Code integration, visit the [main RAZ repository](https://github.com/codeitlikemiley/raz).

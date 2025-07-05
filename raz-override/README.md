@@ -30,33 +30,58 @@ Override management system for raz with stable key generation that doesn't depen
 3. Try file-level override
 4. Try workspace default
 
-## Debugging and Inspection
+## Deferred Save System
 
-The crate includes comprehensive debugging tools:
+The override system implements a deferred save pattern - overrides are only persisted after successful command execution. This prevents failed configurations from polluting the override store.
 
-### CLI Commands
-- `raz override list` - List all overrides
-- `raz override inspect <key>` - Inspect specific override
-- `raz override debug <file> <line> [column]` - Debug resolution
-- `raz override stats` - Show statistics
-- `raz override export/import` - Backup and restore
-- `raz override migrate` - Migrate legacy overrides
+### How It Works
+1. Override data is prepared but not saved immediately
+2. Command is executed with the override applied
+3. **Only if the command succeeds** is the override saved to config
+4. Failed commands leave no persistent configuration
 
-See [debugging-commands.md](docs/debugging-commands.md) for detailed usage.
+## Usage Examples
+
+### Library Usage
+```rust
+use raz_override::{SmartOverrideParser, OverrideSystem};
+use raz_config::CommandOverride;
+
+// Parse runtime overrides
+let parser = SmartOverrideParser::new("test");
+let overrides = parser.parse("RUST_BACKTRACE=full --release -- --exact");
+
+// Create override system for workspace
+let mut override_system = OverrideSystem::new(&workspace_path)?;
+
+// Get function context and save override (deferred save pattern)
+let function_context = override_system.get_function_context(file_path, 24, Some(0))?;
+let override_key = override_system.generate_key(&function_context)?;
+
+// Only save after successful execution
+if command_succeeded {
+    override_system.save_override_with_validation(
+        override_key,
+        command_override,
+        &function_context,
+        "test"
+    )?;
+}
+```
+
+## Library API
+
+The crate provides comprehensive APIs for override management:
+- List and inspect overrides
+- Debug override resolution
+- Export/import functionality
+- Migration from legacy formats
+- Statistics and reporting
+
+For CLI usage, see the [raz-cli](https://crates.io/crates/raz-cli) documentation.
 
 ## Migration from Legacy Overrides
 
-If you have existing overrides using the old cursor position-based format, use the migration tool:
+The crate includes migration functionality for converting legacy cursor position-based overrides to the new stable key format. Migration can be performed programmatically through the API.
 
-```bash
-# Auto-detect and migrate legacy overrides
-raz override migrate --auto
-
-# Preview migration changes
-raz override migrate --file legacy.toml --dry-run
-
-# Migrate specific file
-raz override migrate --file legacy.toml
-```
-
-See [migration-guide.md](docs/migration-guide.md) for complete migration instructions.
+See [migration-guide.md](docs/migration-guide.md) for the migration format details.

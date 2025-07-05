@@ -17,6 +17,7 @@ Cargo.lock
 !README.md
 !CONTRIBUTING.md
 !MAINTAINING.md
+/scripts/*
 
 # VS Code Extension
 vscode/node_modules/

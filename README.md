@@ -10,7 +10,7 @@
 
 **Universal command runner for Rust - Run any Rust file from anywhere with smart test detection**
 
-[Installation](#installation) • [Quick Start](#quick-start) • [Documentation](docs/) • [VS Code Extension](#vs-code-extension)
+[Installation](#installation) • [Quick Start](#quick-start) • [Documentation](docs/) • [VS Code Extension](raz-adapters/vscode/README.md)
 
 </div>
 
@@ -18,83 +18,77 @@
 
 RAZ is a universal command runner that executes any Rust file from any directory without requiring workspace context. It provides intelligent, cursor-aware test detection and persistent command overrides.
 
-### Key Features
-
-- 🎯 **Run from Anywhere** - Execute any Rust file without `cd`ing into directories
-- 📍 **Cursor-Aware** - Automatically detects and runs the test/function at your cursor position
-- 💾 **Smart Overrides** - Save command flags per function, only persisted after successful execution
-- 🛡️ **Safe by Default** - Failed commands never save bad configurations
-- 🔧 **IDE Integration** - Full VS Code support with Cmd+R hotkeys
-- 🚀 **Zero Config** - Works instantly with any Rust project
-
-## Installation
-
-### CLI
-```bash
-# Install from crates.io
-cargo install raz-cli
-
-# Install with cargo-binstall (downloads pre-built binary)
-cargo binstall raz-cli
-```
-
-### VS Code Extension
-```bash
-# Install from marketplace (search "RAZ")
-# Or download .vsix from GitHub releases
-code --install-extension raz-vscode-*.vsix
-```
-
-## Quick Start
-
-```bash
-# Run any Rust file
-raz /path/to/file.rs
-
-# Run test at specific line
-raz src/lib.rs:25:1
-
-# Save override (only saved after success)
-raz --save-override src/lib.rs:25:1 RUST_BACKTRACE=1 --exact
-
-# Use saved override automatically
-raz src/lib.rs:25:1  # Uses RUST_BACKTRACE=1 --exact
-
-# Manage overrides
-raz override list      # Show saved overrides
-raz override rollback  # Restore last working state
-```
-
-**VS Code**: Press `Cmd+R` to run, `Cmd+Shift+R` to run with overrides
-
-## How It Works
-
-1. **Smart Detection** - Uses tree-sitter AST parsing to understand your code structure
-2. **Deferred Save** - Overrides only persist after successful execution
-3. **Universal Persistence** - Saved overrides work across all editors and terminals
-4. **Automatic Context** - Detects workspace, package, or standalone files automatically
-
-## Project Structure
-
-| Crate | Description |
-|-------|-------------|
-| [`raz-cli`](raz-adapters/cli/) | Command-line interface |
-| [`raz-core`](raz-core/) | Core command generation library |
-| [`raz-validation`](raz-validation/) | Smart options validation |
-| [`raz-override`](raz-override/) | Override management system |
-
-## Documentation
-
-- [Advanced Usage](docs/advanced-usage.md) - Override system, deferred save
-- [Validation Guide](docs/validation-guide.md) - Framework support and validation
-- [Override Management](docs/override-management.md) - Complete override CLI reference
-- [Library Usage](docs/library-usage.md) - Embed RAZ in your applications
 
 ## Why RAZ?
 
 **Without RAZ**: Remember and retype complex cargo commands, navigate to project directories, manually manage test flags
 
 **With RAZ**: Run any file from anywhere, save working configurations automatically, never lose your test setup
+
+### Core Features
+
+- 🎯 **Universal Execution** - Run any Rust file from anywhere without `cd`ing into directories
+- 📍 **Cursor-Aware Detection** - Automatically detects and runs the test/function at your cursor position
+- 💾 **Smart Override System** - Save command flags per function, only persisted after successful execution
+- 🛡️ **Deferred Save** - Failed commands never save bad configurations
+- 🔧 **IDE Integration** - Works with VS Code, Vim, IntelliJ, and any editor
+- 🚀 **Zero Configuration** - Works instantly with any Rust project structure
+
+## Key Concepts
+
+### Universal Execution
+RAZ can run any Rust file from any directory without requiring workspace context:
+- Run files from `/tmp/` or any random location
+- Execute tests without being in the project root
+- Work with multiple projects simultaneously
+
+### Smart Context Detection
+RAZ analyzes your Rust files to determine:
+- File type (binary, library, test, example, etc.)
+- Module structure for accurate test targeting
+- Framework detection (Leptos, Dioxus, Tauri, etc.)
+- Entry points (main functions, tests, benchmarks)
+
+### Override Persistence with Deferred Save
+Save command configurations per function - only working overrides are saved:
+- Override data prepared but not saved immediately
+- Command executed with the override applied
+- Only if command succeeds is override saved to config
+- Failed commands leave no persistent configuration
+
+### Intelligent Validation
+RAZ provides smart validation for command-line options:
+- Context-aware validation (knows which options work with which commands)
+- Framework-specific option support
+- Helpful error messages with suggestions
+- Configurable validation levels
+## Available Adapters
+
+RAZ works across multiple environments:
+
+- **[CLI](raz-adapters/cli/README.md)** [![crates.io](https://img.shields.io/crates/v/raz-cli.svg)](https://crates.io/crates/raz-cli) - Command-line interface
+- **[VS Code Extension](raz-adapters/vscode/README.md)** [![VS Code](https://img.shields.io/visual-studio-marketplace/v/masterustacean.raz-vscode.svg)](https://marketplace.visualstudio.com/items?itemName=masterustacean.raz-vscode) - IDE integration with hotkeys
+- **[Vim/Neovim](raz-adapters/vim/README.md)** - Terminal and editor integration
+- **More coming soon** - IntelliJ and other editors
+
+
+
+## Architecture
+
+| Component | Description |
+|-----------|-------------|
+| [`raz-core`](raz-core/) [![crates.io](https://img.shields.io/crates/v/raz-core.svg)](https://crates.io/crates/raz-core) | Core command generation and execution engine |
+| [`raz-validation`](raz-validation/) [![crates.io](https://img.shields.io/crates/v/raz-validation.svg)](https://crates.io/crates/raz-validation) | Framework-aware smart options validation |
+| [`raz-override`](raz-override/) [![crates.io](https://img.shields.io/crates/v/raz-override.svg)](https://crates.io/crates/raz-override) | Persistent override management with deferred save |
+| [`raz-config`](raz-config/) [![crates.io](https://img.shields.io/crates/v/raz-config.svg)](https://crates.io/crates/raz-config) | Configuration and settings management |
+| [`raz-common`](raz-common/) [![crates.io](https://img.shields.io/crates/v/raz-common.svg)](https://crates.io/crates/raz-common) | Shared utilities and types |
+
+
+
+## Documentation
+
+- **[Release Scripts](scripts/README.md)** - Automated release process and scripts
+- **[Contributing Guide](CONTRIBUTING.md)** - Development setup and guidelines
 
 ## Contributing
 
