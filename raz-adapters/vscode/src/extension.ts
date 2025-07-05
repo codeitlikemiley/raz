@@ -78,6 +78,59 @@ class RazBinaryManager {
 		return path.join(binaryDir, `raz${exe}`);
 	}
 
+	private getVersionFilePath(): string {
+		return path.join(
+			this.context.globalStorageUri.fsPath,
+			this.BINARY_DIR,
+			'version.txt'
+		);
+	}
+
+	private async getCurrentBinaryVersion(): Promise<string | null> {
+		const versionFile = this.getVersionFilePath();
+		try {
+			if (fs.existsSync(versionFile)) {
+				return fs.readFileSync(versionFile, 'utf8').trim();
+			}
+		} catch (error) {
+			this.outputChannel.appendLine(`Failed to read version file: ${error}`);
+		}
+		return null;
+	}
+
+	private async saveBinaryVersion(version: string): Promise<void> {
+		const versionFile = this.getVersionFilePath();
+		const dir = path.dirname(versionFile);
+		await fs.promises.mkdir(dir, { recursive: true });
+		await fs.promises.writeFile(versionFile, version, 'utf8');
+	}
+
+	private async getInstalledBinaryVersion(): Promise<string | null> {
+		const binaryPath = this.getBinaryPath();
+		if (!fs.existsSync(binaryPath)) {
+			return null;
+		}
+
+		return new Promise((resolve) => {
+			const { exec } = require('child_process');
+			exec(`"${binaryPath}" --version`, (error: any, stdout: string, stderr: string) => {
+				if (error) {
+					this.outputChannel.appendLine(`Failed to get binary version: ${error}`);
+					resolve(null);
+					return;
+				}
+				// Parse version from output like "raz 0.2.0"
+				const match = stdout.match(/raz\s+(\d+\.\d+\.\d+)/);
+				if (match) {
+					resolve(`v${match[1]}`); // Add 'v' prefix to match GitHub tags
+				} else {
+					this.outputChannel.appendLine(`Failed to parse version from: ${stdout}`);
+					resolve(null);
+				}
+			});
+		});
+	}
+
 	private async downloadBinary(version: string): Promise<void> {
 		const { platform } = this.getPlatformInfo();
 		const binaryPath = this.getBinaryPath();
@@ -112,11 +165,13 @@ class RazBinaryManager {
 										strip: 0,
 									}),
 								)
-								.on("finish", () => {
+								.on("finish", async () => {
 									// Make the binary executable
 									fs.chmodSync(binaryPath, 0o755);
+									// Save the version
+									await this.saveBinaryVersion(version);
 									this.outputChannel.appendLine(
-										"RAZ binary downloaded and extracted successfully",
+										`RAZ binary ${version} downloaded and extracted successfully`,
 									);
 									resolve();
 								})
@@ -132,7 +187,7 @@ class RazBinaryManager {
 		});
 	}
 
-	private async getLatestVersion(): Promise<string> {
+	async getLatestVersion(): Promise<string> {
 		return new Promise((resolve, reject) => {
 			https
 				.get(
@@ -184,6 +239,8 @@ class RazBinaryManager {
 
 		// Check if binary already exists in our managed location
 		const binaryPath = this.getBinaryPath();
+		
+		// If binary exists, use it
 		if (fs.existsSync(binaryPath)) {
 			this.outputChannel.appendLine(`Using managed RAZ binary: ${binaryPath}`);
 			return binaryPath;
@@ -207,7 +264,7 @@ class RazBinaryManager {
 					this.outputChannel.appendLine(`Failed to get latest version: ${error}`);
 					// Fallback to extension's version using proper VS Code API
 					const extension = vscode.extensions.getExtension('masterustacean.raz-vscode');
-					const fallbackVersion = `v${extension?.packageJSON.version || '0.1.4'}`;
+					const fallbackVersion = `v${extension?.packageJSON.version || '0.2.1'}`;
 					this.outputChannel.appendLine(`Using extension version as fallback: ${fallbackVersion}`);
 					try {
 						await this.downloadBinary(fallbackVersion);
@@ -221,6 +278,282 @@ class RazBinaryManager {
 	}
 }
 
+/// Handle migration from old binary management
+async function handleBinaryMigration(context: vscode.ExtensionContext): Promise<void> {
+	const outputChannel = ensureOutputChannel();
+	const binaryManager = new RazBinaryManager(context, outputChannel);
+	
+	// Check if we need to migrate from old version
+	const migrationKey = 'raz.migrated.v0.2.1';
+	const hasMigrated = context.globalState.get<boolean>(migrationKey, false);
+	
+	if (hasMigrated) {
+		// Already migrated, just check for updates
+		await checkForUpdates(context);
+		return;
+	}
+	
+	// First time running v0.2.1+ - clean up old binaries and notify
+	outputChannel.appendLine("Performing migration to new RAZ binary management...");
+	
+	// Clean up old version files and binaries
+	const binaryDir = path.join(context.globalStorageUri.fsPath, 'bin');
+	const versionFile = path.join(binaryDir, 'version.txt');
+	
+	if (fs.existsSync(versionFile)) {
+		fs.unlinkSync(versionFile);
+		outputChannel.appendLine("Removed old version tracking file");
+	}
+	
+	// Remove old binaries (keep only latest)
+	if (fs.existsSync(binaryDir)) {
+		const files = fs.readdirSync(binaryDir);
+		for (const file of files) {
+			if (file.startsWith('raz') && file !== 'raz' && file !== 'raz.exe') {
+				const filePath = path.join(binaryDir, file);
+				fs.unlinkSync(filePath);
+				outputChannel.appendLine(`Removed old binary: ${file}`);
+			}
+		}
+	}
+	
+	// Mark as migrated
+	context.globalState.update(migrationKey, true);
+	
+	// Show notification about new update method
+	const choice = await vscode.window.showInformationMessage(
+		"RAZ has been updated! We've simplified binary management. You can now use 'raz self-update' to update the CLI.",
+		"Learn More",
+		"Dismiss"
+	);
+	
+	if (choice === "Learn More") {
+		vscode.env.openExternal(vscode.Uri.parse("https://github.com/codeitlikemiley/raz#updating"));
+	}
+	
+	// Check for updates after migration
+	await checkForUpdates(context);
+}
+
+/// Check for updates and notify user
+async function checkForUpdates(context: vscode.ExtensionContext): Promise<void> {
+	const outputChannel = ensureOutputChannel();
+	
+	try {
+		// Check if user has cargo-installed version
+		const razVersion = await getRazVersion();
+		if (!razVersion) {
+			outputChannel.appendLine("No RAZ installation found in PATH");
+			return;
+		}
+		
+		// Get latest version from GitHub
+		const binaryManager = new RazBinaryManager(context, outputChannel);
+		const latestVersion = await binaryManager.getLatestVersion();
+		
+		// Compare versions
+		const currentVersion = razVersion.replace('v', '');
+		const latest = latestVersion.replace('v', '');
+		
+		if (currentVersion !== latest) {
+			outputChannel.appendLine(`Update available: v${currentVersion} -> ${latestVersion}`);
+			
+			// Don't show update notification too frequently
+			const lastNotification = context.globalState.get<number>('raz.lastUpdateNotification', 0);
+			const now = Date.now();
+			const daysSince = (now - lastNotification) / (1000 * 60 * 60 * 24);
+			
+			if (daysSince >= 7) { // Show update notification once per week
+				// Check if the current version supports self-update (>=0.2.1)
+				const supportseSelfUpdate = isVersionAtLeast(currentVersion, '0.2.1');
+				
+				let choice;
+				if (supportseSelfUpdate) {
+					choice = await vscode.window.showInformationMessage(
+						`RAZ update available: v${currentVersion} → ${latestVersion}`,
+						"Update with CLI",
+						"Download Binary",
+						"Later"
+					);
+				} else {
+					// Older version without self-update command
+					choice = await vscode.window.showInformationMessage(
+						`RAZ update available: v${currentVersion} → ${latestVersion}\n(Your version doesn't support self-update)`,
+						"Download Binary",
+						"Manual Update",
+						"Later"
+					);
+				}
+				
+				if (choice === "Update with CLI") {
+					// Open terminal and run raz self-update
+					const terminal = vscode.window.createTerminal("RAZ Update");
+					terminal.show();
+					terminal.sendText("raz self-update");
+				} else if (choice === "Download Binary") {
+					// Use VSCode to download and replace the binary
+					await downloadAndReplaceSystemBinary(context, latestVersion);
+				} else if (choice === "Manual Update") {
+					// Show manual update instructions
+					const updateChoice = await vscode.window.showInformationMessage(
+						"How would you like to update RAZ?",
+						"cargo install raz-cli",
+						"View GitHub Release"
+					);
+					
+					if (updateChoice === "cargo install raz-cli") {
+						await vscode.env.clipboard.writeText("cargo install raz-cli --force");
+						vscode.window.showInformationMessage("Update command copied to clipboard!");
+						const terminal = vscode.window.createTerminal("RAZ Update");
+						terminal.show();
+						terminal.sendText("# Paste the update command from clipboard");
+					} else if (updateChoice === "View GitHub Release") {
+						vscode.env.openExternal(vscode.Uri.parse(`https://github.com/codeitlikemiley/raz/releases/tag/${latestVersion}`));
+					}
+				}
+				
+				context.globalState.update('raz.lastUpdateNotification', now);
+			}
+		} else {
+			outputChannel.appendLine(`RAZ is up to date: v${currentVersion}`);
+		}
+	} catch (error) {
+		outputChannel.appendLine(`Update check failed: ${error}`);
+	}
+}
+
+/// Get RAZ version from system PATH
+async function getRazVersion(): Promise<string | null> {
+	return new Promise((resolve) => {
+		const { exec } = require('child_process');
+		exec('raz --version', (error: any, stdout: string) => {
+			if (error) {
+				resolve(null);
+				return;
+			}
+			const match = stdout.match(/raz\s+(\d+\.\d+\.\d+)/);
+			if (match) {
+				resolve(`v${match[1]}`);
+			} else {
+				resolve(null);
+			}
+		});
+	});
+}
+
+/// Compare version strings (semver-like)
+function isVersionAtLeast(current: string, required: string): boolean {
+	const parseVersion = (v: string) => v.split('.').map(n => parseInt(n, 10));
+	const currentParts = parseVersion(current);
+	const requiredParts = parseVersion(required);
+	
+	for (let i = 0; i < Math.max(currentParts.length, requiredParts.length); i++) {
+		const currentPart = currentParts[i] || 0;
+		const requiredPart = requiredParts[i] || 0;
+		
+		if (currentPart > requiredPart) return true;
+		if (currentPart < requiredPart) return false;
+	}
+	
+	return true; // Equal versions
+}
+
+/// Download and replace system RAZ binary
+async function downloadAndReplaceSystemBinary(context: vscode.ExtensionContext, version: string): Promise<void> {
+	const outputChannel = ensureOutputChannel();
+	
+	try {
+		// First, try to find where the current raz binary is located
+		const razPath = await findRazBinaryPath();
+		if (!razPath) {
+			throw new Error("Could not locate RAZ binary");
+		}
+		
+		outputChannel.appendLine(`Found RAZ binary at: ${razPath}`);
+		
+		// Download the new binary to a temporary location
+		const binaryManager = new RazBinaryManager(context, outputChannel);
+		const tempBinaryPath = await binaryManager.ensureBinary(); // Downloads latest
+		
+		// Show progress
+		await vscode.window.withProgress(
+			{
+				location: vscode.ProgressLocation.Notification,
+				title: "Updating RAZ",
+				cancellable: false,
+			},
+			async (progress) => {
+				progress.report({ message: "Replacing binary..." });
+				
+				// Copy the new binary over the old one
+				const fs = require('fs');
+				
+				// Make backup of original
+				const backupPath = `${razPath}.backup`;
+				if (fs.existsSync(razPath)) {
+					fs.copyFileSync(razPath, backupPath);
+					outputChannel.appendLine(`Created backup: ${backupPath}`);
+				}
+				
+				try {
+					// Replace the binary
+					fs.copyFileSync(tempBinaryPath, razPath);
+					// Make it executable on Unix systems
+					if (process.platform !== 'win32') {
+						fs.chmodSync(razPath, 0o755);
+					}
+					
+					outputChannel.appendLine(`Successfully updated RAZ binary to ${version}`);
+					vscode.window.showInformationMessage(`RAZ updated to ${version}! Run 'raz --version' to verify.`);
+					
+					// Clean up backup if successful
+					if (fs.existsSync(backupPath)) {
+						fs.unlinkSync(backupPath);
+					}
+				} catch (replaceError) {
+					// Restore backup if replacement failed
+					if (fs.existsSync(backupPath)) {
+						fs.copyFileSync(backupPath, razPath);
+						fs.unlinkSync(backupPath);
+						outputChannel.appendLine("Restored backup after failed update");
+					}
+					throw replaceError;
+				}
+			},
+		);
+	} catch (error) {
+		outputChannel.appendLine(`Binary update failed: ${error}`);
+		vscode.window.showErrorMessage(`Failed to update RAZ binary: ${error}`);
+	}
+}
+
+/// Find the path to the RAZ binary in system PATH
+async function findRazBinaryPath(): Promise<string | null> {
+	return new Promise((resolve) => {
+		const { exec } = require('child_process');
+		const command = process.platform === 'win32' ? 'where raz' : 'which raz';
+		
+		exec(command, (error: any, stdout: string) => {
+			if (error) {
+				resolve(null);
+				return;
+			}
+			
+			const paths = stdout.trim().split('\n');
+			// Return the first valid path
+			for (const path of paths) {
+				const trimmedPath = path.trim();
+				if (trimmedPath && require('fs').existsSync(trimmedPath)) {
+					resolve(trimmedPath);
+					return;
+				}
+			}
+			
+			resolve(null);
+		});
+	});
+}
+
 export async function activate(
 	context: vscode.ExtensionContext,
 ): Promise<void> {
@@ -232,6 +565,11 @@ export async function activate(
 
 	outputChannel.appendLine("🚀 RAZ extension activated successfully!");
 	outputChannel.show(); // Show output to help with debugging
+
+	// Handle migration from old binary management and check for updates
+	handleBinaryMigration(context).catch(error => {
+		outputChannel.appendLine(`Binary migration failed: ${error}`);
+	});
 
 	// Register the task provider
 	context.subscriptions.push(registerTaskProvider(context));
@@ -326,6 +664,77 @@ export async function activate(
 		vscode.commands.registerCommand("raz.setupBinary", async () => {
 			outputChannel.appendLine("📝 raz.setupBinary executed");
 			await setupRazBinary(context);
+		}),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("raz.updateBinary", async () => {
+			outputChannel.appendLine("📝 raz.updateBinary executed");
+			
+			// Check current version and available update methods
+			const razVersion = await getRazVersion();
+			if (!razVersion) {
+				vscode.window.showErrorMessage("RAZ not found in system PATH");
+				return;
+			}
+			
+			const currentVersion = razVersion.replace('v', '');
+			const supportseSelfUpdate = isVersionAtLeast(currentVersion, '0.2.1');
+			
+			let choice;
+			if (supportseSelfUpdate) {
+				choice = await vscode.window.showQuickPick([
+					{ label: "Update with CLI", description: "Use 'raz self-update' command" },
+					{ label: "Download Binary", description: "VSCode downloads and replaces binary" }
+				], {
+					placeHolder: "Choose update method"
+				});
+			} else {
+				choice = await vscode.window.showQuickPick([
+					{ label: "Download Binary", description: "VSCode downloads and replaces binary" },
+					{ label: "Manual Update", description: "Show manual update instructions" }
+				], {
+					placeHolder: "Your version doesn't support self-update"
+				});
+			}
+			
+			if (!choice) return;
+			
+			if (choice.label === "Update with CLI") {
+				const terminal = vscode.window.createTerminal("RAZ Update");
+				terminal.show();
+				terminal.sendText("raz self-update");
+			} else if (choice.label === "Download Binary") {
+				try {
+					const binaryManager = new RazBinaryManager(context, outputChannel);
+					const latestVersion = await binaryManager.getLatestVersion();
+					await downloadAndReplaceSystemBinary(context, latestVersion);
+				} catch (error) {
+					vscode.window.showErrorMessage(`Update failed: ${error}`);
+				}
+			} else if (choice.label === "Manual Update") {
+				const updateChoice = await vscode.window.showInformationMessage(
+					"How would you like to update RAZ?",
+					"cargo install raz-cli",
+					"View GitHub Release"
+				);
+				
+				if (updateChoice === "cargo install raz-cli") {
+					await vscode.env.clipboard.writeText("cargo install raz-cli --force");
+					vscode.window.showInformationMessage("Update command copied to clipboard!");
+					const terminal = vscode.window.createTerminal("RAZ Update");
+					terminal.show();
+					terminal.sendText("# Paste the update command from clipboard");
+				} else if (updateChoice === "View GitHub Release") {
+					try {
+						const binaryManager = new RazBinaryManager(context, outputChannel);
+						const latestVersion = await binaryManager.getLatestVersion();
+						vscode.env.openExternal(vscode.Uri.parse(`https://github.com/codeitlikemiley/raz/releases/tag/${latestVersion}`));
+					} catch (error) {
+						vscode.env.openExternal(vscode.Uri.parse("https://github.com/codeitlikemiley/raz/releases/latest"));
+					}
+				}
+			}
 		}),
 	);
 
@@ -436,6 +845,8 @@ async function setupRazBinary(_context: vscode.ExtensionContext): Promise<void> 
 		}
 	}
 }
+
+// Old update functions removed - now using raz self-update
 
 async function ensureRazExecutable(
 	context: vscode.ExtensionContext,

@@ -59,6 +59,12 @@ enum Commands {
         #[command(subcommand)]
         cmd: OverrideCommands,
     },
+    /// Update RAZ to the latest version
+    SelfUpdate {
+        /// Force update even if already on latest version
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -193,6 +199,9 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             }
             Commands::Override { cmd } => {
                 return handle_override_command(&working_dir, cmd);
+            }
+            Commands::SelfUpdate { force } => {
+                return handle_self_update(force).await;
             }
         }
     }
@@ -807,6 +816,130 @@ fn detect_subcommand(file_path: &Path, cursor: Option<Position>) -> String {
     } else {
         "run".to_string()
     }
+}
+
+/// Handle self-update command
+async fn handle_self_update(force: bool) -> anyhow::Result<()> {
+    use std::process::Stdio;
+    
+    println!("{} Checking for updates...", OutputFormatter::info("RAZ"));
+    
+    // Get current version
+    let current_version = env!("CARGO_PKG_VERSION");
+    println!("{} Current version: v{}", OutputFormatter::label("Info"), current_version);
+    
+    // Check if running from cargo install or system PATH
+    let current_exe = env::current_exe()?;
+    let exe_dir = current_exe.parent().unwrap();
+    
+    // Check if we're in a cargo bin directory
+    let is_cargo_installed = exe_dir.to_string_lossy().contains(".cargo/bin") || 
+                            exe_dir.to_string_lossy().contains(".cargo\\bin");
+    
+    if !is_cargo_installed {
+        // Check if it's in system PATH but not cargo
+        let which_result = process::Command::new("which")
+            .arg("raz")
+            .output();
+            
+        if let Ok(output) = which_result {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() && !path.contains(".cargo") {
+                println!(
+                    "\n{} RAZ appears to be installed via a package manager or custom installation.",
+                    OutputFormatter::warning("Note")
+                );
+                println!(
+                    "Please update using the same method you used to install RAZ."
+                );
+                return Ok(());
+            }
+        }
+    }
+    
+    // Get latest version from GitHub API
+    let latest_version = get_latest_version().await?;
+    println!("{} Latest version: {}", OutputFormatter::label("Info"), latest_version);
+    
+    // Compare versions
+    if !force && current_version == latest_version.trim_start_matches('v') {
+        println!(
+            "\n{} You are already on the latest version!",
+            OutputFormatter::success("✓")
+        );
+        return Ok(());
+    }
+    
+    // Prompt for confirmation
+    if !force {
+        print!("\nUpdate RAZ from v{} to {}? [Y/n] ", current_version, latest_version);
+        use std::io::{self, Write};
+        io::stdout().flush()?;
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let choice = input.trim().to_lowercase();
+        
+        if choice != "y" && choice != "" {
+            println!("Update cancelled.");
+            return Ok(());
+        }
+    }
+    
+    // Perform update using cargo install
+    println!("\n{} Updating RAZ...", OutputFormatter::info("Installing"));
+    println!("{} This may take a few minutes...", OutputFormatter::dim("Note"));
+    
+    let mut cmd = process::Command::new("cargo");
+    cmd.arg("install")
+       .arg("raz-cli")
+       .arg("--force")
+       .stdout(Stdio::inherit())
+       .stderr(Stdio::inherit());
+    
+    let status = cmd.status()?;
+    
+    if status.success() {
+        println!(
+            "\n{} RAZ has been successfully updated to {}!",
+            OutputFormatter::success("Success"),
+            latest_version
+        );
+        println!(
+            "{} Run {} to verify the update.",
+            OutputFormatter::info("Tip"),
+            OutputFormatter::command("raz --version")
+        );
+    } else {
+        anyhow::bail!("Failed to update RAZ. Please try again or install manually.");
+    }
+    
+    Ok(())
+}
+
+/// Get latest version from GitHub releases
+async fn get_latest_version() -> anyhow::Result<String> {
+    let url = "https://api.github.com/repos/codeitlikemiley/raz/releases/latest";
+    
+    // Use a simple HTTPS request
+    let output = process::Command::new("curl")
+        .args(&["-s", "-H", "Accept: application/vnd.github.v3+json", url])
+        .output()?;
+    
+    if !output.status.success() {
+        anyhow::bail!("Failed to fetch latest version from GitHub");
+    }
+    
+    let response = String::from_utf8(output.stdout)?;
+    
+    // Parse JSON to get tag_name
+    let json: serde_json::Value = serde_json::from_str(&response)?;
+    
+    let tag_name = json["tag_name"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse version from GitHub response"))?;
+    
+    Ok(tag_name.to_string())
 }
 
 /// Initialize configuration for the current project

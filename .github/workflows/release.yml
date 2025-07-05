@@ -202,6 +202,8 @@ jobs:
     needs: [create-release]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    # Continue even if this job fails
+    continue-on-error: true
     
     steps:
       - name: Download VSCode extension
@@ -214,20 +216,22 @@ jobs:
         run: npm install -g vsce
 
       - name: Publish to VS Code marketplace
+        continue-on-error: true
         run: |
           if [ -n "${{ secrets.VSCE_TOKEN }}" ]; then
             echo "Publishing to VS Code marketplace..."
-            vsce publish --packagePath *.vsix --pat ${{ secrets.VSCE_TOKEN }}
+            vsce publish --packagePath *.vsix --pat ${{ secrets.VSCE_TOKEN }} || echo "⚠️ Failed to publish to VS Code marketplace (possibly already exists)"
           else
             echo "⚠️ VSCE_TOKEN not set, skipping VS Code marketplace publish."
           fi
           
       - name: Publish to Open VSX Registry
+        continue-on-error: true
         run: |
           if [ -n "${{ secrets.OVSX_TOKEN }}" ]; then
             echo "Publishing to Open VSX Registry..."
             npm install -g ovsx
-            ovsx publish *.vsix -p ${{ secrets.OVSX_TOKEN }}
+            ovsx publish *.vsix -p ${{ secrets.OVSX_TOKEN }} || echo "⚠️ Failed to publish to Open VSX (possibly already exists)"
           else
             echo "⚠️ OVSX_TOKEN not set, skipping Open VSX publish."
           fi
