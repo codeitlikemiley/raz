@@ -1,73 +1,12 @@
 /*---------------------------------------------------------------------------------------------
- *  RAZ VS Code Extension - Debugging Integration with rust-analyzer codelens
- *  Based on cargo-runner debugging architecture patterns
+ *  RAZ VS Code Extension - Simple debugging integration via rust-analyzer codelens
  *--------------------------------------------------------------------------------------------*/
 import * as vscode from "vscode";
 
 /**
- * Configuration for debugging integration
+ * Get breakpoints in the current symbol's range
  */
-interface DebugConfig {
-	prioritySymbolKinds: vscode.SymbolKind[];
-	logLevel: "debug" | "info" | "error";
-	enableBreakpointDetection: boolean;
-	useRustAnalyzerCodeLens: boolean;
-}
-
-/**
- * Metadata about available codelens actions for debugging
- */
-interface CodelensMetadata {
-	testLens: string;
-	benchLens: string;
-	isModule: boolean;
-	runner: vscode.CodeLens | undefined;
-	hasBreakpoints: boolean;
-}
-
-/**
- * Get the debug configuration from VS Code settings
- */
-function getDebugConfig(): DebugConfig {
-	const config = vscode.workspace.getConfiguration("raz");
-	const symbolKindMap: Record<string, vscode.SymbolKind> = {
-		Module: vscode.SymbolKind.Module,
-		Object: vscode.SymbolKind.Object,
-		Struct: vscode.SymbolKind.Struct,
-		Enum: vscode.SymbolKind.Enum,
-		Function: vscode.SymbolKind.Function,
-	};
-
-	return {
-		prioritySymbolKinds: config
-			.get<string[]>("prioritySymbolKinds", [
-				"Module",
-				"Object", 
-				"Struct",
-				"Enum",
-				"Function",
-			])
-			.map((kind) => symbolKindMap[kind]),
-		logLevel: config.get("logLevel", "error"),
-		enableBreakpointDetection: config.get("enableBreakpointDetection", true),
-		useRustAnalyzerCodeLens: config.get("useRustAnalyzerCodeLens", true),
-	};
-}
-
-/**
- * Get relevant breakpoints within a symbol's range
- * Adapted from cargo-runner's getBreakpoints function
- */
-export function getBreakpoints(
-	symbol: vscode.DocumentSymbol,
-	document: vscode.TextDocument,
-): vscode.Breakpoint[] {
-	const config = getDebugConfig();
-	
-	if (!config.enableBreakpointDetection) {
-		return [];
-	}
-
+function getBreakpoints(symbol: vscode.DocumentSymbol, document: vscode.TextDocument): vscode.Breakpoint[] {
 	return vscode.debug.breakpoints.filter((breakpoint) => {
 		if (breakpoint instanceof vscode.SourceBreakpoint) {
 			const { location } = breakpoint;
@@ -84,16 +23,9 @@ export function getBreakpoints(
 }
 
 /**
- * Find the most relevant symbol at the cursor position
- * Adapted from cargo-runner's find_symbol function
+ * Find relevant symbol at cursor position
  */
-export async function findRelevantSymbol(
-	document: vscode.TextDocument,
-	position: vscode.Position,
-): Promise<vscode.DocumentSymbol | null> {
-	const config = getDebugConfig();
-	
-	// Get document symbols from rust-analyzer
+async function findSymbol(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.DocumentSymbol | null> {
 	const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
 		"vscode.executeDocumentSymbolProvider",
 		document.uri,
@@ -103,227 +35,157 @@ export async function findRelevantSymbol(
 		return null;
 	}
 
-	const isPositionWithinRange = (pos: vscode.Position, range: vscode.Range) =>
-		pos.isAfterOrEqual(range.start) && pos.isBeforeOrEqual(range.end);
+	const isPositionInSymbol = (pos: vscode.Position, symbol: vscode.DocumentSymbol) =>
+		pos.isAfterOrEqual(symbol.range.start) && pos.isBeforeOrEqual(symbol.range.end);
 
-	const isPositionInSymbol = (
-		pos: vscode.Position,
-		symbol: vscode.DocumentSymbol,
-	) =>
-		isPositionWithinRange(pos, symbol.range) ||
-		isPositionWithinRange(pos, symbol.selectionRange);
-
-	const filterSymbol = (
-		symbols: vscode.DocumentSymbol[],
-	): vscode.DocumentSymbol | null => {
+	// Prioritize function/method symbols over variables
+	const findInSymbols = (symbols: vscode.DocumentSymbol[]): vscode.DocumentSymbol | null => {
+		let foundSymbol: vscode.DocumentSymbol | null = null;
+		
 		for (const symbol of symbols) {
-			if (
-				config.prioritySymbolKinds.includes(symbol.kind) &&
-				isPositionInSymbol(position, symbol)
-			) {
-				const childSymbol = filterSymbol(symbol.children);
-				return childSymbol || symbol;
+			if (isPositionInSymbol(position, symbol)) {
+				// If it's a function/method, prefer it
+				if (symbol.kind === vscode.SymbolKind.Function || 
+					symbol.kind === vscode.SymbolKind.Method) {
+					return symbol;
+				}
+				
+				// Otherwise, keep looking for children
+				const childSymbol = findInSymbols(symbol.children);
+				if (childSymbol && 
+					(childSymbol.kind === vscode.SymbolKind.Function || 
+					 childSymbol.kind === vscode.SymbolKind.Method)) {
+					return childSymbol;
+				}
+				
+				// Fall back to any symbol if no function found
+				foundSymbol = childSymbol || symbol;
 			}
 		}
-		// Fallback to main function if no priority symbol found
-		return symbols.find((symbol) => symbol.name === "main") ?? null;
+		return foundSymbol;
 	};
 
-	return filterSymbol(symbols);
+	return findInSymbols(symbols);
 }
 
 /**
- * Get codelens actions for a specific symbol
- * Adapted from cargo-runner's getLenses function
+ * Get codelens for the current document
  */
-export async function getSymbolCodeLens(
-	document: vscode.TextDocument,
-	symbol: vscode.DocumentSymbol,
-): Promise<vscode.CodeLens[]> {
-	const config = getDebugConfig();
-	
-	if (!config.useRustAnalyzerCodeLens) {
-		return [];
-	}
-
-	// Get all codelens from rust-analyzer
+async function getCodeLens(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
 	const codelenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
 		"vscode.executeCodeLensProvider",
 		document.uri,
 	);
-
-	if (!codelenses) {
-		return [];
-	}
-
-	// Filter codelens to those related to our symbol
-	const symbolRelatedCodeLenses = codelenses.filter((lens) => {
-		const lensStart = lens.range.start.line;
-		const symbolStart = symbol.range.start.line;
-		const symbolEnd = symbol.range.end.line;
-
-		// Allow 2-line tolerance for symbol boundaries
-		return lensStart >= symbolStart - 2 && lensStart <= symbolEnd;
-	});
-
-	return symbolRelatedCodeLenses;
+	return codelenses || [];
 }
 
 /**
- * Analyze codelens and determine the best runner based on breakpoints
- * Adapted from cargo-runner's codelensMetadata function
- */
-export function analyzeCodelensForDebugging(
-	codeLenses: vscode.CodeLens[],
-	nearestSymbol: vscode.DocumentSymbol,
-	document: vscode.TextDocument,
-): CodelensMetadata {
-	const isModule =
-		nearestSymbol?.kind === vscode.SymbolKind.Module ||
-		nearestSymbol?.kind === vscode.SymbolKind.Struct;
-
-	// Define codelens title patterns based on cargo-runner
-	const testLens = isModule ? "▶︎ Run Tests" : "▶︎ Run Test";
-	const benchLens = "▶︎ Run Bench";
-	const runLens = "▶︎ Run";
-	const docLens = "▶︎ Run Doctest";
-	const debugLens = "Debug";
-
-	// Find available runners
-	const run: vscode.CodeLens | undefined = codeLenses.find(
-		(lens) => lens.command?.title?.startsWith(runLens),
-	);
-	const bench: vscode.CodeLens | undefined = codeLenses.find(
-		(lens) => lens.command?.title === benchLens,
-	);
-	const test: vscode.CodeLens | undefined = codeLenses.find(
-		(lens) => lens.command?.title === testLens,
-	);
-	const doc: vscode.CodeLens | undefined = codeLenses.find(
-		(lens) => lens.command?.title === docLens,
-	);
-	const debuggable: vscode.CodeLens | undefined = codeLenses.find(
-		(lens) => lens.command?.title === debugLens,
-	);
-
-	// Get relevant breakpoints for this symbol
-	const relevantBreakpoints = getBreakpoints(nearestSymbol, document);
-	const hasBreakpoints = relevantBreakpoints.length > 0;
-
-	// Core business logic: If breakpoints exist, prefer debug runner
-	const runner = hasBreakpoints 
-		? debuggable 
-		: run || test || doc || bench;
-
-	return {
-		testLens,
-		benchLens,
-		isModule,
-		runner,
-		hasBreakpoints,
-	};
-}
-
-/**
- * Check if the current context should use debugging
- */
-export async function shouldUseDebugMode(
-	document: vscode.TextDocument,
-	position: vscode.Position,
-): Promise<{ useDebug: boolean; runner?: vscode.CodeLens; symbol?: vscode.DocumentSymbol }> {
-	const config = getDebugConfig();
-	
-	if (!config.enableBreakpointDetection || !config.useRustAnalyzerCodeLens) {
-		return { useDebug: false };
-	}
-
-	// Find the relevant symbol at cursor position
-	const symbol = await findRelevantSymbol(document, position);
-	if (!symbol) {
-		return { useDebug: false };
-	}
-
-	// Get codelens for this symbol
-	const codeLenses = await getSymbolCodeLens(document, symbol);
-	if (codeLenses.length === 0) {
-		return { useDebug: false };
-	}
-
-	// Analyze codelens and check for breakpoints
-	const metadata = analyzeCodelensForDebugging(codeLenses, symbol, document);
-	
-	return {
-		useDebug: metadata.hasBreakpoints,
-		runner: metadata.runner,
-		symbol,
-	};
-}
-
-/**
- * Execute a rust-analyzer command with debugging support
- */
-export async function executeRustAnalyzerCommand(
-	command: vscode.CodeLens,
-	document: vscode.TextDocument,
-	workspaceRoot?: string,
-): Promise<void> {
-	if (!command.command) {
-		throw new Error("No command found in codelens");
-	}
-
-	// Clone the command arguments to avoid mutation
-	const args = JSON.parse(JSON.stringify(command.command.arguments || []));
-	
-	// Set workspace root if provided
-	if (workspaceRoot && args[0]?.args) {
-		args[0].args.workspaceRoot = workspaceRoot;
-	}
-
-	// Execute the rust-analyzer command
-	await vscode.commands.executeCommand(
-		command.command.command,
-		...args,
-	);
-}
-
-/**
- * Main debugging integration function
- * This replaces RAZ execution when breakpoints are detected
+ * Main debugging integration - check for breakpoints and use Debug codelens if found
  */
 export async function executeWithDebuggingSupport(
 	document: vscode.TextDocument,
 	position: vscode.Position,
 	fallbackToRaz: () => Promise<void>,
+	outputChannel: vscode.OutputChannel,
 ): Promise<void> {
+	outputChannel.appendLine(`[RAZ Debug] executeWithDebuggingSupport called`);
+	
+	const config = vscode.workspace.getConfiguration("raz");
+	const enableBreakpointDetection = config.get<boolean>("enableBreakpointDetection", true);
+	
+	outputChannel.appendLine(`[RAZ Debug] Breakpoint detection enabled: ${enableBreakpointDetection}`);
+	
+	if (!enableBreakpointDetection) {
+		outputChannel.appendLine(`[RAZ Debug] Breakpoint detection disabled, using RAZ`);
+		await fallbackToRaz();
+		return;
+	}
+
 	try {
-		const debugInfo = await shouldUseDebugMode(document, position);
+		// Find symbol at cursor
+		const symbol = await findSymbol(document, position);
+		outputChannel.appendLine(`[RAZ Debug] Symbol found: ${symbol ? `${symbol.name} (${vscode.SymbolKind[symbol.kind]})` : 'none'}`);
 		
-		if (debugInfo.useDebug && debugInfo.runner) {
-			// Use rust-analyzer debugging instead of RAZ
-			const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-			const workspaceRoot = workspaceFolder?.uri.fsPath;
-			
-			await executeRustAnalyzerCommand(debugInfo.runner, document, workspaceRoot);
+		// No symbol or not a function/method - use RAZ
+		if (!symbol || 
+			(symbol.kind !== vscode.SymbolKind.Function && 
+			 symbol.kind !== vscode.SymbolKind.Method)) {
+			outputChannel.appendLine(`[RAZ Debug] No function/method found at cursor, using RAZ`);
+			await fallbackToRaz();
+			return;
+		}
+
+		// Check for breakpoints in this symbol
+		outputChannel.appendLine(`[RAZ Debug] Symbol "${symbol.name}" range: ${symbol.range.start.line}:${symbol.range.start.character} - ${symbol.range.end.line}:${symbol.range.end.character}`);
+		
+		// Get ALL breakpoints in the document first
+		const allBreakpoints = vscode.debug.breakpoints.filter(bp => 
+			bp instanceof vscode.SourceBreakpoint && 
+			bp.location.uri.toString() === document.uri.toString()
+		);
+		outputChannel.appendLine(`[RAZ Debug] Total breakpoints in document: ${allBreakpoints.length}`);
+		allBreakpoints.forEach((bp, i) => {
+			if (bp instanceof vscode.SourceBreakpoint) {
+				outputChannel.appendLine(`[RAZ Debug] Breakpoint ${i}: line ${bp.location.range.start.line}:${bp.location.range.start.character}`);
+			}
+		});
+		
+		const breakpoints = getBreakpoints(symbol, document);
+		outputChannel.appendLine(`[RAZ Debug] Breakpoints in ${symbol.name}: ${breakpoints.length}`);
+		if (breakpoints.length === 0) {
+			outputChannel.appendLine(`[RAZ Debug] No breakpoints found in symbol range, using RAZ`);
+			await fallbackToRaz();
+			return;
+		}
+
+		// Get codelens and find Debug command
+		const codelenses = await getCodeLens(document);
+		outputChannel.appendLine(`[RAZ Debug] Total codelenses: ${codelenses.length}`);
+		
+		// DUMP ALL CODELENS FOR DEBUGGING
+		outputChannel.appendLine(`[RAZ Debug] ALL CODELENS:`);
+		codelenses.forEach((lens, index) => {
+			outputChannel.appendLine(`[RAZ Debug] Codelens ${index}: ${lens.command?.title} | ${lens.command?.command} | line ${lens.range.start.line} | symbolRange: ${symbol.range.start.line} - ${symbol.range.end.line}`);
+		});
+		
+		// Find Debug codelens for this symbol - same logic as cargo-runner
+		const debugCodeLens = codelenses.find(lens => 
+			lens.command?.title?.includes("Debug") &&
+			lens.range.start.line >= symbol.range.start.line - 2 &&
+			lens.range.start.line <= symbol.range.end.line
+		);
+		
+		outputChannel.appendLine(`[RAZ Debug] Debug codelens found: ${debugCodeLens ? 'yes' : 'no'}`);
+		if (debugCodeLens) {
+			outputChannel.appendLine(`[RAZ Debug] Debug command: ${debugCodeLens.command?.command}`);
+		}
+
+		if (debugCodeLens?.command) {
+			// Execute the Debug codelens command directly
+			outputChannel.appendLine(`[RAZ Debug] Executing debug command for ${symbol.name}`);
+			await vscode.commands.executeCommand(
+				debugCodeLens.command.command,
+				...(debugCodeLens.command.arguments || [])
+			);
 			
 			vscode.window.showInformationMessage(
-				`🐛 Debug mode: Found ${getBreakpoints(debugInfo.symbol!, document).length} breakpoint(s) in ${debugInfo.symbol?.name}`,
+				`🐛 Debug mode: Found ${breakpoints.length} breakpoint(s) in ${symbol.name}`
 			);
 		} else {
-			// No breakpoints found, use standard RAZ execution
+			// No Debug codelens found, use RAZ
+			outputChannel.appendLine(`[RAZ Debug] No debug codelens found, using RAZ`);
 			await fallbackToRaz();
 		}
 	} catch (error) {
-		console.error("Debug integration error:", error);
-		// Fallback to RAZ on any error
+		outputChannel.appendLine(`[RAZ Debug] Error: ${error}`);
 		await fallbackToRaz();
 	}
 }
 
 /**
- * Register debugging-related commands
+ * Register minimal debug commands
  */
 export function registerDebugCommands(context: vscode.ExtensionContext): void {
-	// Command to toggle breakpoint detection
 	context.subscriptions.push(
 		vscode.commands.registerCommand("raz.toggleBreakpointDetection", async () => {
 			const config = vscode.workspace.getConfiguration("raz");
@@ -331,12 +193,11 @@ export function registerDebugCommands(context: vscode.ExtensionContext): void {
 			await config.update("enableBreakpointDetection", !current, vscode.ConfigurationTarget.Global);
 			
 			vscode.window.showInformationMessage(
-				`RAZ breakpoint detection ${!current ? "enabled" : "disabled"}`,
+				`RAZ breakpoint detection ${!current ? "enabled" : "disabled"}`
 			);
-		}),
+		})
 	);
 
-	// Command to show debug info for current position
 	context.subscriptions.push(
 		vscode.commands.registerCommand("raz.showDebugInfo", async () => {
 			const editor = vscode.window.activeTextEditor;
@@ -349,28 +210,27 @@ export function registerDebugCommands(context: vscode.ExtensionContext): void {
 			const position = editor.selection.active;
 			
 			try {
-				const symbol = await findRelevantSymbol(document, position);
+				const symbol = await findSymbol(document, position);
 				if (!symbol) {
-					vscode.window.showInformationMessage("No relevant symbol found at cursor position");
+					vscode.window.showInformationMessage("No symbol found at cursor position");
 					return;
 				}
 
-				const codeLenses = await getSymbolCodeLens(document, symbol);
-				const metadata = analyzeCodelensForDebugging(codeLenses, symbol, document);
 				const breakpoints = getBreakpoints(symbol, document);
+				const codelenses = await getCodeLens(document);
+				const debugCodeLens = codelenses.find(lens => lens.command?.title === "Debug");
 
 				const info = [
 					`Symbol: ${symbol.name} (${vscode.SymbolKind[symbol.kind]})`,
 					`Breakpoints: ${breakpoints.length}`,
-					`Available codelens: ${codeLenses.length}`,
-					`Selected runner: ${metadata.runner?.command?.title || "None"}`,
-					`Debug mode: ${metadata.hasBreakpoints ? "Yes" : "No"}`,
+					`Debug codelens available: ${debugCodeLens ? "Yes" : "No"}`,
+					`Would use: ${breakpoints.length > 0 && debugCodeLens ? "Debug mode" : "RAZ execution"}`,
 				].join("\n");
 
 				vscode.window.showInformationMessage(info, { modal: true });
 			} catch (error) {
 				vscode.window.showErrorMessage(`Debug info error: ${error}`);
 			}
-		}),
+		})
 	);
 }

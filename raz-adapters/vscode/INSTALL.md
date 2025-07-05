@@ -42,7 +42,7 @@ npm run vscode:prepublish
 vsce package
 ```
 
-This creates a `.vsix` file (e.g., `raz-vscode-0.1.0.vsix`) in the vscode directory.
+This creates a `.vsix` file (e.g., `raz-vscode-0.1.4.vsix`) in the vscode directory.
 
 ## Installing the Extension
 
@@ -51,14 +51,14 @@ This creates a `.vsix` file (e.g., `raz-vscode-0.1.0.vsix`) in the vscode direct
 1. Open VS Code
 2. Press `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows/Linux)
 3. Type: `Extensions: Install from VSIX...`
-4. Navigate to and select: `/path/to/raz/raz-adapters/vscode/raz-vscode-0.1.0.vsix`
+4. Navigate to and select: `/path/to/raz/raz-adapters/vscode/raz-vscode-0.1.4.vsix`
 5. Click "Install"
 6. Reload VS Code when prompted
 
 ### Method 2: Using Command Line
 
 ```bash
-code --install-extension /path/to/raz/raz-adapters/vscode/raz-vscode-0.1.0.vsix
+code --install-extension /path/to/raz/raz-adapters/vscode/raz-vscode-0.1.4.vsix
 ```
 
 ### Method 3: Using Extensions View
@@ -79,6 +79,12 @@ code --install-extension /path/to/raz/raz-adapters/vscode/raz-vscode-0.1.0.vsix
    - Open any `.rs` file
    - Press `Cmd+R` (Mac) or `Ctrl+R` (Windows/Linux)
    - RAZ should analyze the file and run the appropriate command
+   
+3. **Test Debugging Integration**
+   - Open a Rust file with a test function
+   - Set a breakpoint by clicking in the gutter
+   - Press `Cmd+R` - should automatically enter debug mode
+   - Remove breakpoint and press `Cmd+R` - should use fast execution
 
 ## Uninstalling
 
@@ -145,3 +151,7 @@ After installation, configure the extension:
 3. Available settings:
    - `raz.showOutput`: Show output in terminal (default: true)
    - `raz.useTaskRunner`: Use VS Code tasks for better concurrency (default: true)
+   - `raz.enableBreakpointDetection`: Enable automatic debugging when breakpoints are detected (default: true)
+   - `raz.useRustAnalyzerCodeLens`: Use rust-analyzer codelens for debugging (default: true)
+   - `raz.prioritySymbolKinds`: Symbol types to prioritize for debugging context
+   - `raz.logLevel`: Logging level for debugging features

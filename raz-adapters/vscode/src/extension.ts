@@ -141,6 +141,11 @@ class RazBinaryManager {
 						headers: { "User-Agent": "raz-vscode-extension" },
 					},
 					(response) => {
+						if (response.statusCode !== 200) {
+							reject(new Error(`GitHub API returned ${response.statusCode}`));
+							return;
+						}
+						
 						let data = "";
 						response.on("data", (chunk) => {
 							data += chunk;
@@ -148,6 +153,10 @@ class RazBinaryManager {
 						response.on("end", () => {
 							try {
 								const release = JSON.parse(data);
+								if (!release.tag_name) {
+									reject(new Error("No tag_name in release"));
+									return;
+								}
 								resolve(release.tag_name);
 							} catch (err) {
 								reject(err);
@@ -195,7 +204,17 @@ class RazBinaryManager {
 					await this.downloadBinary(latestVersion);
 					return binaryPath;
 				} catch (error) {
-					throw new Error(`Failed to download RAZ binary: ${error}`);
+					this.outputChannel.appendLine(`Failed to get latest version: ${error}`);
+					// Fallback to extension's version using proper VS Code API
+					const extension = vscode.extensions.getExtension('masterustacean.raz-vscode');
+					const fallbackVersion = `v${extension?.packageJSON.version || '0.1.4'}`;
+					this.outputChannel.appendLine(`Using extension version as fallback: ${fallbackVersion}`);
+					try {
+						await this.downloadBinary(fallbackVersion);
+						return binaryPath;
+					} catch (downloadError) {
+						throw new Error(`Failed to download RAZ binary: ${downloadError}`);
+					}
 				}
 			},
 		);
@@ -619,15 +638,24 @@ async function runRazCommand(context: vscode.ExtensionContext): Promise<void> {
 	const filePath = document.uri.fsPath;
 
 	try {
+		ensureOutputChannel().appendLine("🔍 Checking for debugging integration...");
 		// Check for breakpoints and use debugging integration when available
-		await executeWithDebuggingSupport(
-			document, 
-			selection.active,
-			async () => {
-				// Fallback to normal RAZ execution
-				await executeRazCommand(context, filePath, cursorLine, cursorColumn);
-			}
-		);
+		try {
+			await executeWithDebuggingSupport(
+				document, 
+				selection.active,
+				async () => {
+					ensureOutputChannel().appendLine("⚡ Using RAZ execution (no debug mode)");
+					// Fallback to normal RAZ execution
+					await executeRazCommand(context, filePath, cursorLine, cursorColumn);
+				},
+				ensureOutputChannel()
+			);
+		} catch (debugError) {
+			ensureOutputChannel().appendLine(`🚨 DEBUG INTEGRATION ERROR: ${debugError}`);
+			ensureOutputChannel().appendLine("⚡ Falling back to RAZ execution due to debug error");
+			await executeRazCommand(context, filePath, cursorLine, cursorColumn);
+		}
 	} catch (error) {
 		ensureOutputChannel().appendLine(`Error executing command: ${error}`);
 		vscode.window.showErrorMessage(`RAZ: Failed to execute command: ${error}`);

@@ -1,7 +1,7 @@
 {
 	"name": "raz-vscode",
 	"displayName": "RAZ - Rust Action Zapper",
-	"description": "⚡ Run ANY Rust file from ANYWHERE instantly. Smart test detection. Zero config. Just hit Cmd+R and watch it fly 🚀",
+	"description": "⚡ Run ANY Rust file from ANYWHERE instantly. Smart test detection, intelligent debugging with breakpoint detection. Zero config. Just hit Cmd+R and watch it fly 🚀",
 	"author": "Uriah Galang <codeitlikemiley@gmail.com>",
 	"icon": "images/raz-logo.gif",
 	"license": "MIT",
@@ -21,7 +21,11 @@
 		"command",
 		"runner",
 		"test",
-		"cargo"
+		"cargo",
+		"debug",
+		"debugging",
+		"breakpoint",
+		"rust-analyzer"
 	],
 	"engines": {
 		"vscode": "^1.89.0"
@@ -29,6 +33,10 @@
 	"main": "./out/extension",
 	"activationEvents": [
 		"onLanguage:rust"
+	],
+	"extensionDependencies": [
+		"rust-lang.rust-analyzer",
+		"vadimcn.vscode-lldb"
 	],
 	"contributes": {
 		"commands": [
@@ -123,27 +131,7 @@
 				"raz.enableBreakpointDetection": {
 					"type": "boolean",
 					"default": true,
-					"description": "Enable automatic breakpoint detection for debugging integration"
-				},
-				"raz.useRustAnalyzerCodeLens": {
-					"type": "boolean", 
-					"default": true,
-					"description": "Use rust-analyzer codelens for debugging support"
-				},
-				"raz.prioritySymbolKinds": {
-					"type": "array",
-					"default": ["Function", "Enum", "Struct", "Object", "Module"],
-					"description": "Symbol kinds to prioritize for debugging context detection",
-					"items": {
-						"type": "string",
-						"enum": ["Module", "Object", "Struct", "Enum", "Function"]
-					}
-				},
-				"raz.logLevel": {
-					"type": "string",
-					"default": "error",
-					"description": "Set the logging level for RAZ debugging features",
-					"enum": ["debug", "info", "error"]
+					"description": "Enable automatic breakpoint detection for debugging integration with rust-analyzer"
 				}
 			}
 		}

@@ -1,6 +1,6 @@
 [package]
 name = "raz-override"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 authors = ["raz contributors"]
 description = "Override management system for raz with stable key generation"
@@ -8,9 +8,9 @@ repository = "https://github.com/raz-rs/raz"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-raz-common = { path = "../raz-common", version = "0.1.3" }
-raz-config = { path = "../raz-config", version = "0.1.3" }
-raz-validation = { path = "../raz-validation", version = "0.1.3" }
+raz-common = { path = "../raz-common", version = "0.1.4" }
+raz-config = { path = "../raz-config", version = "0.1.4" }
+raz-validation = { path = "../raz-validation", version = "0.1.4" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tree-sitter = { workspace = true }

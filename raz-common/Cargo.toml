@@ -1,6 +1,6 @@
 [package]
 name = "raz-common"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 authors = ["raz contributors"]
 description = "Common utilities and shared types for the raz project"

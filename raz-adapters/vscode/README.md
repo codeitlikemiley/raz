@@ -15,7 +15,7 @@
 - **Framework Aware**: Specialized commands for Leptos, Dioxus, Tauri, Bevy, Yew, and more
 - **Task Runner Support**: Run multiple commands concurrently using VS Code's task system
 - **🔥 Cross-IDE Override Persistence**: Save overrides in VS Code, use them in terminal, Vim, IntelliJ, or anywhere!
-- **🐛 Intelligent Debugging**: Automatic LLDB integration with breakpoint detection and debug mode switching
+- **🐛 Intelligent Debugging**: Automatic rust-analyzer debug integration with breakpoint detection and seamless debug/run mode switching
 - **Zero Configuration**: Works immediately without any setup
 
 ## Usage
@@ -26,18 +26,27 @@
 2. Press **Cmd+R** (Mac) or **Ctrl+R** (Windows/Linux)
 3. RAZ will:
    - Detect the file type and project context
-   - Generate appropriate commands
+   - **Check for breakpoints** in the current symbol's range
    - **Automatically switch to debug mode** if breakpoints are detected
-   - Execute the top priority command automatically
+   - Use rust-analyzer's debug codelens for debugging or fallback to RAZ execution
 
-### Debug Mode (Cmd+Shift+D)
+### Intelligent Debugging (Automatic)
 
-1. Set breakpoints in your Rust code
-2. Press **Cmd+Shift+D** (Mac) or **Ctrl+Shift+D** (Windows/Linux) to force debug mode
-3. RAZ will:
-   - Build your code in debug mode
-   - Launch CodeLLDB debugger
-   - Stop at your breakpoints for inspection
+RAZ v0.1.4 introduces **breakpoint-driven debugging** that seamlessly integrates with rust-analyzer:
+
+1. **Set breakpoints** in your Rust code by clicking in the gutter
+2. **Press Cmd+R** as normal - RAZ automatically detects breakpoints
+3. **Debug mode activates** when breakpoints are found in the current symbol
+4. **Run mode** is used when no breakpoints are present
+
+#### How It Works
+
+- **Symbol Detection**: RAZ finds the symbol at your cursor position
+- **Breakpoint Scanning**: Checks for breakpoints within that symbol's range  
+- **Smart Switching**: 
+  - ✅ **Breakpoints found** → Executes rust-analyzer's "Debug" codelens command
+  - ⚡ **No breakpoints** → Uses fast RAZ execution
+- **Zero Configuration**: Leverages existing rust-analyzer + CodeLLDB setup
 
 ### Override Usage (Cmd+Shift+R)
 
@@ -94,6 +103,8 @@ To see all available commands:
 Additional commands available through the Command Palette:
 - **"RAZ: Open RAZ Settings"**: Open VS Code settings for RAZ
 - **"RAZ: Setup RAZ Binary"**: Guided setup for RAZ binary installation
+- **"RAZ: Toggle Breakpoint Detection"**: Enable/disable automatic breakpoint detection
+- **"RAZ: Show Debug Info"**: Show debugging information for current cursor position
 
 ## Override Persistence with Deferred Save
 
@@ -151,8 +162,8 @@ For CLI-based management, see the [Override Management Guide](https://github.com
   // Use VS Code tasks for better concurrency (default: true)
   "raz.useTaskRunner": true,
   
-  // Automatically start debugging when breakpoints are detected (default: true)
-  "raz.autoDebugOnBreakpoints": true,
+  // Enable automatic breakpoint detection for debugging (default: true)
+  "raz.enableBreakpointDetection": true,
   
   // Custom path to RAZ binary (optional)
   // If not set, the extension will automatically download and manage the binary
@@ -169,14 +180,15 @@ RAZ automatically downloads and manages the binary for your platform:
 - **Custom Path**: Set `raz.path` to use your own RAZ installation
 - **Lightweight Extension**: No bundled binaries - smaller download size
 
-### Debugging Requirements
+### Debugging Integration
 
-For debugging support, RAZ integrates with CodeLLDB:
+RAZ v0.1.4 seamlessly integrates with rust-analyzer and CodeLLDB for debugging:
 
-- **CodeLLDB Extension**: Automatically installs `vadimcn.vscode-lldb` as a dependency
-- **Debug Configuration**: RAZ automatically creates debug configurations for your Rust binaries
-- **Breakpoint Detection**: Automatically switches to debug mode when breakpoints are present
-- **Test Debugging**: Supports debugging individual tests, benchmarks, and examples
+- **Direct Codelens Execution**: Simply executes rust-analyzer's "Debug" codelens command when breakpoints are found
+- **Automatic Detection**: Detects breakpoints within symbol ranges automatically  
+- **Zero Configuration**: Leverages your existing rust-analyzer + CodeLLDB setup
+- **Fallback Support**: Falls back to fast RAZ execution when no breakpoints are detected
+- **Extension Dependencies**: Automatically installs rust-analyzer and CodeLLDB extensions
 
 ## Common Overrides
 
@@ -206,10 +218,11 @@ For debugging support, RAZ integrates with CodeLLDB:
 Place your cursor on a test function and press Cmd+R:
 ```rust
 #[test]
-fn test_auth() { // <- Cursor here + Cmd+R
-    assert!(true);
+fn test_auth() { // <- Cursor here + Cmd+R + Breakpoint = Debug mode!
+    assert!(true);  // <- Set breakpoint here for automatic debugging
 }
-// Executes: cargo test -- tests::test_auth --exact
+// Without breakpoints: cargo test -- tests::test_auth --exact
+// With breakpoints: rust-analyzer debug mode with full debugging support
 ```
 
 ### Running Binaries
@@ -282,7 +295,7 @@ See [INSTALL.md](INSTALL.md) for detailed installation instructions.
    ```
 4. Install the extension:
    ```bash
-   code --install-extension raz-vscode-0.1.3.vsix
+   code --install-extension raz-vscode-0.1.4.vsix
    ```
 
 ### For Development/Contributing

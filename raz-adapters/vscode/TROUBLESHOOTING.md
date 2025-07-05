@@ -10,7 +10,7 @@ If you're seeing errors like `command 'raz.runCommand' not found` or `command 'r
 code --list-extensions | grep raz
 
 # If not found, reinstall
-code --install-extension raz-vscode-0.1.2.vsix --force
+code --install-extension raz-vscode-0.1.4.vsix --force
 ```
 
 ### 2. Verify Extension Activation
@@ -116,7 +116,7 @@ rm -rf ~/.config/Code/User/workspaceStorage/*/masterustacean.raz-vscode
 # Delete %APPDATA%\Code\User\workspaceStorage\*\masterustacean.raz-vscode
 
 # Reinstall
-code --install-extension raz-vscode-0.1.2.vsix
+code --install-extension raz-vscode-0.1.4.vsix
 ```
 
 ### 10. Report Issues
@@ -137,6 +137,104 @@ If none of these steps work:
 3. **Report the issue** at: https://github.com/codeitlikemiley/raz/issues
 
 Include all the debug info and reproduction steps in your report.
+
+---
+
+## Debugging Integration Issues (v0.1.4+)
+
+### Debugging Integration Issues
+
+If RAZ's debugging integration isn't working properly:
+
+#### How RAZ Debugging Works
+RAZ v0.1.4 uses rust-analyzer's existing codelens commands for debugging. When breakpoints are detected, RAZ simply executes the "Debug" codelens command that rust-analyzer provides. This means:
+
+1. **No binary management**: RAZ doesn't manage debug binaries - rust-analyzer handles everything
+2. **Direct command execution**: RAZ just calls `vscode.commands.executeCommand` with the codelens command
+3. **Zero configuration**: If rust-analyzer's Debug codelens works, RAZ's debugging works
+
+#### Common Issues
+
+**1. Debug Codelens Not Available**
+If rust-analyzer isn't showing Debug codelens:
+- Ensure rust-analyzer extension is installed and enabled
+- Check that your code compiles (`cargo check`)
+- Verify you're in a Rust function/test that can be debugged
+
+**2. Check rust-analyzer Settings**
+Ensure rust-analyzer is properly configured:
+1. Open VS Code settings (`Cmd+,`)
+2. Search for "rust-analyzer"
+3. Verify these settings:
+   - `rust-analyzer.cargo.buildScripts.enable`: true
+   - `rust-analyzer.check.command`: "check" or "clippy"
+
+**3. Test rust-analyzer Debug Codelens Directly**
+Before troubleshooting RAZ, verify rust-analyzer's Debug codelens works:
+1. Open a Rust file with a test function
+2. Look for "Debug" codelens above the function
+3. Click it directly - if this fails, the issue is with rust-analyzer, not RAZ
+
+**4. Disable Breakpoint Detection Temporarily**
+If debugging integration causes issues, you can disable it:
+```json
+{
+  "raz.enableBreakpointDetection": false
+}
+```
+This will make RAZ always use fast execution instead of debugging.
+
+**5. Use RAZ's Debug Info Command**
+To understand what RAZ is detecting:
+1. Set a breakpoint in your code
+2. Place cursor on the function
+3. Command Palette → "RAZ: Show Debug Info"
+4. This shows what symbol and breakpoints RAZ found
+
+**6. Force RAZ Execution**
+You can bypass debugging integration:
+1. Remove all breakpoints temporarily
+2. Press `Cmd+R` - RAZ will use fast execution
+3. Add breakpoints back when debugging is needed
+
+### Debugging Integration Not Working
+
+**Check rust-analyzer Extension**
+The debugging integration requires rust-analyzer to be installed and working:
+```bash
+# Verify rust-analyzer is installed
+code --list-extensions | grep rust-analyzer
+```
+
+**Check Symbol Detection**
+1. Use "RAZ: Show Debug Info" command
+2. Verify it finds the correct symbol at your cursor
+3. Check if symbol types match your configuration in `raz.prioritySymbolKinds`
+
+**Check Breakpoint Detection**
+1. Set a breakpoint in VS Code
+2. The breakpoint should appear as a red dot in the gutter
+3. Use "RAZ: Show Debug Info" to verify RAZ detects it
+
+### Configuration for Debugging
+
+**Recommended Settings**:
+```json
+{
+  "raz.enableBreakpointDetection": true,
+  "raz.useRustAnalyzerCodeLens": true,
+  "raz.prioritySymbolKinds": ["Function", "Enum", "Struct", "Object", "Module"],
+  "raz.logLevel": "debug"  // For troubleshooting only
+}
+```
+
+**If You Don't Want Debugging Integration**:
+```json
+{
+  "raz.enableBreakpointDetection": false
+}
+```
+This makes RAZ always use fast execution.
 
 ---
 
