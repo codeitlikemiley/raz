@@ -87,7 +87,6 @@ RAZ works across multiple environments:
 
 ## Documentation
 
-- **[Release Scripts](scripts/README.md)** - Automated release process and scripts
 - **[Contributing Guide](CONTRIBUTING.md)** - Development setup and guidelines
 
 ## Contributing
