@@ -5,6 +5,12 @@ All notable changes to the RAZ VS Code extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2025-07-05
+
+### Fixed
+- Properly quote RAZ binary path when it contains spaces (e.g., "Application Support" on macOS)
+- Task execution now works correctly with paths containing spaces
+
 ## [0.1.6] - 2025-07-05
 
 ### Added
