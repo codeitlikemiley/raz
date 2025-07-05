@@ -214,9 +214,10 @@ jobs:
         run: npm install -g vsce
 
       - name: Publish to marketplace
-        if: ${{ secrets.VSCE_TOKEN != '' }}
-        run: vsce publish --packagePath *.vsix --pat ${{ secrets.VSCE_TOKEN }}
-        
-      - name: Skip marketplace publish
-        if: ${{ secrets.VSCE_TOKEN == '' }}
-        run: echo "⚠️ VSCE_TOKEN not set, skipping marketplace publish. Extension is available in GitHub release."
+        run: |
+          if [ -n "${{ secrets.VSCE_TOKEN }}" ]; then
+            echo "Publishing to VSCode marketplace..."
+            vsce publish --packagePath *.vsix --pat ${{ secrets.VSCE_TOKEN }}
+          else
+            echo "⚠️ VSCE_TOKEN not set, skipping marketplace publish. Extension is available in GitHub release."
+          fi
