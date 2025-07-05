@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as https from "node:https";
 import * as zlib from "node:zlib";
 import * as tar from "tar";
+import { exec } from "node:child_process";
 import { registerTaskProvider, executeRazAsTask } from "./taskProvider";
 import { executeWithDebuggingSupport, registerDebugCommands } from "./debugger";
 
@@ -112,8 +113,7 @@ class RazBinaryManager {
 		}
 
 		return new Promise((resolve) => {
-			const { exec } = require('child_process');
-			exec(`"${binaryPath}" --version`, (error: any, stdout: string, stderr: string) => {
+			exec(`"${binaryPath}" --version`, (error: Error | null, stdout: string, _stderr: string) => {
 				if (error) {
 					this.outputChannel.appendLine(`Failed to get binary version: ${error}`);
 					resolve(null);
@@ -420,8 +420,7 @@ async function checkForUpdates(context: vscode.ExtensionContext): Promise<void> 
 /// Get RAZ version from system PATH
 async function getRazVersion(): Promise<string | null> {
 	return new Promise((resolve) => {
-		const { exec } = require('child_process');
-		exec('raz --version', (error: any, stdout: string) => {
+		exec('raz --version', (error: Error | null, stdout: string) => {
 			if (error) {
 				resolve(null);
 				return;
@@ -622,7 +621,7 @@ export async function activate(
 						const binaryManager = new RazBinaryManager(context, outputChannel);
 						const latestVersion = await binaryManager.getLatestVersion();
 						vscode.env.openExternal(vscode.Uri.parse(`https://github.com/codeitlikemiley/raz/releases/tag/${latestVersion}`));
-					} catch (error) {
+					} catch {
 						vscode.env.openExternal(vscode.Uri.parse("https://github.com/codeitlikemiley/raz/releases/latest"));
 					}
 				}
@@ -652,10 +651,10 @@ export async function activate(
 					// Note: cleanupOldBinaries method may not exist in newer versions
 					try {
 						const binaryManager = new RazBinaryManager(context, outputChannel);
-						if (typeof (binaryManager as any).cleanupOldBinaries === 'function') {
-							await (binaryManager as any).cleanupOldBinaries();
+						if (typeof (binaryManager as unknown as {cleanupOldBinaries?: () => Promise<void>}).cleanupOldBinaries === 'function') {
+							await (binaryManager as unknown as {cleanupOldBinaries: () => Promise<void>}).cleanupOldBinaries();
 						}
-					} catch (e) {
+					} catch {
 						// Ignore if method doesn't exist
 					}
 					
