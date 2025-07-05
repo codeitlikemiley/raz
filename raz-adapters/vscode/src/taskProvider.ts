@@ -28,8 +28,9 @@ export class RazTaskProvider implements vscode.TaskProvider {
 	}
 
 	public createTask(definition: RazTaskDefinition): vscode.Task {
-		// Build the complete command
-		const fullCommand = [definition.command, ...definition.args].join(" ");
+		// Build the complete command - properly quote the command path if it contains spaces
+		const quotedCommand = definition.command.includes(' ') ? `"${definition.command}"` : definition.command;
+		const fullCommand = [quotedCommand, ...definition.args].join(" ");
 		const taskName = definition.label || `RAZ: ${definition.args[0] || "command"}`;
 
 		// Create shell execution options
