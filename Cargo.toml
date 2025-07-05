@@ -36,7 +36,7 @@ chrono = { version = "0.4", features = ["serde"] }
 fuzzy-matcher = "0.3"
 
 # Validation system dependencies
-raz-validation = { path = "raz-validation", version = "0.2.1" }
+raz-validation = { path = "raz-validation", version = "0.2.2" }
 
 [profile.release]
 opt-level = 3

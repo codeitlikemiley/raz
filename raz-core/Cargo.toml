@@ -1,6 +1,6 @@
 [package]
 name = "raz-core"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Universal command generator for Rust projects - Core library with stateless file analysis and cursor-aware execution"
 license = "MIT"
@@ -14,9 +14,9 @@ categories = ["command-line-utilities", "development-tools", "development-tools:
 exclude = ["tests/fixtures/", "benches/"]
 
 [dependencies]
-raz-common = { path = "../raz-common", version = "0.2.1" }
-raz-config = { path = "../raz-config", version = "0.2.1" }
-raz-override = { path = "../raz-override", version = "0.2.1" }
+raz-common = { path = "../raz-common", version = "0.2.2" }
+raz-config = { path = "../raz-config", version = "0.2.2" }
+raz-override = { path = "../raz-override", version = "0.2.2" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
