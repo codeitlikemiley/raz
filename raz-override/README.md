@@ -46,19 +46,28 @@ The override system implements a deferred save pattern - overrides are only pers
 ```rust
 use raz_override::{SmartOverrideParser, OverrideSystem};
 use raz_config::CommandOverride;
+use std::path::Path;
 
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 // Parse runtime overrides
 let parser = SmartOverrideParser::new("test");
 let overrides = parser.parse("RUST_BACKTRACE=full --release -- --exact");
 
 // Create override system for workspace
+let workspace_path = Path::new(".");
 let mut override_system = OverrideSystem::new(&workspace_path)?;
 
 // Get function context and save override (deferred save pattern)
+let file_path = Path::new("src/lib.rs");
 let function_context = override_system.get_function_context(file_path, 24, Some(0))?;
 let override_key = override_system.generate_key(&function_context)?;
 
+// Create a command override
+let mut command_override = CommandOverride::new("cargo".to_string());
+command_override.cargo_options.push("--release".to_string());
+
 // Only save after successful execution
+let command_succeeded = true; // Set based on actual command execution
 if command_succeeded {
     override_system.save_override_with_validation(
         override_key,
@@ -67,6 +76,8 @@ if command_succeeded {
         "test"
     )?;
 }
+# Ok(())
+# }
 ```
 
 ## Library API
