@@ -60,6 +60,7 @@ enum Commands {
         cmd: OverrideCommands,
     },
     /// Update RAZ to the latest version
+    #[command(name = "self-update")]
     SelfUpdate {
         /// Force update even if already on latest version
         #[arg(long)]
@@ -919,7 +920,8 @@ async fn handle_self_update(force: bool) -> anyhow::Result<()> {
 
 /// Get latest version from GitHub releases
 async fn get_latest_version() -> anyhow::Result<String> {
-    let url = "https://api.github.com/repos/codeitlikemiley/raz/releases/latest";
+    // Get all releases, not just the "latest" (which might be wrong)
+    let url = "https://api.github.com/repos/codeitlikemiley/raz/releases?per_page=20";
     
     // Use a simple HTTPS request
     let output = process::Command::new("curl")
@@ -927,19 +929,70 @@ async fn get_latest_version() -> anyhow::Result<String> {
         .output()?;
     
     if !output.status.success() {
-        anyhow::bail!("Failed to fetch latest version from GitHub");
+        anyhow::bail!("Failed to fetch versions from GitHub");
     }
     
     let response = String::from_utf8(output.stdout)?;
     
-    // Parse JSON to get tag_name
-    let json: serde_json::Value = serde_json::from_str(&response)?;
+    // Parse JSON to get all releases
+    let releases: Vec<serde_json::Value> = serde_json::from_str(&response)?;
     
-    let tag_name = json["tag_name"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Failed to parse version from GitHub response"))?;
+    if releases.is_empty() {
+        anyhow::bail!("No releases found");
+    }
     
-    Ok(tag_name.to_string())
+    // Find the highest version that looks like a CLI release (not vscode-specific)
+    let mut highest_version = String::new();
+    let mut highest_semver = (0, 0, 0);
+    
+    for release in releases {
+        if let Some(tag_name) = release["tag_name"].as_str() {
+            // Skip pre-releases unless there are no stable releases
+            if release["prerelease"].as_bool().unwrap_or(false) {
+                continue;
+            }
+            
+            // Skip VS Code specific releases
+            if tag_name.contains("vscode") {
+                continue;
+            }
+            
+            // Parse semantic version (handle v prefix)
+            let version_str = tag_name.trim_start_matches('v');
+            if let Some((major, minor, patch)) = parse_semver(version_str) {
+                if (major, minor, patch) > highest_semver {
+                    highest_semver = (major, minor, patch);
+                    highest_version = tag_name.to_string();
+                }
+            }
+        }
+    }
+    
+    if highest_version.is_empty() {
+        anyhow::bail!("No valid CLI releases found");
+    }
+    
+    Ok(highest_version)
+}
+
+/// Parse semantic version string into (major, minor, patch)
+fn parse_semver(version: &str) -> Option<(u32, u32, u32)> {
+    let parts: Vec<&str> = version.split('.').collect();
+    if parts.len() >= 3 {
+        let major = parts[0].parse().ok()?;
+        let minor = parts[1].parse().ok()?;
+        // Handle patch versions that might have extra info (e.g., "0-alpha")
+        let patch_str = parts[2].split('-').next()?;
+        let patch = patch_str.parse().ok()?;
+        Some((major, minor, patch))
+    } else if parts.len() == 2 {
+        // Handle versions like "0.1" as "0.1.0"
+        let major = parts[0].parse().ok()?;
+        let minor = parts[1].parse().ok()?;
+        Some((major, minor, 0))
+    } else {
+        None
+    }
 }
 
 /// Initialize configuration for the current project
