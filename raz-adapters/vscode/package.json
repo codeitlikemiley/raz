@@ -99,6 +99,11 @@
 				"command": "raz.showDebugInfo",
 				"title": "Show Debug Info",
 				"category": "RAZ"
+			},
+			{
+				"command": "raz.resetBinary",
+				"title": "Reset RAZ Binary (Clean Install)",
+				"category": "RAZ"
 			}
 		],
 		"keybindings": [

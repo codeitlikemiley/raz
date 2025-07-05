@@ -822,27 +822,29 @@ fn detect_subcommand(file_path: &Path, cursor: Option<Position>) -> String {
 /// Handle self-update command
 async fn handle_self_update(force: bool) -> anyhow::Result<()> {
     use std::process::Stdio;
-    
+
     println!("{} Checking for updates...", OutputFormatter::info("RAZ"));
-    
+
     // Get current version
     let current_version = env!("CARGO_PKG_VERSION");
-    println!("{} Current version: v{}", OutputFormatter::label("Info"), current_version);
-    
+    println!(
+        "{} Current version: v{}",
+        OutputFormatter::label("Info"),
+        current_version
+    );
+
     // Check if running from cargo install or system PATH
     let current_exe = env::current_exe()?;
     let exe_dir = current_exe.parent().unwrap();
-    
+
     // Check if we're in a cargo bin directory
-    let is_cargo_installed = exe_dir.to_string_lossy().contains(".cargo/bin") || 
-                            exe_dir.to_string_lossy().contains(".cargo\\bin");
-    
+    let is_cargo_installed = exe_dir.to_string_lossy().contains(".cargo/bin")
+        || exe_dir.to_string_lossy().contains(".cargo\\bin");
+
     if !is_cargo_installed {
         // Check if it's in system PATH but not cargo
-        let which_result = process::Command::new("which")
-            .arg("raz")
-            .output();
-            
+        let which_result = process::Command::new("which").arg("raz").output();
+
         if let Ok(output) = which_result {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() && !path.contains(".cargo") {
@@ -850,18 +852,20 @@ async fn handle_self_update(force: bool) -> anyhow::Result<()> {
                     "\n{} RAZ appears to be installed via a package manager or custom installation.",
                     OutputFormatter::warning("Note")
                 );
-                println!(
-                    "Please update using the same method you used to install RAZ."
-                );
+                println!("Please update using the same method you used to install RAZ.");
                 return Ok(());
             }
         }
     }
-    
+
     // Get latest version from GitHub API
     let latest_version = get_latest_version().await?;
-    println!("{} Latest version: {}", OutputFormatter::label("Info"), latest_version);
-    
+    println!(
+        "{} Latest version: {}",
+        OutputFormatter::label("Info"),
+        latest_version
+    );
+
     // Compare versions
     if !force && current_version == latest_version.trim_start_matches('v') {
         println!(
@@ -870,36 +874,39 @@ async fn handle_self_update(force: bool) -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    
+
     // Prompt for confirmation
     if !force {
-        print!("\nUpdate RAZ from v{} to {}? [Y/n] ", current_version, latest_version);
+        print!("\nUpdate RAZ from v{current_version} to {latest_version}? [Y/n] ");
         use std::io::{self, Write};
         io::stdout().flush()?;
-        
+
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         let choice = input.trim().to_lowercase();
-        
-        if choice != "y" && choice != "" {
+
+        if choice != "y" && !choice.is_empty() {
             println!("Update cancelled.");
             return Ok(());
         }
     }
-    
+
     // Perform update using cargo install
     println!("\n{} Updating RAZ...", OutputFormatter::info("Installing"));
-    println!("{} This may take a few minutes...", OutputFormatter::dim("Note"));
-    
+    println!(
+        "{} This may take a few minutes...",
+        OutputFormatter::dim("Note")
+    );
+
     let mut cmd = process::Command::new("cargo");
     cmd.arg("install")
-       .arg("raz-cli")
-       .arg("--force")
-       .stdout(Stdio::inherit())
-       .stderr(Stdio::inherit());
-    
+        .arg("raz-cli")
+        .arg("--force")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
     let status = cmd.status()?;
-    
+
     if status.success() {
         println!(
             "\n{} RAZ has been successfully updated to {}!",
@@ -914,7 +921,7 @@ async fn handle_self_update(force: bool) -> anyhow::Result<()> {
     } else {
         anyhow::bail!("Failed to update RAZ. Please try again or install manually.");
     }
-    
+
     Ok(())
 }
 
@@ -922,41 +929,41 @@ async fn handle_self_update(force: bool) -> anyhow::Result<()> {
 async fn get_latest_version() -> anyhow::Result<String> {
     // Get all releases, not just the "latest" (which might be wrong)
     let url = "https://api.github.com/repos/codeitlikemiley/raz/releases?per_page=20";
-    
+
     // Use a simple HTTPS request
     let output = process::Command::new("curl")
-        .args(&["-s", "-H", "Accept: application/vnd.github.v3+json", url])
+        .args(["-s", "-H", "Accept: application/vnd.github.v3+json", url])
         .output()?;
-    
+
     if !output.status.success() {
         anyhow::bail!("Failed to fetch versions from GitHub");
     }
-    
+
     let response = String::from_utf8(output.stdout)?;
-    
+
     // Parse JSON to get all releases
     let releases: Vec<serde_json::Value> = serde_json::from_str(&response)?;
-    
+
     if releases.is_empty() {
         anyhow::bail!("No releases found");
     }
-    
+
     // Find the highest version that looks like a CLI release (not vscode-specific)
     let mut highest_version = String::new();
     let mut highest_semver = (0, 0, 0);
-    
+
     for release in releases {
         if let Some(tag_name) = release["tag_name"].as_str() {
             // Skip pre-releases unless there are no stable releases
             if release["prerelease"].as_bool().unwrap_or(false) {
                 continue;
             }
-            
+
             // Skip VS Code specific releases
             if tag_name.contains("vscode") {
                 continue;
             }
-            
+
             // Parse semantic version (handle v prefix)
             let version_str = tag_name.trim_start_matches('v');
             if let Some((major, minor, patch)) = parse_semver(version_str) {
@@ -967,11 +974,11 @@ async fn get_latest_version() -> anyhow::Result<String> {
             }
         }
     }
-    
+
     if highest_version.is_empty() {
         anyhow::bail!("No valid CLI releases found");
     }
-    
+
     Ok(highest_version)
 }
 

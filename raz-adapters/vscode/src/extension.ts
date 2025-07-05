@@ -281,7 +281,6 @@ class RazBinaryManager {
 /// Handle migration from old binary management
 async function handleBinaryMigration(context: vscode.ExtensionContext): Promise<void> {
 	const outputChannel = ensureOutputChannel();
-	const binaryManager = new RazBinaryManager(context, outputChannel);
 	
 	// Check if we need to migrate from old version
 	const migrationKey = 'raz.migrated.v0.2.1';
@@ -372,14 +371,13 @@ async function checkForUpdates(context: vscode.ExtensionContext): Promise<void> 
 					choice = await vscode.window.showInformationMessage(
 						`RAZ update available: v${currentVersion} → ${latestVersion}`,
 						"Update with CLI",
-						"Download Binary",
+						"Manual Update",
 						"Later"
 					);
 				} else {
 					// Older version without self-update command
 					choice = await vscode.window.showInformationMessage(
 						`RAZ update available: v${currentVersion} → ${latestVersion}\n(Your version doesn't support self-update)`,
-						"Download Binary",
 						"Manual Update",
 						"Later"
 					);
@@ -390,9 +388,6 @@ async function checkForUpdates(context: vscode.ExtensionContext): Promise<void> 
 					const terminal = vscode.window.createTerminal("RAZ Update");
 					terminal.show();
 					terminal.sendText("raz self-update");
-				} else if (choice === "Download Binary") {
-					// Use VSCode to download and replace the binary
-					await downloadAndReplaceSystemBinary(context, latestVersion);
 				} else if (choice === "Manual Update") {
 					// Show manual update instructions
 					const updateChoice = await vscode.window.showInformationMessage(
@@ -451,108 +446,13 @@ function isVersionAtLeast(current: string, required: string): boolean {
 		const currentPart = currentParts[i] || 0;
 		const requiredPart = requiredParts[i] || 0;
 		
-		if (currentPart > requiredPart) return true;
-		if (currentPart < requiredPart) return false;
+		if (currentPart > requiredPart) {return true;}
+		if (currentPart < requiredPart) {return false;}
 	}
 	
 	return true; // Equal versions
 }
 
-/// Download and replace system RAZ binary
-async function downloadAndReplaceSystemBinary(context: vscode.ExtensionContext, version: string): Promise<void> {
-	const outputChannel = ensureOutputChannel();
-	
-	try {
-		// First, try to find where the current raz binary is located
-		const razPath = await findRazBinaryPath();
-		if (!razPath) {
-			throw new Error("Could not locate RAZ binary");
-		}
-		
-		outputChannel.appendLine(`Found RAZ binary at: ${razPath}`);
-		
-		// Download the new binary to a temporary location
-		const binaryManager = new RazBinaryManager(context, outputChannel);
-		const tempBinaryPath = await binaryManager.ensureBinary(); // Downloads latest
-		
-		// Show progress
-		await vscode.window.withProgress(
-			{
-				location: vscode.ProgressLocation.Notification,
-				title: "Updating RAZ",
-				cancellable: false,
-			},
-			async (progress) => {
-				progress.report({ message: "Replacing binary..." });
-				
-				// Copy the new binary over the old one
-				const fs = require('fs');
-				
-				// Make backup of original
-				const backupPath = `${razPath}.backup`;
-				if (fs.existsSync(razPath)) {
-					fs.copyFileSync(razPath, backupPath);
-					outputChannel.appendLine(`Created backup: ${backupPath}`);
-				}
-				
-				try {
-					// Replace the binary
-					fs.copyFileSync(tempBinaryPath, razPath);
-					// Make it executable on Unix systems
-					if (process.platform !== 'win32') {
-						fs.chmodSync(razPath, 0o755);
-					}
-					
-					outputChannel.appendLine(`Successfully updated RAZ binary to ${version}`);
-					vscode.window.showInformationMessage(`RAZ updated to ${version}! Run 'raz --version' to verify.`);
-					
-					// Clean up backup if successful
-					if (fs.existsSync(backupPath)) {
-						fs.unlinkSync(backupPath);
-					}
-				} catch (replaceError) {
-					// Restore backup if replacement failed
-					if (fs.existsSync(backupPath)) {
-						fs.copyFileSync(backupPath, razPath);
-						fs.unlinkSync(backupPath);
-						outputChannel.appendLine("Restored backup after failed update");
-					}
-					throw replaceError;
-				}
-			},
-		);
-	} catch (error) {
-		outputChannel.appendLine(`Binary update failed: ${error}`);
-		vscode.window.showErrorMessage(`Failed to update RAZ binary: ${error}`);
-	}
-}
-
-/// Find the path to the RAZ binary in system PATH
-async function findRazBinaryPath(): Promise<string | null> {
-	return new Promise((resolve) => {
-		const { exec } = require('child_process');
-		const command = process.platform === 'win32' ? 'where raz' : 'which raz';
-		
-		exec(command, (error: any, stdout: string) => {
-			if (error) {
-				resolve(null);
-				return;
-			}
-			
-			const paths = stdout.trim().split('\n');
-			// Return the first valid path
-			for (const path of paths) {
-				const trimmedPath = path.trim();
-				if (trimmedPath && require('fs').existsSync(trimmedPath)) {
-					resolve(trimmedPath);
-					return;
-				}
-			}
-			
-			resolve(null);
-		});
-	});
-}
 
 export async function activate(
 	context: vscode.ExtensionContext,
@@ -685,33 +585,25 @@ export async function activate(
 			if (supportseSelfUpdate) {
 				choice = await vscode.window.showQuickPick([
 					{ label: "Update with CLI", description: "Use 'raz self-update' command" },
-					{ label: "Download Binary", description: "VSCode downloads and replaces binary" }
+					{ label: "Manual Update", description: "Show manual update instructions" }
 				], {
 					placeHolder: "Choose update method"
 				});
 			} else {
 				choice = await vscode.window.showQuickPick([
-					{ label: "Download Binary", description: "VSCode downloads and replaces binary" },
+					{ label: "Manual Update", description: "Show manual update instructions" },
 					{ label: "Manual Update", description: "Show manual update instructions" }
 				], {
 					placeHolder: "Your version doesn't support self-update"
 				});
 			}
 			
-			if (!choice) return;
+			if (!choice) {return;}
 			
 			if (choice.label === "Update with CLI") {
 				const terminal = vscode.window.createTerminal("RAZ Update");
 				terminal.show();
 				terminal.sendText("raz self-update");
-			} else if (choice.label === "Download Binary") {
-				try {
-					const binaryManager = new RazBinaryManager(context, outputChannel);
-					const latestVersion = await binaryManager.getLatestVersion();
-					await downloadAndReplaceSystemBinary(context, latestVersion);
-				} catch (error) {
-					vscode.window.showErrorMessage(`Update failed: ${error}`);
-				}
 			} else if (choice.label === "Manual Update") {
 				const updateChoice = await vscode.window.showInformationMessage(
 					"How would you like to update RAZ?",
@@ -733,6 +625,50 @@ export async function activate(
 					} catch (error) {
 						vscode.env.openExternal(vscode.Uri.parse("https://github.com/codeitlikemiley/raz/releases/latest"));
 					}
+				}
+			}
+		}),
+	);
+
+	// Register reset binary command
+	context.subscriptions.push(
+		vscode.commands.registerCommand("raz.resetBinary", async () => {
+			outputChannel.appendLine("📝 raz.resetBinary executed");
+			
+			const result = await vscode.window.showWarningMessage(
+				"This will remove any old RAZ binaries and reset the extension. Continue?",
+				{ modal: true, detail: "This is useful if you're having issues with old binary management." },
+				"Reset",
+				"Cancel"
+			);
+			
+			if (result === "Reset") {
+				try {
+					// Clear any old binary paths
+					const config = vscode.workspace.getConfiguration("raz");
+					await config.update("path", "", vscode.ConfigurationTarget.Global);
+					
+					// Clear old binary manager storage
+					const binaryManager = new RazBinaryManager(context, outputChannel);
+					await binaryManager.cleanupOldBinaries();
+					
+					// Clear migration flags to force re-check
+					await context.globalState.update('raz.migrated.v0.2.1', undefined);
+					await context.globalState.update('raz.lastUpdateNotification', undefined);
+					
+					// Show instructions for clean install
+					const terminal = vscode.window.createTerminal("RAZ Reset");
+					terminal.show();
+					terminal.sendText("# RAZ has been reset. Installing fresh version...");
+					terminal.sendText("cargo install raz-cli --force");
+					
+					vscode.window.showInformationMessage(
+						"RAZ reset complete! Installing fresh version via cargo...",
+						"OK"
+					);
+				} catch (error) {
+					vscode.window.showErrorMessage(`Failed to reset RAZ: ${error}`);
+					outputChannel.appendLine(`Reset error: ${error}`);
 				}
 			}
 		}),
