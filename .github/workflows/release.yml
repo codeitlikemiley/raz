@@ -213,11 +213,21 @@ jobs:
       - name: Install vsce
         run: npm install -g vsce
 
-      - name: Publish to marketplace
+      - name: Publish to VS Code marketplace
         run: |
           if [ -n "${{ secrets.VSCE_TOKEN }}" ]; then
-            echo "Publishing to VSCode marketplace..."
+            echo "Publishing to VS Code marketplace..."
             vsce publish --packagePath *.vsix --pat ${{ secrets.VSCE_TOKEN }}
           else
-            echo "⚠️ VSCE_TOKEN not set, skipping marketplace publish. Extension is available in GitHub release."
+            echo "⚠️ VSCE_TOKEN not set, skipping VS Code marketplace publish."
+          fi
+          
+      - name: Publish to Open VSX Registry
+        run: |
+          if [ -n "${{ secrets.OVSX_TOKEN }}" ]; then
+            echo "Publishing to Open VSX Registry..."
+            npm install -g ovsx
+            ovsx publish *.vsix -p ${{ secrets.OVSX_TOKEN }}
+          else
+            echo "⚠️ OVSX_TOKEN not set, skipping Open VSX publish."
           fi
