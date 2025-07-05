@@ -5,7 +5,6 @@
 ![RAZ Cover](raz-github-cover.svg)
 
 [![CI](https://github.com/codeitlikemiley/raz/actions/workflows/ci.yml/badge.svg)](https://github.com/codeitlikemiley/raz/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/codeitlikemiley/raz/branch/main/graph/badge.svg)](https://codecov.io/gh/codeitlikemiley/raz)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.88.0-orange.svg)](rust-toolchain.toml)
 
