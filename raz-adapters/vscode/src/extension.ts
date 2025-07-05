@@ -364,10 +364,10 @@ async function checkForUpdates(context: vscode.ExtensionContext): Promise<void> 
 			
 			if (daysSince >= 7) { // Show update notification once per week
 				// Check if the current version supports self-update (>=0.2.1)
-				const supportseSelfUpdate = isVersionAtLeast(currentVersion, '0.2.1');
+				const supportsSelfUpdate = isVersionAtLeast(currentVersion, '0.2.1');
 				
 				let choice;
-				if (supportseSelfUpdate) {
+				if (supportsSelfUpdate) {
 					choice = await vscode.window.showInformationMessage(
 						`RAZ update available: v${currentVersion} → ${latestVersion}`,
 						"Update with CLI",
@@ -579,10 +579,10 @@ export async function activate(
 			}
 			
 			const currentVersion = razVersion.replace('v', '');
-			const supportseSelfUpdate = isVersionAtLeast(currentVersion, '0.2.1');
+			const supportsSelfUpdate = isVersionAtLeast(currentVersion, '0.2.1');
 			
 			let choice;
-			if (supportseSelfUpdate) {
+			if (supportsSelfUpdate) {
 				choice = await vscode.window.showQuickPick([
 					{ label: "Update with CLI", description: "Use 'raz self-update' command" },
 					{ label: "Manual Update", description: "Show manual update instructions" }
@@ -648,9 +648,16 @@ export async function activate(
 					const config = vscode.workspace.getConfiguration("raz");
 					await config.update("path", "", vscode.ConfigurationTarget.Global);
 					
-					// Clear old binary manager storage
-					const binaryManager = new RazBinaryManager(context, outputChannel);
-					await binaryManager.cleanupOldBinaries();
+					// Clear old binary manager storage if it exists
+					// Note: cleanupOldBinaries method may not exist in newer versions
+					try {
+						const binaryManager = new RazBinaryManager(context, outputChannel);
+						if (typeof (binaryManager as any).cleanupOldBinaries === 'function') {
+							await (binaryManager as any).cleanupOldBinaries();
+						}
+					} catch (e) {
+						// Ignore if method doesn't exist
+					}
 					
 					// Clear migration flags to force re-check
 					await context.globalState.update('raz.migrated.v0.2.1', undefined);
