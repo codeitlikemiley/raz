@@ -843,7 +843,8 @@ async fn handle_self_update(force: bool) -> anyhow::Result<()> {
 
     if !is_cargo_installed {
         // Check if it's in system PATH but not cargo
-        let which_result = process::Command::new("which").arg("raz").output();
+        let which_cmd = if cfg!(windows) { "where" } else { "which" };
+        let which_result = process::Command::new(which_cmd).arg("raz").output();
 
         if let Ok(output) = which_result {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -930,10 +931,29 @@ async fn get_latest_version() -> anyhow::Result<String> {
     // Get all releases, not just the "latest" (which might be wrong)
     let url = "https://api.github.com/repos/codeitlikemiley/raz/releases?per_page=20";
 
-    // Use a simple HTTPS request
-    let output = process::Command::new("curl")
-        .args(["-s", "-H", "Accept: application/vnd.github.v3+json", url])
-        .output()?;
+    // Use platform-appropriate HTTP client
+    let output = if cfg!(windows) {
+        // Try PowerShell on Windows
+        process::Command::new("powershell")
+            .args([
+                "-Command",
+                &format!(
+                    "Invoke-WebRequest -Uri '{url}' -Headers @{{'Accept'='application/vnd.github.v3+json'}} -UseBasicParsing | Select-Object -ExpandProperty Content"
+                ),
+            ])
+            .output()
+            .or_else(|_| {
+                // Fallback to curl if available on Windows
+                process::Command::new("curl")
+                    .args(["-s", "-H", "Accept: application/vnd.github.v3+json", url])
+                    .output()
+            })?
+    } else {
+        // Use curl on Unix-like systems
+        process::Command::new("curl")
+            .args(["-s", "-H", "Accept: application/vnd.github.v3+json", url])
+            .output()?
+    };
 
     if !output.status.success() {
         anyhow::bail!("Failed to fetch versions from GitHub");
