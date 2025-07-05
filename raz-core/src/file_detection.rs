@@ -947,7 +947,6 @@ impl FileDetector {
         Ok("unknown".to_string())
     }
 
-
     fn detect_non_test_entries(content: &str) -> RazResult<Vec<EntryPoint>> {
         let mut entry_points = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
@@ -1057,9 +1056,7 @@ impl FileDetector {
         if let Some(for_pos) = trimmed.find(" for ") {
             // Extract the type after "for"
             let after_for = &trimmed[for_pos + 5..];
-            let name_end = after_for
-                .find([' ', '{', '<'])
-                .unwrap_or(after_for.len());
+            let name_end = after_for.find([' ', '{', '<']).unwrap_or(after_for.len());
             let type_name = after_for[..name_end].trim();
             if !type_name.is_empty() {
                 return Some(type_name.to_string());
@@ -1077,9 +1074,7 @@ impl FileDetector {
                 &trimmed[4..].trim() // Skip "impl"
             };
 
-            let name_end = after_impl
-                .find([' ', '{', '<'])
-                .unwrap_or(after_impl.len());
+            let name_end = after_impl.find([' ', '{', '<']).unwrap_or(after_impl.len());
             let type_name = after_impl[..name_end].trim();
             if !type_name.is_empty() {
                 return Some(type_name.to_string());

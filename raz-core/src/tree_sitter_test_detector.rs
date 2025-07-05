@@ -179,7 +179,6 @@ impl TreeSitterTestDetector {
         }
     }
 
-
     /// Check if the doc comment text contains Rust code blocks
     fn contains_rust_code_blocks(&self, doc_text: &str) -> bool {
         // Look for ``` blocks (with or without rust specifier)
@@ -755,7 +754,6 @@ impl TreeSitterTestDetector {
 
         None
     }
-
 
     /// Recursively find the test context at cursor position
     fn find_context_recursive(
