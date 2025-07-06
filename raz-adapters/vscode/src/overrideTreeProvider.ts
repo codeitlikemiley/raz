@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-// @ts-expect-error toml module doesn't have types
 import * as toml from 'toml';
 import { getAllRazDirectories } from './utils/workspace';
 

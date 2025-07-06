@@ -804,11 +804,12 @@ export async function activate(
 				filePath = item;
 				line = restArgs[0] as number;
 				overrideData = restArgs[1];
-			} else if (item && item.filePath) {
-				// Called from tree view context menu
-				filePath = item.filePath;
-				line = item.line || 1;
-				overrideData = item.overrideData;
+			} else if (item && typeof item === 'object' && 'filePath' in item) {
+				// Called from tree view context menu - item is an OverrideItem
+				const overrideItem = item as { filePath: string; line?: number; overrideData?: unknown };
+				filePath = overrideItem.filePath;
+				line = overrideItem.line || 1;
+				overrideData = overrideItem.overrideData;
 			} else {
 				vscode.window.showErrorMessage('Invalid arguments for edit override command');
 				return;
@@ -824,18 +825,25 @@ export async function activate(
 			
 			// Build current override string
 			let currentOverride = '';
-			if (overrideData && overrideData.override_config) {
-				if (overrideData.override_config.env && Object.keys(overrideData.override_config.env).length > 0) {
-					const envVars = Object.entries(overrideData.override_config.env)
+			if (overrideData && typeof overrideData === 'object' && 'override_config' in overrideData) {
+				const overrideEntry = overrideData as {
+					override_config: {
+						env?: Record<string, string>;
+						cargo_options?: string[];
+						args?: string[];
+					}
+				};
+				if (overrideEntry.override_config.env && Object.keys(overrideEntry.override_config.env).length > 0) {
+					const envVars = Object.entries(overrideEntry.override_config.env)
 						.map(([key, value]) => `${key}=${value}`)
 						.join(' ');
 					currentOverride += envVars + ' ';
 				}
-				if (overrideData.override_config.cargo_options?.length) {
-					currentOverride += overrideData.override_config.cargo_options.join(' ') + ' ';
+				if (overrideEntry.override_config.cargo_options?.length) {
+					currentOverride += overrideEntry.override_config.cargo_options.join(' ') + ' ';
 				}
-				if (overrideData.override_config.args?.length) {
-					currentOverride += '-- ' + overrideData.override_config.args.join(' ');
+				if (overrideEntry.override_config.args?.length) {
+					currentOverride += '-- ' + overrideEntry.override_config.args.join(' ');
 				}
 			}
 			
