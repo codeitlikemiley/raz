@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as toml from 'toml';
 import { getAllRazDirectories } from './utils/workspace';
 
@@ -42,9 +43,9 @@ export class RazOverrideTreeProvider implements vscode.TreeDataProvider<Override
         if (!element) {
             // Root level - show all projects with .raz directories
             return Promise.resolve(this.getRazProjects());
-        } else if (element.contextValue === 'razProject') {
+        } else if (element.contextValue === 'razProject' || element.contextValue === 'razGlobalProject') {
             // For projects, show overrides
-            return Promise.resolve(this.getProjectChildren(element.filePath!));
+            return Promise.resolve(this.getProjectChildren(element.filePath!, element.contextValue === 'razGlobalProject'));
         } else if (element.contextValue === 'razOverride') {
             // Show override details as children
             return Promise.resolve(this.getOverrideDetails(element));
@@ -58,6 +59,55 @@ export class RazOverrideTreeProvider implements vscode.TreeDataProvider<Override
         const processedPaths = new Set<string>();
         const items: OverrideItem[] = [];
         const workspaceRoots = new Set<string>();
+        
+        // Add global overrides section first
+        const globalRazPath = path.join(os.homedir(), '.raz');
+        const globalOverridePath = path.join(globalRazPath, 'overrides.toml');
+        
+        if (fs.existsSync(globalOverridePath)) {
+            // For global overrides, the overrides.toml is directly in .raz folder
+            let globalOverrideCount = 0;
+            try {
+                const content = fs.readFileSync(globalOverridePath, 'utf8');
+                const data = toml.parse(content);
+                
+                if (data.overrides) {
+                    // Filter global overrides to only those relevant to current workspace
+                    const workspaceFolders = vscode.workspace.workspaceFolders;
+                    const workspacePaths = workspaceFolders ? workspaceFolders.map(folder => folder.uri.fsPath) : [];
+                    
+                    let relevantCount = 0;
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    for (const [, override] of Object.entries(data.overrides as Record<string, any>)) {
+                        if (override && override.metadata && override.metadata.file_path) {
+                            const filePath = override.metadata.file_path;
+                            // Check if this file is within any workspace folder
+                            const isRelevant = workspacePaths.some(workspacePath => 
+                                filePath.startsWith(workspacePath)
+                            );
+                            if (isRelevant) {
+                                relevantCount++;
+                            }
+                        }
+                    }
+                    globalOverrideCount = relevantCount;
+                }
+            } catch (error) {
+                console.error('Error counting global overrides:', error);
+            }
+            
+            if (globalOverrideCount > 0) {
+                const globalItem = new OverrideItem(
+                    `Standalone (${globalOverrideCount} override${globalOverrideCount !== 1 ? 's' : ''})`,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    'razGlobalProject',
+                    globalRazPath
+                );
+                globalItem.iconPath = new vscode.ThemeIcon('globe');
+                globalItem.tooltip = `${globalRazPath}\n${globalOverrideCount} standalone override${globalOverrideCount !== 1 ? 's' : ''}`;
+                items.push(globalItem);
+            }
+        }
         
         // First pass: identify all workspace roots
         for (const dir of razDirs) {
@@ -77,6 +127,11 @@ export class RazOverrideTreeProvider implements vscode.TreeDataProvider<Override
         // Second pass: process directories
         for (const dir of razDirs) {
             if (processedPaths.has(dir)) {
+                continue;
+            }
+            
+            // Skip the global .raz directory (home directory) since we handle it separately as "Standalone"
+            if (dir === os.homedir()) {
                 continue;
             }
             
@@ -166,13 +221,17 @@ export class RazOverrideTreeProvider implements vscode.TreeDataProvider<Override
         return items;
     }
 
-    private getProjectChildren(projectPath: string): OverrideItem[] {
+    private getProjectChildren(projectPath: string, isGlobal = false): OverrideItem[] {
         // Simply get the overrides for this project
-        return this.getProjectOverrides(projectPath);
+        return this.getProjectOverrides(projectPath, isGlobal);
     }
     
-    private getProjectOverrides(projectPath: string): OverrideItem[] {
-        const overridePath = path.join(projectPath, '.raz', 'overrides.toml');
+    private getProjectOverrides(projectPath: string, isGlobal = false): OverrideItem[] {
+        // For global overrides, the path is different
+        const overridePath = isGlobal 
+            ? path.join(projectPath, 'overrides.toml')
+            : path.join(projectPath, '.raz', 'overrides.toml');
+            
         if (!fs.existsSync(overridePath)) {
             return [];
         }
@@ -183,9 +242,68 @@ export class RazOverrideTreeProvider implements vscode.TreeDataProvider<Override
             const items: OverrideItem[] = [];
             
             if (data.overrides) {
-                for (const [, override] of Object.entries(data.overrides as Record<string, OverrideEntry>)) {
+                // Get workspace paths for filtering
+                const workspaceFolders = vscode.workspace.workspaceFolders;
+                const workspacePaths = workspaceFolders ? workspaceFolders.map(folder => folder.uri.fsPath) : [];
+                
+                // For global overrides, each key is the override ID and contains the full override object
+                for (const [overrideKey, override] of Object.entries(data.overrides as Record<string, OverrideEntry>)) {
+                    if (!override || typeof override !== 'object') {
+                        continue;
+                    }
+                    
+                    // For global overrides, only show those relevant to current workspace
+                    if (isGlobal && override.metadata && override.metadata.file_path) {
+                        const filePath = override.metadata.file_path;
+                        const isRelevant = workspacePaths.some(workspacePath => 
+                            filePath.startsWith(workspacePath)
+                        );
+                        if (!isRelevant) {
+                            continue;
+                        }
+                    }
+                    
                     const metadata = override.metadata;
-                    const functionName = metadata.function_name || 'unknown';
+                    
+                    // Try to extract a better function name
+                    let functionName = metadata.function_name;
+                    
+                    if (!functionName || functionName === 'unknown') {
+                        // Try to extract from the override key
+                        const keyParts = overrideKey.split(':');
+                        if (keyParts.length >= 2) {
+                            const lastPart = keyParts[keyParts.length - 1];
+                            // Check if it looks like a function name (not just a line number)
+                            if (lastPart && !lastPart.startsWith('L') && !/^\d+$/.test(lastPart)) {
+                                functionName = lastPart;
+                            } else if (keyParts.length >= 3) {
+                                // Maybe it's file:line:function format
+                                const potentialFunction = keyParts[keyParts.length - 2];
+                                if (potentialFunction && !potentialFunction.startsWith('L') && !/^\d+$/.test(potentialFunction)) {
+                                    functionName = potentialFunction;
+                                }
+                            }
+                        }
+                        
+                        // If still no good name, check if it's a doctest or test
+                        if (!functionName || functionName === 'unknown') {
+                            const overrideConfigKey = override.override_config?.key || '';
+                            const isTestRelated = overrideKey.includes('doctest') || 
+                                                  overrideConfigKey === 'test' || 
+                                                  overrideConfigKey.includes('test') ||
+                                                  overrideKey.includes(':L'); // Line-based overrides are often doctests
+                                                  
+                            if (isTestRelated) {
+                                // Try to extract from file path for doctests
+                                const filePath = metadata.file_path || '';
+                                const fileName = filePath.split('/').pop()?.replace('.rs', '') || 'doctest';
+                                functionName = `${fileName}_doctest`;
+                            } else {
+                                functionName = 'unknown';
+                            }
+                        }
+                    }
+                    
                     const line = metadata.original_line || 0;
                     
                     // Create main override item with just function name
@@ -251,6 +369,7 @@ export class RazOverrideTreeProvider implements vscode.TreeDataProvider<Override
                 }
             }
             
+            console.log(`Returning ${items.length} items for ${isGlobal ? 'global' : 'project'} overrides`);
             return items.sort((a, b) => a.label.localeCompare(b.label));
         } catch (error) {
             console.error('Failed to parse overrides:', error);

@@ -148,6 +148,11 @@
 				"command": "raz.runSpecificOverride",
 				"title": "Run Specific Override",
 				"category": "RAZ"
+			},
+			{
+				"command": "raz.debugGlobalOverrides",
+				"title": "Debug Global Overrides",
+				"category": "RAZ"
 			}
 		],
 		"keybindings": [

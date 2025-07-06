@@ -4,9 +4,11 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as https from "node:https";
 import * as zlib from "node:zlib";
 import * as tar from "tar";
+import * as toml from "toml";
 import { exec } from "node:child_process";
 import { registerTaskProvider, executeRazAsTask } from "./taskProvider";
 import { executeWithDebuggingSupport, registerDebugCommands } from "./debugger";
@@ -856,6 +858,102 @@ export async function activate(
 			if (newValue !== undefined) {
 				// Show the override dialog with the new value pre-filled
 				await runRazCommandWithOverride(context, newValue);
+			}
+		})
+	);
+	
+	// Register debug command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('raz.debugGlobalOverrides', async () => {
+			const globalRazPath = path.join(os.homedir(), '.raz');
+			const globalOverridePath = path.join(globalRazPath, 'overrides.toml');
+			
+			const outputChannel = ensureOutputChannel();
+			outputChannel.clear();
+			outputChannel.show();
+			
+			outputChannel.appendLine('=== Debug Global Overrides ===');
+			outputChannel.appendLine(`Global override path: ${globalOverridePath}`);
+			outputChannel.appendLine(`File exists: ${fs.existsSync(globalOverridePath)}`);
+			
+			if (fs.existsSync(globalOverridePath)) {
+				try {
+					const content = fs.readFileSync(globalOverridePath, 'utf8');
+					const data = toml.parse(content);
+					
+					outputChannel.appendLine(`\nParsed TOML successfully`);
+					outputChannel.appendLine(`Top-level keys: ${Object.keys(data).join(', ')}`);
+					
+					if (data.overrides) {
+						const overrideKeys = Object.keys(data.overrides);
+						outputChannel.appendLine(`\nFound ${overrideKeys.length} total overrides`);
+						
+						// Get workspace paths for filtering
+						const workspaceFolders = vscode.workspace.workspaceFolders;
+						const workspacePaths = workspaceFolders ? workspaceFolders.map(folder => folder.uri.fsPath) : [];
+						outputChannel.appendLine(`\nWorkspace paths: ${workspacePaths.join(', ')}`);
+						
+						let relevantCount = 0;
+						for (const key of overrideKeys) {
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
+							const override = (data.overrides as Record<string, any>)[key];
+							const filePath = override?.metadata?.file_path;
+							const isRelevant = filePath && workspacePaths.some(wp => filePath.startsWith(wp));
+							
+							if (isRelevant) {
+						relevantCount++;
+					}
+							
+							// Apply the same function name extraction logic as the tree provider
+							let functionName = override?.metadata?.function_name;
+							const originalFunctionName = functionName;
+							
+							if (!functionName || functionName === 'unknown') {
+								const keyParts = key.split(':');
+								if (keyParts.length >= 2) {
+									const lastPart = keyParts[keyParts.length - 1];
+									if (lastPart && !lastPart.startsWith('L') && !/^\d+$/.test(lastPart)) {
+										functionName = lastPart;
+									} else if (keyParts.length >= 3) {
+										const potentialFunction = keyParts[keyParts.length - 2];
+										if (potentialFunction && !potentialFunction.startsWith('L') && !/^\d+$/.test(potentialFunction)) {
+											functionName = potentialFunction;
+										}
+									}
+								}
+								
+								if (!functionName || functionName === 'unknown') {
+									const overrideConfigKey = override?.override_config?.key || '';
+									const isTestRelated = key.includes('doctest') || 
+														  overrideConfigKey === 'test' || 
+														  overrideConfigKey.includes('test') ||
+														  key.includes(':L'); // Line-based overrides are often doctests
+														  
+									if (isTestRelated) {
+										const fileName = filePath?.split('/').pop()?.replace('.rs', '') || 'doctest';
+										functionName = `${fileName}_doctest`;
+									} else {
+										functionName = 'unknown';
+									}
+								}
+							}
+							
+							outputChannel.appendLine(`\n- ${key}`);
+							outputChannel.appendLine(`  Type: ${typeof override}`);
+							outputChannel.appendLine(`  Has metadata: ${override && override.metadata ? 'Yes' : 'No'}`);
+							outputChannel.appendLine(`  Has override_config: ${override && override.override_config ? 'Yes' : 'No'}`);
+							outputChannel.appendLine(`  File: ${filePath || 'unknown'}`);
+							outputChannel.appendLine(`  Relevant to workspace: ${isRelevant ? 'Yes' : 'No'}`);
+							outputChannel.appendLine(`  Original function name: ${originalFunctionName || 'undefined'}`);
+							outputChannel.appendLine(`  Extracted function name: ${functionName}`);
+							outputChannel.appendLine(`  Override config key: ${override?.override_config?.key || 'undefined'}`);
+						}
+						
+						outputChannel.appendLine(`\nRelevant overrides: ${relevantCount}/${overrideKeys.length}`);
+					}
+				} catch (error) {
+					outputChannel.appendLine(`\nError parsing TOML: ${error}`);
+				}
 			}
 		})
 	);
