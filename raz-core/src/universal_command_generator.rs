@@ -386,10 +386,29 @@ impl UniversalCommandGenerator {
                         command.args.extend(override_config.args.clone());
                     }
                 } else {
-                    // In replace mode, find -- position and replace everything after it
+                    // In replace mode for test commands, preserve the test function name
                     if let Some(separator_pos) = command.args.iter().position(|arg| arg == "--") {
-                        // Remove everything after -- and add new args
+                        let existing_args: Vec<String> = command.args[separator_pos + 1..].to_vec();
+
+                        // Try to preserve the test function name if it exists
+                        // Test function names don't start with -- and are usually the first arg after --
+                        let mut preserved_test_name = None;
+                        if let Some(first_arg) = existing_args.first() {
+                            if !first_arg.starts_with("--") && !first_arg.is_empty() {
+                                // This looks like a test function name, preserve it
+                                preserved_test_name = Some(first_arg.clone());
+                            }
+                        }
+
+                        // Remove everything after -- and rebuild with preserved test name + new args
                         command.args.truncate(separator_pos + 1);
+
+                        // Add preserved test name first if it exists
+                        if let Some(test_name) = preserved_test_name {
+                            command.args.push(test_name);
+                        }
+
+                        // Then add override args
                         command.args.extend(override_config.args.clone());
                     } else {
                         // No separator found, add one and then the args
@@ -2039,16 +2058,40 @@ impl UniversalCommandGenerator {
                                     100,
                                 ));
                             } else {
-                                commands.push(Self::create_cargo_test_command(
-                                    root,
-                                    Some(&package_name),
-                                    Some(&format!(
-                                        "-- {}",
-                                        Self::build_test_args_with_defaults(test_name, true, false)
-                                    )),
-                                    &format!("specific test: {test_name}"),
-                                    100,
-                                ));
+                                // Check if this is an integration test
+                                if let FileRole::IntegrationTest {
+                                    test_name: integration_test_name,
+                                } = &context.file_role
+                                {
+                                    // For integration tests, use --test flag with test file name and specific test function
+                                    commands.push(Self::create_cargo_test_command(
+                                        root,
+                                        Some(&package_name),
+                                        Some(&format!(
+                                            "--test {} -- {}",
+                                            integration_test_name,
+                                            Self::build_test_args_with_defaults(
+                                                test_name, true, false
+                                            )
+                                        )),
+                                        &format!("specific test: {test_name}"),
+                                        100,
+                                    ));
+                                } else {
+                                    // For unit tests, add --lib flag for clarity
+                                    commands.push(Self::create_cargo_test_command(
+                                        root,
+                                        Some(&package_name),
+                                        Some(&format!(
+                                            "--lib -- {}",
+                                            Self::build_test_args_with_defaults(
+                                                test_name, true, false
+                                            )
+                                        )),
+                                        &format!("specific test: {test_name}"),
+                                        100,
+                                    ));
+                                }
                             }
                         }
                     }
@@ -2074,16 +2117,36 @@ impl UniversalCommandGenerator {
                                 100,
                             ));
                         } else {
-                            commands.push(Self::create_cargo_test_command(
-                                root,
-                                Some(package_name),
-                                Some(&format!(
-                                    "-- {}",
-                                    Self::build_test_args_with_defaults(test_name, true, false)
-                                )),
-                                &format!("specific test: {test_name}"),
-                                100,
-                            ));
+                            // Check if this is an integration test
+                            if let FileRole::IntegrationTest {
+                                test_name: integration_test_name,
+                            } = &context.file_role
+                            {
+                                // For integration tests, use --test flag with test file name and specific test function
+                                commands.push(Self::create_cargo_test_command(
+                                    root,
+                                    Some(package_name),
+                                    Some(&format!(
+                                        "--test {} -- {}",
+                                        integration_test_name,
+                                        Self::build_test_args_with_defaults(test_name, true, false)
+                                    )),
+                                    &format!("specific test: {test_name}"),
+                                    100,
+                                ));
+                            } else {
+                                // For unit tests, add --lib flag for clarity
+                                commands.push(Self::create_cargo_test_command(
+                                    root,
+                                    Some(package_name),
+                                    Some(&format!(
+                                        "--lib -- {}",
+                                        Self::build_test_args_with_defaults(test_name, true, false)
+                                    )),
+                                    &format!("specific test: {test_name}"),
+                                    100,
+                                ));
+                            }
                         }
                     }
                     RustProjectType::SingleFile { file_path, .. } => {

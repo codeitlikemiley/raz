@@ -16,18 +16,41 @@ impl OverrideInspector {
 
     /// List all overrides with detailed information
     pub fn list_all_detailed(&self) -> Result<()> {
-        let overrides = self.system.list_all()?;
+        let hierarchical_overrides = self.system.storage.list_all_hierarchical()?;
 
-        if overrides.is_empty() {
+        if hierarchical_overrides.is_empty() {
             println!("{}", "No overrides found.".yellow());
             return Ok(());
         }
 
-        println!("{}", format!("Found {} overrides:", overrides.len()).bold());
+        let total_count: usize = hierarchical_overrides
+            .iter()
+            .map(|(_, entries)| entries.len())
+            .sum();
+
+        println!(
+            "{}",
+            format!("Found {total_count} overrides across all configuration levels:").bold()
+        );
         println!();
 
-        for (idx, entry) in overrides.iter().enumerate() {
-            self.print_override_entry(idx + 1, entry);
+        let mut idx = 1;
+        for (level, entries) in hierarchical_overrides {
+            if !entries.is_empty() {
+                println!(
+                    "{}",
+                    format!("{:?} Level ({} overrides):", level, entries.len())
+                        .bold()
+                        .blue()
+                );
+                println!();
+
+                for entry in entries {
+                    self.print_override_entry(idx, &entry);
+                    idx += 1;
+                }
+                println!();
+            }
         }
 
         Ok(())

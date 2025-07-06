@@ -5,7 +5,7 @@
 	"author": "Uriah Galang <codeitlikemiley@gmail.com>",
 	"icon": "images/raz-logo.gif",
 	"license": "MIT",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/codeitlikemiley/raz"
@@ -15,7 +15,10 @@
 		"color": "#0a0a0a",
 		"theme": "dark"
 	},
-	"categories": ["Programming Languages", "Other"],
+	"categories": [
+		"Programming Languages",
+		"Other"
+	],
 	"keywords": [
 		"rust",
 		"command",
@@ -72,7 +75,7 @@
 			},
 			{
 				"command": "raz.overrideStats",
-				"title": "Show Override Statistics",
+				"title": "Show Project Override Statistics",
 				"category": "RAZ"
 			},
 			{
@@ -104,6 +107,47 @@
 				"command": "raz.resetBinary",
 				"title": "Reset RAZ Binary (Clean Install)",
 				"category": "RAZ"
+			},
+			{
+				"command": "raz.init",
+				"title": "Initialize RAZ Configuration",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.listOverridesForFile",
+				"title": "List Overrides for Current File",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.showStatsForFile",
+				"title": "Show Override Statistics for Current File",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.clearOverridesForFile",
+				"title": "Clear Overrides for Current File",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.refreshOverrides",
+				"title": "Refresh Overrides",
+				"category": "RAZ",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "raz.editOverride",
+				"title": "Edit Override",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.editAllOverrideOptions",
+				"title": "Edit All Override Options",
+				"category": "RAZ"
+			},
+			{
+				"command": "raz.runSpecificOverride",
+				"title": "Run Specific Override",
+				"category": "RAZ"
 			}
 		],
 		"keybindings": [
@@ -120,6 +164,41 @@
 				"when": "editorTextFocus && resourceExtname == .rs"
 			}
 		],
+		"menus": {
+			"view/title": [
+				{
+					"command": "raz.refreshOverrides",
+					"when": "view == razOverrides",
+					"group": "navigation"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "raz.editAllOverrideOptions",
+					"when": "view == razOverrides && viewItem == razOverrideRunnable",
+					"group": "navigation"
+				}
+			]
+		},
+		"views": {
+			"raz": [
+				{
+					"id": "razOverrides",
+					"name": "Overrides",
+					"icon": "$(settings-gear)",
+					"contextualTitle": "RAZ Overrides"
+				}
+			]
+		},
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "raz",
+					"title": "RAZ",
+					"icon": "$(zap)"
+				}
+			]
+		},
 		"configuration": {
 			"title": "RAZ",
 			"properties": {
@@ -147,7 +226,8 @@
 		}
 	},
 	"dependencies": {
-		"tar": "^7.4.3"
+		"tar": "^7.4.3",
+		"toml": "^3.0.0"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.13.0",

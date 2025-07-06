@@ -1,6 +1,6 @@
 [package]
 name = "raz-config"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "Configuration management for RAZ - handles loading, saving, validation, and inheritance"
 license = "MIT"

@@ -1,1 +1,1 @@
-{"root":["./src/debugger.ts","./src/extension.ts","./src/taskprovider.ts"],"version":"5.8.2"}
+{"root":["./src/debugger.ts","./src/extension.ts","./src/overridetreeprovider.ts","./src/taskprovider.ts","./src/utils/workspace.ts"],"version":"5.8.2"}

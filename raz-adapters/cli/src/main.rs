@@ -113,6 +113,9 @@ enum OverrideCommands {
         /// Force clear without confirmation
         #[arg(short, long)]
         force: bool,
+        /// Clear overrides for a specific file
+        #[arg(long)]
+        file: Option<PathBuf>,
     },
     /// Migrate legacy overrides to new format
     Migrate {
@@ -1156,6 +1159,7 @@ fn detect_project_template(working_dir: &Path) -> String {
 
 /// Handle override subcommands
 fn handle_override_command(working_dir: &Path, cmd: OverrideCommands) -> anyhow::Result<()> {
+    // Use config hierarchy to find the appropriate storage location
     let cli = OverrideCli::new(working_dir);
 
     match cmd {
@@ -1184,8 +1188,12 @@ fn handle_override_command(working_dir: &Path, cmd: OverrideCommands) -> anyhow:
         OverrideCommands::Delete { key } => {
             cli.delete(&key)?;
         }
-        OverrideCommands::Clear { force } => {
-            cli.clear_all(force)?;
+        OverrideCommands::Clear { force, file } => {
+            if let Some(file_path) = file {
+                cli.clear_by_file(&file_path, force)?;
+            } else {
+                cli.clear_all(force)?;
+            }
         }
         OverrideCommands::Migrate {
             file,

@@ -85,6 +85,40 @@ impl OverrideCli {
         Ok(())
     }
 
+    /// Clear overrides for a specific file (with confirmation)
+    pub fn clear_by_file(&self, file_path: &Path, force: bool) -> Result<()> {
+        let system = OverrideSystem::new(&self.workspace_path)?;
+
+        // First check how many overrides exist for this file
+        let overrides = system.list_by_file(file_path)?;
+        if overrides.is_empty() {
+            println!("No overrides found for file: {}", file_path.display());
+            return Ok(());
+        }
+
+        if !force {
+            println!(
+                "This will delete {} override(s) for file: {}. Are you sure? (y/N)",
+                overrides.len(),
+                file_path.display()
+            );
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().eq_ignore_ascii_case("y") {
+                println!("Operation cancelled.");
+                return Ok(());
+            }
+        }
+
+        let count = system.clear_by_file(file_path)?;
+        println!(
+            "Cleared {} override(s) for file: {}",
+            count,
+            file_path.display()
+        );
+        Ok(())
+    }
+
     /// Import overrides from a file
     pub fn import(&self, file_path: &Path) -> Result<()> {
         let system = OverrideSystem::new(&self.workspace_path)?;

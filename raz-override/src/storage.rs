@@ -31,12 +31,50 @@ pub struct OverrideStorage {
     workspace_path: PathBuf,
     cache: RwLock<StorageFormat>,
     backup_manager: Arc<BackupManager>,
+    hierarchy: Option<raz_config::ConfigHierarchy>,
 }
 
 impl OverrideStorage {
+    /// Create new storage instance for testing (bypasses hierarchy)
+    #[cfg(test)]
+    pub fn new_for_test(storage_path: &Path) -> Result<Self> {
+        let storage_file = storage_path.join("overrides.toml");
+
+        // Ensure directory exists
+        if let Some(parent) = storage_file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Load existing data or create new
+        let cache = if storage_file.exists() {
+            let content = std::fs::read_to_string(&storage_file)?;
+            toml::from_str(&content)?
+        } else {
+            StorageFormat::default()
+        };
+
+        // Create backup manager with default 5 backups
+        let backup_manager = Arc::new(BackupManager::new(storage_path, 5)?);
+
+        Ok(Self {
+            storage_path: storage_file,
+            workspace_path: storage_path.to_path_buf(),
+            cache: RwLock::new(cache),
+            backup_manager,
+            hierarchy: None,
+        })
+    }
+
     /// Create new storage instance
     pub fn new(workspace_path: &Path) -> Result<Self> {
-        let storage_path = workspace_path.join(".raz").join("overrides.toml");
+        // Use config hierarchy to determine storage location
+        let hierarchy = raz_config::ConfigHierarchy::discover(workspace_path).map_err(|e| {
+            OverrideError::StorageError(format!("Failed to discover config hierarchy: {e}"))
+        })?;
+
+        let storage_path = hierarchy.get_override_storage_path().map_err(|e| {
+            OverrideError::StorageError(format!("Failed to get override storage path: {e}"))
+        })?;
 
         // Ensure directory exists
         if let Some(parent) = storage_path.parent() {
@@ -59,6 +97,7 @@ impl OverrideStorage {
             workspace_path: workspace_path.to_path_buf(),
             cache: RwLock::new(cache),
             backup_manager,
+            hierarchy: Some(hierarchy),
         })
     }
 
@@ -171,7 +210,7 @@ impl OverrideStorage {
         Ok(removed)
     }
 
-    /// List all overrides
+    /// List all overrides from the current storage location
     pub fn list_all(&self) -> Result<Vec<OverrideEntry>> {
         let cache = self
             .cache
@@ -179,6 +218,37 @@ impl OverrideStorage {
             .map_err(|e| OverrideError::StorageError(format!("Lock poisoned: {e}")))?;
 
         Ok(cache.overrides.values().cloned().collect())
+    }
+
+    /// List all overrides from all hierarchy levels
+    pub fn list_all_hierarchical(
+        &self,
+    ) -> Result<Vec<(raz_config::ConfigLevel, Vec<OverrideEntry>)>> {
+        let mut results = Vec::new();
+
+        if let Some(ref hierarchy) = self.hierarchy {
+            for location in hierarchy.locations() {
+                if location.exists {
+                    let override_path = location.path.join("overrides.toml");
+                    if override_path.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&override_path) {
+                            if let Ok(storage_format) = toml::from_str::<StorageFormat>(&content) {
+                                let entries: Vec<OverrideEntry> =
+                                    storage_format.overrides.values().cloned().collect();
+                                if !entries.is_empty() {
+                                    results.push((location.level.clone(), entries));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fallback to current storage if no hierarchy
+            results.push((raz_config::ConfigLevel::Project, self.list_all()?));
+        }
+
+        Ok(results)
     }
 
     /// Clear all overrides
@@ -192,6 +262,44 @@ impl OverrideStorage {
         self.persist(&cache)?;
 
         Ok(())
+    }
+
+    /// Clear overrides for a specific file
+    pub fn clear_by_file(&self, file_path: &Path) -> Result<usize> {
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|e| OverrideError::StorageError(format!("Lock poisoned: {e}")))?;
+
+        let normalized_path = file_path.to_string_lossy().replace('\\', "/");
+
+        // Find keys of overrides for this file
+        let keys_to_remove: Vec<String> = cache
+            .overrides
+            .iter()
+            .filter(|(_, entry)| {
+                let entry_path = entry
+                    .metadata
+                    .file_path
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                entry_path == normalized_path
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        let count = keys_to_remove.len();
+
+        // Remove the overrides
+        for key in keys_to_remove {
+            cache.overrides.shift_remove(&key);
+        }
+
+        if count > 0 {
+            self.persist(&cache)?;
+        }
+
+        Ok(count)
     }
 
     /// Migrate overrides from old format
@@ -321,7 +429,7 @@ mod tests {
     #[test]
     fn test_storage_operations() {
         let temp_dir = TempDir::new().unwrap();
-        let storage = OverrideStorage::new(temp_dir.path()).unwrap();
+        let storage = OverrideStorage::new_for_test(temp_dir.path()).unwrap();
 
         // Create test entry
         let context = FunctionContext {
@@ -373,7 +481,7 @@ mod tests {
 
         // Create and save
         {
-            let storage = OverrideStorage::new(storage_path).unwrap();
+            let storage = OverrideStorage::new_for_test(storage_path).unwrap();
 
             let context = FunctionContext {
                 file_path: PathBuf::from("src/main.rs"),
@@ -405,7 +513,7 @@ mod tests {
 
         // Load and verify
         {
-            let storage = OverrideStorage::new(storage_path).unwrap();
+            let storage = OverrideStorage::new_for_test(storage_path).unwrap();
             let all = storage.list_all().unwrap();
             assert_eq!(all.len(), 1);
             assert_eq!(all[0].metadata.notes.as_deref(), Some("Test override"));

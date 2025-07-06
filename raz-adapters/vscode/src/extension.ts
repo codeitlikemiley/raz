@@ -10,6 +10,8 @@ import * as tar from "tar";
 import { exec } from "node:child_process";
 import { registerTaskProvider, executeRazAsTask } from "./taskProvider";
 import { executeWithDebuggingSupport, registerDebugCommands } from "./debugger";
+import { findNearestRazDirectory, getAllRazDirectories } from "./utils/workspace";
+import { RazOverrideTreeProvider } from "./overrideTreeProvider";
 
 let outputChannel: vscode.OutputChannel;
 let terminal: vscode.Terminal | undefined;
@@ -680,9 +682,184 @@ export async function activate(
 		}),
 	);
 
+	// Register init command
+	context.subscriptions.push(
+		vscode.commands.registerCommand("raz.init", async () => {
+			outputChannel.appendLine("📝 raz.init executed");
+			await initRazConfig(context);
+		}),
+	);
+
+	// Register list overrides for current file command
+	context.subscriptions.push(
+		vscode.commands.registerCommand("raz.listOverridesForFile", async () => {
+			outputChannel.appendLine("📝 raz.listOverridesForFile executed");
+			await listOverridesForFile(context);
+		}),
+	);
+
+	// Register show stats for current file command
+	context.subscriptions.push(
+		vscode.commands.registerCommand("raz.showStatsForFile", async () => {
+			outputChannel.appendLine("📝 raz.showStatsForFile executed");
+			await showStatsForFile(context);
+		}),
+	);
+
+	// Register clear overrides for current file command
+	context.subscriptions.push(
+		vscode.commands.registerCommand("raz.clearOverridesForFile", async () => {
+			outputChannel.appendLine("📝 raz.clearOverridesForFile executed");
+			await clearOverridesForFile(context);
+		}),
+	);
+
 	// Register debugging-related commands
 	registerDebugCommands(context);
 	outputChannel.appendLine("✅ Debug commands registered");
+
+	// Register the override tree view
+	const overrideTreeProvider = new RazOverrideTreeProvider(context);
+	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider('razOverrides', overrideTreeProvider)
+	);
+	
+	// Register refresh command for the tree
+	context.subscriptions.push(
+		vscode.commands.registerCommand('raz.refreshOverrides', () => {
+			overrideTreeProvider.refresh();
+		})
+	);
+	
+	// Register run specific override command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('raz.runSpecificOverride', async (filePath: string, line: number) => {
+			// Open the file first
+			const doc = await vscode.workspace.openTextDocument(filePath);
+			const editor = await vscode.window.showTextDocument(doc);
+			
+			// Move cursor to the line
+			const position = new vscode.Position(line - 1, 0);
+			editor.selection = new vscode.Selection(position, position);
+			
+			// Run the command
+			await vscode.commands.executeCommand('raz.runCommand');
+		})
+	);
+	
+	// Register edit override command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('raz.editOverride', async (filePath: string, line: number, field: string, currentValue?: string) => {
+			// Open the file first
+			const doc = await vscode.workspace.openTextDocument(filePath);
+			const editor = await vscode.window.showTextDocument(doc);
+			
+			// Move cursor to the line
+			const position = new vscode.Position(line - 1, 0);
+			editor.selection = new vscode.Selection(position, position);
+			
+			// Prompt for new value
+			const fieldLabel = field === 'cargo_options' ? 'Cargo Options' : 
+			               field === 'args' ? 'Arguments' : 
+			               field === 'env' ? 'Environment Variables' : field;
+			const placeHolder = field === 'cargo_options' ? 'e.g., --release --features foo' : 
+			                 field === 'args' ? 'e.g., --nocapture --exact' :
+			                 field === 'env' ? 'e.g., RUST_BACKTRACE=1 RUST_LOG=debug' : '';
+			
+			const newValue = await vscode.window.showInputBox({
+				prompt: `Edit ${fieldLabel}`,
+				value: currentValue || '',
+				placeHolder: placeHolder
+			});
+			
+			if (newValue !== undefined) {
+				// Prepare the override string based on the field
+				let overrideString = '';
+				if (field === 'env') {
+					overrideString = newValue;
+				} else if (field === 'cargo_options') {
+					overrideString = newValue;
+				} else if (field === 'args') {
+					overrideString = `-- ${newValue}`;
+				}
+				
+				// Set the override value in a way that runCommandWithOverride can use
+				await vscode.commands.executeCommand('setContext', 'raz.pendingOverride', overrideString);
+				// Run with the new override
+				await vscode.commands.executeCommand('raz.runCommandWithOverride');
+			}
+		})
+	);
+	
+	// Register edit all override options command
+	context.subscriptions.push(
+		vscode.commands.registerCommand('raz.editAllOverrideOptions', async (item: unknown, ...restArgs: unknown[]) => {
+			// Handle both direct calls and calls from tree view
+			let filePath: string;
+			let line: number;
+			let overrideData: unknown;
+			
+			if (typeof item === 'string') {
+				// Called with separate arguments
+				filePath = item;
+				line = restArgs[0] as number;
+				overrideData = restArgs[1];
+			} else if (item && item.filePath) {
+				// Called from tree view context menu
+				filePath = item.filePath;
+				line = item.line || 1;
+				overrideData = item.overrideData;
+			} else {
+				vscode.window.showErrorMessage('Invalid arguments for edit override command');
+				return;
+			}
+			
+			// Open the file first
+			const doc = await vscode.workspace.openTextDocument(filePath);
+			const editor = await vscode.window.showTextDocument(doc);
+			
+			// Move cursor to the line
+			const position = new vscode.Position(line - 1, 0);
+			editor.selection = new vscode.Selection(position, position);
+			
+			// Build current override string
+			let currentOverride = '';
+			if (overrideData && overrideData.override_config) {
+				if (overrideData.override_config.env && Object.keys(overrideData.override_config.env).length > 0) {
+					const envVars = Object.entries(overrideData.override_config.env)
+						.map(([key, value]) => `${key}=${value}`)
+						.join(' ');
+					currentOverride += envVars + ' ';
+				}
+				if (overrideData.override_config.cargo_options?.length) {
+					currentOverride += overrideData.override_config.cargo_options.join(' ') + ' ';
+				}
+				if (overrideData.override_config.args?.length) {
+					currentOverride += '-- ' + overrideData.override_config.args.join(' ');
+				}
+			}
+			
+			const newValue = await vscode.window.showInputBox({
+				prompt: `Edit override options`,
+				value: currentOverride.trim(),
+				placeHolder: 'e.g., RUST_BACKTRACE=1 --release -- --nocapture'
+			});
+			
+			if (newValue !== undefined) {
+				// Show the override dialog with the new value pre-filled
+				await runRazCommandWithOverride(context, newValue);
+			}
+		})
+	);
+	
+	// Watch for changes to .raz/overrides.toml files
+	const watcher = vscode.workspace.createFileSystemWatcher('**/.raz/overrides.toml');
+	watcher.onDidChange(() => overrideTreeProvider.refresh());
+	watcher.onDidCreate(() => overrideTreeProvider.refresh());
+	watcher.onDidDelete(() => overrideTreeProvider.refresh());
+	context.subscriptions.push(watcher);
+	
+	outputChannel.appendLine("✅ RAZ Override tree view registered");
 }
 
 async function setupRazBinary(_context: vscode.ExtensionContext): Promise<void> {
@@ -1071,6 +1248,7 @@ async function selectAndRunRazCommand(
 
 async function runRazCommandWithOverride(
 	context: vscode.ExtensionContext,
+	preFilledValue?: string,
 ): Promise<void> {
 	const editor = vscode.window.activeTextEditor;
 	if (!editor || editor.document.languageId !== "rust") {
@@ -1091,7 +1269,7 @@ async function runRazCommandWithOverride(
 		prompt: "Enter overrides: env vars, cargo options, and test args",
 		placeHolder: "Examples: --release | RUST_LOG=debug | -- --nocapture",
 		title: "RAZ Command Override",
-		value: "",
+		value: preFilledValue || "",
 		validateInput: (value) => {
 			// Basic validation - warn about common mistakes
 			if (
@@ -1143,60 +1321,132 @@ async function runRazCommandWithOverride(
 }
 
 async function clearOverrides(context: vscode.ExtensionContext): Promise<void> {
-	const workspaceFolders = vscode.workspace.workspaceFolders;
-	if (!workspaceFolders || workspaceFolders.length === 0) {
-		vscode.window.showErrorMessage("RAZ: No workspace folder found");
-		return;
-	}
-
-	const result = await vscode.window.showWarningMessage(
-		"Are you sure you want to clear all RAZ overrides?",
-		{ modal: true },
-		"Clear All",
-		"Cancel",
-	);
-
-	if (result === "Clear All") {
-		try {
-			const razPath = await ensureRazExecutable(context);
-			if (!razPath) {
-				return;
-			}
-			const args = ["override", "clear", "--force"];
-
-			// Execute the clear command
-			await executeRazAsTask(context, razPath, args, {
-				cwd: workspaceFolders[0].uri.fsPath,
-				label: "RAZ: Clear Overrides",
-			});
-
-			vscode.window.showInformationMessage(
-				"All RAZ overrides cleared successfully",
-			);
-		} catch (error) {
-			vscode.window.showErrorMessage(`Failed to clear overrides: ${error}`);
-		}
-	}
-}
-
-async function listOverrides(context: vscode.ExtensionContext): Promise<void> {
-	const workspaceFolders = vscode.workspace.workspaceFolders;
-	if (!workspaceFolders || workspaceFolders.length === 0) {
-		vscode.window.showErrorMessage("RAZ: No workspace folder found");
-		return;
-	}
-
 	try {
 		const razPath = await ensureRazExecutable(context);
 		if (!razPath) {
 			return;
 		}
-		const args = ["override", "list"];
+		
+		// Find all directories with .raz configurations
+		const razDirectories = getAllRazDirectories();
+		
+		if (razDirectories.length === 0) {
+			vscode.window.showInformationMessage("No RAZ configurations found in any workspace folders");
+			return;
+		}
+		
+		let selectedDir: string;
+		
+		if (razDirectories.length === 1) {
+			// Single directory
+			selectedDir = razDirectories[0];
+		} else {
+			// Multiple directories, let user choose
+			const choice = await vscode.window.showQuickPick(
+				razDirectories.map(dir => ({
+					label: `$(folder) ${path.basename(dir) || path.basename(path.dirname(dir))}`,
+					description: dir,
+					value: dir
+				})), {
+					placeHolder: "Select which project's overrides to clear",
+					title: "RAZ: Select Project to Clear Overrides"
+				}
+			);
+			
+			if (!choice) {
+				return;
+			}
+			
+			selectedDir = choice.value;
+		}
+		
+		const result = await vscode.window.showWarningMessage(
+			"Are you sure you want to clear all RAZ overrides?",
+			{ modal: true, detail: `This will clear all overrides in: ${selectedDir}` },
+			"Clear All",
+			"Cancel",
+		);
 
-		await executeRazAsTask(context, razPath, args, {
-			cwd: workspaceFolders[0].uri.fsPath,
-			label: "RAZ: List Overrides",
-		});
+		if (result === "Clear All") {
+			const args = ["override", "clear", "--force"];
+
+			// Execute the clear command
+			await executeRazAsTask(context, razPath, args, {
+				cwd: selectedDir,
+				label: `RAZ: Clear Overrides (${path.basename(selectedDir)})`,
+			});
+
+			vscode.window.showInformationMessage(
+				"All RAZ overrides cleared successfully",
+			);
+		}
+	} catch (error) {
+		vscode.window.showErrorMessage(`Failed to clear overrides: ${error}`);
+	}
+}
+
+async function listOverrides(context: vscode.ExtensionContext): Promise<void> {
+	try {
+		const razPath = await ensureRazExecutable(context);
+		if (!razPath) {
+			return;
+		}
+		
+		// Find all directories with .raz configurations
+		const razDirectories = getAllRazDirectories();
+		
+		if (razDirectories.length === 0) {
+			vscode.window.showInformationMessage("No RAZ configurations found in any workspace folders");
+			return;
+		}
+		
+		if (razDirectories.length === 1) {
+			// Single directory, just list it
+			const args = ["override", "list"];
+			await executeRazAsTask(context, razPath, args, {
+				cwd: razDirectories[0],
+				label: `RAZ: List Overrides (${path.basename(razDirectories[0])})`,
+			});
+		} else {
+			// Multiple directories, let user choose
+			const choice = await vscode.window.showQuickPick([
+				{
+					label: "$(list-flat) Show All",
+					description: "List overrides from all locations",
+					value: "all"
+				},
+				...razDirectories.map(dir => ({
+					label: `$(folder) ${path.basename(dir) || path.basename(path.dirname(dir))}`,
+					description: dir,
+					value: dir
+				}))
+			], {
+				placeHolder: "Select which project's overrides to show",
+				title: "RAZ: Select Override Location"
+			});
+			
+			if (!choice) {
+				return;
+			}
+			
+			if (choice.value === "all") {
+				// Show overrides from all directories
+				for (const dir of razDirectories) {
+					const args = ["override", "list"];
+					await executeRazAsTask(context, razPath, args, {
+						cwd: dir,
+						label: `RAZ: List Overrides (${path.basename(dir) || path.basename(path.dirname(dir))})`,
+					});
+				}
+			} else {
+				// Show overrides from selected directory
+				const args = ["override", "list"];
+				await executeRazAsTask(context, razPath, args, {
+					cwd: choice.value,
+					label: `RAZ: List Overrides (${path.basename(choice.value)})`,
+				});
+			}
+		}
 	} catch (error) {
 		vscode.window.showErrorMessage(`Failed to list overrides: ${error}`);
 	}
@@ -1246,9 +1496,124 @@ async function debugOverride(context: vscode.ExtensionContext): Promise<void> {
 async function showOverrideStats(
 	context: vscode.ExtensionContext,
 ): Promise<void> {
+	try {
+		const razPath = await ensureRazExecutable(context);
+		if (!razPath) {
+			return;
+		}
+		
+		// Find all directories with .raz configurations
+		const razDirectories = getAllRazDirectories();
+		
+		if (razDirectories.length === 0) {
+			vscode.window.showInformationMessage("No RAZ configurations found in any workspace folders");
+			return;
+		}
+		
+		if (razDirectories.length === 1) {
+			// Single directory, just show stats
+			const args = ["override", "stats"];
+			await executeRazAsTask(context, razPath, args, {
+				cwd: razDirectories[0],
+				label: `RAZ: Override Statistics (${path.basename(razDirectories[0])})`,
+			});
+		} else {
+			// Multiple directories, let user choose
+			const choice = await vscode.window.showQuickPick(
+				razDirectories.map(dir => ({
+					label: `$(folder) ${path.basename(dir) || path.basename(path.dirname(dir))}`,
+					description: dir,
+					value: dir
+				})), {
+					placeHolder: "Select which project's override statistics to show",
+					title: "RAZ: Select Project"
+				}
+			);
+			
+			if (!choice) {
+				return;
+			}
+			
+			const args = ["override", "stats"];
+			await executeRazAsTask(context, razPath, args, {
+				cwd: choice.value,
+				label: `RAZ: Override Statistics (${path.basename(choice.value)})`,
+			});
+		}
+	} catch (error) {
+		vscode.window.showErrorMessage(`Failed to show override stats: ${error}`);
+	}
+}
+
+async function initRazConfig(context: vscode.ExtensionContext): Promise<void> {
+	const outputChannel = ensureOutputChannel();
+	
+	// Check if we have a workspace
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (!workspaceFolders || workspaceFolders.length === 0) {
 		vscode.window.showErrorMessage("RAZ: No workspace folder found");
+		return;
+	}
+
+	// Ask which level to initialize
+	const levelChoice = await vscode.window.showQuickPick([
+		{
+			label: "$(file-directory) Project Level",
+			description: "Initialize in the current project/crate",
+			value: "project",
+		},
+		{
+			label: "$(folder) Workspace Level",
+			description: "Initialize for the entire workspace",
+			value: "workspace",
+		},
+		{
+			label: "$(home) Global Level",
+			description: "Initialize in ~/.raz for all projects",
+			value: "global",
+		},
+	], {
+		placeHolder: "Select where to initialize RAZ configuration",
+		title: "RAZ Configuration Level",
+	});
+
+	if (!levelChoice) {
+		return;
+	}
+
+	// Determine template
+	const templateChoice = await vscode.window.showQuickPick([
+		{
+			label: "$(file) Default",
+			description: "Basic configuration for general Rust projects",
+			value: "default",
+		},
+		{
+			label: "$(globe) Web",
+			description: "Configuration for web frameworks (Leptos, Dioxus, etc.)",
+			value: "web",
+		},
+		{
+			label: "$(device-desktop) Desktop",
+			description: "Configuration for desktop applications (Tauri, egui, etc.)",
+			value: "desktop",
+		},
+		{
+			label: "$(game) Game",
+			description: "Configuration for game development (Bevy, etc.)",
+			value: "game",
+		},
+		{
+			label: "$(library) Library",
+			description: "Configuration for library crates",
+			value: "library",
+		},
+	], {
+		placeHolder: "Select a configuration template",
+		title: "RAZ Configuration Template",
+	});
+
+	if (!templateChoice) {
 		return;
 	}
 
@@ -1257,19 +1622,195 @@ async function showOverrideStats(
 		if (!razPath) {
 			return;
 		}
-		const args = ["override", "stats"];
 
+		// Build init command args based on level
+		const args = ["init", "--template", templateChoice.value];
+		
+		// Determine the working directory based on level
+		let cwd = workspaceFolders[0].uri.fsPath;
+		
+		if (levelChoice.value === "project") {
+			// For project level, try to find the nearest Cargo.toml
+			const activeEditor = vscode.window.activeTextEditor;
+			if (activeEditor && activeEditor.document.languageId === "rust") {
+				cwd = path.dirname(activeEditor.document.uri.fsPath);
+			}
+		} else if (levelChoice.value === "global") {
+			// For global level, use home directory
+			const homeDir = process.env.HOME || process.env.USERPROFILE;
+			if (homeDir) {
+				cwd = homeDir;
+			}
+		}
+
+		// Add --force flag if user wants to overwrite
+		const existingConfig = await vscode.workspace.fs.stat(
+			vscode.Uri.file(path.join(cwd, ".raz", "config.toml"))
+		).then(() => true, () => false);
+
+		if (existingConfig) {
+			const overwrite = await vscode.window.showWarningMessage(
+				"RAZ configuration already exists. Overwrite?",
+				{ modal: true },
+				"Overwrite",
+				"Cancel"
+			);
+			if (overwrite !== "Overwrite") {
+				return;
+			}
+			args.push("--force");
+		}
+
+		// Execute init command
 		await executeRazAsTask(context, razPath, args, {
-			cwd: workspaceFolders[0].uri.fsPath,
-			label: "RAZ: Override Statistics",
+			cwd,
+			label: `RAZ: Initialize ${levelChoice.label} Configuration`,
 		});
+
+		outputChannel.appendLine(`✅ RAZ configuration initialized at ${levelChoice.label} level with ${templateChoice.label} template`);
+		
+		// Show success message
+		vscode.window.showInformationMessage(
+			`RAZ configuration initialized successfully at ${levelChoice.label} level!`,
+			"Open Config"
+		).then(selection => {
+			if (selection === "Open Config") {
+				const configPath = path.join(cwd, ".raz", "config.toml");
+				vscode.workspace.openTextDocument(configPath).then(doc => {
+					vscode.window.showTextDocument(doc);
+				});
+			}
+		});
+
 	} catch (error) {
-		vscode.window.showErrorMessage(`Failed to show override stats: ${error}`);
+		vscode.window.showErrorMessage(`Failed to initialize RAZ config: ${error}`);
+		outputChannel.appendLine(`Init error: ${error}`);
 	}
 }
 
 
 
+
+async function listOverridesForFile(context: vscode.ExtensionContext): Promise<void> {
+	try {
+		// Check if we have an active editor
+		const editor = vscode.window.activeTextEditor;
+		if (!editor || editor.document.languageId !== "rust") {
+			vscode.window.showErrorMessage("RAZ: Please open a Rust file to list its overrides");
+			return;
+		}
+
+		const razPath = await ensureRazExecutable(context);
+		if (!razPath) {
+			return;
+		}
+		
+		// Find the project root for the current file
+		const filePath = editor.document.uri.fsPath;
+		const projectDir = findNearestRazDirectory();
+		
+		if (!projectDir) {
+			vscode.window.showInformationMessage("No RAZ configuration found for the current file's project");
+			return;
+		}
+		
+		// Use 'override list --file' to list overrides for specific file
+		const args = ["override", "list", "--file", filePath];
+		await executeRazAsTask(context, razPath, args, {
+			cwd: projectDir,
+			label: `RAZ: List Overrides for ${path.basename(filePath)}`,
+		});
+	} catch (error) {
+		vscode.window.showErrorMessage(`Failed to list overrides for file: ${error}`);
+	}
+}
+
+async function showStatsForFile(context: vscode.ExtensionContext): Promise<void> {
+	try {
+		// Check if we have an active editor
+		const editor = vscode.window.activeTextEditor;
+		if (!editor || editor.document.languageId !== "rust") {
+			vscode.window.showErrorMessage("RAZ: Please open a Rust file to show its override statistics");
+			return;
+		}
+
+		const razPath = await ensureRazExecutable(context);
+		if (!razPath) {
+			return;
+		}
+		
+		// For now, we'll show stats for the whole project but filtered by file
+		// Since raz CLI doesn't have a stats --file option yet
+		const filePath = editor.document.uri.fsPath;
+		const projectDir = findNearestRazDirectory();
+		
+		if (!projectDir) {
+			vscode.window.showInformationMessage("No RAZ configuration found for the current file's project");
+			return;
+		}
+		
+		// First list overrides for the file, then show general stats
+		const listArgs = ["override", "list", "--file", filePath];
+		await executeRazAsTask(context, razPath, listArgs, {
+			cwd: projectDir,
+			label: `RAZ: Overrides for ${path.basename(filePath)}`,
+		});
+		
+		// Also show general stats
+		const statsArgs = ["override", "stats"];
+		await executeRazAsTask(context, razPath, statsArgs, {
+			cwd: projectDir,
+			label: `RAZ: Override Statistics (${path.basename(projectDir)})`,
+		});
+	} catch (error) {
+		vscode.window.showErrorMessage(`Failed to show stats for file: ${error}`);
+	}
+}
+
+async function clearOverridesForFile(context: vscode.ExtensionContext): Promise<void> {
+	try {
+		// Check if we have an active editor
+		const editor = vscode.window.activeTextEditor;
+		if (!editor || editor.document.languageId !== "rust") {
+			vscode.window.showErrorMessage("RAZ: Please open a Rust file to clear its overrides");
+			return;
+		}
+
+		const filePath = editor.document.uri.fsPath;
+		const projectDir = findNearestRazDirectory();
+		
+		if (!projectDir) {
+			vscode.window.showInformationMessage("No RAZ configuration found for the current file's project");
+			return;
+		}
+
+		// First, list overrides for the file to see what will be cleared
+		const razPath = await ensureRazExecutable(context);
+		if (!razPath) {
+			return;
+		}
+
+		const result = await vscode.window.showWarningMessage(
+			`Are you sure you want to clear all overrides for ${path.basename(filePath)}?`,
+			{ modal: true, detail: "This action cannot be undone." },
+			"Clear",
+			"Cancel"
+		);
+
+		if (result === "Clear") {
+			// Since raz CLI doesn't have a clear --file option, we need to:
+			// 1. List all overrides
+			// 2. Find ones for this file
+			// 3. Delete them individually
+			vscode.window.showInformationMessage(
+				"Note: File-specific clearing is not yet implemented in RAZ CLI. Please use 'Clear All Overrides' and re-add the ones you want to keep.",
+				"OK"
+			);
+		}
+	} catch (error) {
+		vscode.window.showErrorMessage(`Failed to clear overrides for file: ${error}`);
+	}
+}
 
 export function deactivate(): void {
 	if (terminal) {
