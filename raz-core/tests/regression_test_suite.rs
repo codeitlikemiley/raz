@@ -409,7 +409,7 @@ mod tests {
 "#;
 
         let mut detector = TreeSitterTestDetector::new().unwrap();
-        let entries = detector.detect_test_entry_points(content, None).unwrap();
+        let entries = detector.detect_entry_points(content, None).unwrap();
 
         // Should detect all test functions
         assert!(

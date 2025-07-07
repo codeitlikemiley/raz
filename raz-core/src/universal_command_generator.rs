@@ -1695,11 +1695,11 @@ impl UniversalCommandGenerator {
     fn find_main_at_cursor(entry_points: &[EntryPoint], cursor: Position) -> Option<&EntryPoint> {
         let cursor_line = cursor.line + 1; // Convert to 1-based
 
-        // Check if cursor is on or near main function
+        // Check if cursor is within main function scope
         for ep in entry_points {
             if ep.entry_type == EntryPointType::Main {
-                // Check if cursor is on the main function line or within 2 lines
-                if cursor_line >= ep.line.saturating_sub(1) && cursor_line <= ep.line + 2 {
+                // Check if cursor is within the full scope of the main function
+                if cursor_line >= ep.line_range.0 && cursor_line <= ep.line_range.1 {
                     return Some(ep);
                 }
             }

@@ -31,7 +31,7 @@ mod tests {
 "#;
 
         let mut detector = TreeSitterTestDetector::new()?;
-        let entry_points = detector.detect_test_entry_points(source, None)?;
+        let entry_points = detector.detect_entry_points(source, None)?;
 
         // Debug: print what we found
         println!("Found {} entry points:", entry_points.len());
@@ -99,7 +99,7 @@ mod tests {
 "#;
 
         let mut detector = TreeSitterTestDetector::new()?;
-        let entry_points = detector.detect_test_entry_points(source, None)?;
+        let entry_points = detector.detect_entry_points(source, None)?;
 
         // Verify nested paths
         let unit_test = entry_points
@@ -223,7 +223,7 @@ mod tests {
 "#;
 
         let mut detector = TreeSitterTestDetector::new()?;
-        let entry_points = detector.detect_test_entry_points(source, None)?;
+        let entry_points = detector.detect_entry_points(source, None)?;
 
         // Should detect all test variations
         assert!(entry_points.iter().any(|ep| ep.name == "regular_test"));

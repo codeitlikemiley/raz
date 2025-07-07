@@ -366,8 +366,7 @@ impl FileDetector {
         #[cfg(feature = "tree-sitter-support")]
         {
             if let Ok(mut detector) = TreeSitterTestDetector::new() {
-                if let Ok(mut tree_sitter_entries) =
-                    detector.detect_test_entry_points(&content, cursor)
+                if let Ok(mut tree_sitter_entries) = detector.detect_entry_points(&content, cursor)
                 {
                     // Build module path from file location for cargo projects
                     let file_module_path =

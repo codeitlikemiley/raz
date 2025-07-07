@@ -29,8 +29,8 @@ impl TreeSitterTestDetector {
         Ok(Self { parser })
     }
 
-    /// Detect all test-related entry points in the file
-    pub fn detect_test_entry_points(
+    /// Detect all entry points in the file (tests, main, benchmarks, etc.)
+    pub fn detect_entry_points(
         &mut self,
         source: &str,
         cursor: Option<Position>,
@@ -339,12 +339,11 @@ impl TreeSitterTestDetector {
             }
             "function_item" => {
                 let fn_name = self.get_function_name(&node, source)?;
+                let start_line = node.start_position().row as u32 + 1;
+                let end_line = node.end_position().row as u32 + 1;
 
                 // Check if this is a test function
                 if self.is_test_function(&node, source) {
-                    let start_line = node.start_position().row as u32 + 1;
-                    let end_line = node.end_position().row as u32 + 1;
-
                     // Build full path including module hierarchy
                     let full_path = if module_stack.is_empty() {
                         fn_name.clone()
@@ -367,6 +366,26 @@ impl TreeSitterTestDetector {
                         column: node.start_position().column as u32,
                         line_range: (start_line, end_line),
                         full_path: Some(full_path),
+                    });
+                } else if fn_name == "main" {
+                    // Detect main function with proper line range
+                    entry_points.push(EntryPoint {
+                        name: "main".to_string(),
+                        entry_type: EntryPointType::Main,
+                        line: start_line,
+                        column: node.start_position().column as u32,
+                        line_range: (start_line, end_line),
+                        full_path: None,
+                    });
+                } else if self.is_bench_function(&node, source) {
+                    // Detect benchmark function with proper line range
+                    entry_points.push(EntryPoint {
+                        name: fn_name,
+                        entry_type: EntryPointType::Benchmark,
+                        line: start_line,
+                        column: node.start_position().column as u32,
+                        line_range: (start_line, end_line),
+                        full_path: None,
                     });
                 }
             }
@@ -419,7 +438,24 @@ impl TreeSitterTestDetector {
                 let attr_text = prev_sibling.utf8_text(source.as_bytes());
                 if let Ok(text) = attr_text {
                     // Match various test attributes
-                    if text.contains("test") {
+                    if text.contains("test") && !text.contains("bench") {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Check if a function node is a benchmark function (#[bench])
+    fn is_bench_function(&self, node: &Node, source: &str) -> bool {
+        // Check previous sibling for bench attributes
+        if let Some(prev_sibling) = node.prev_sibling() {
+            if prev_sibling.kind() == "attribute_item" {
+                let attr_text = prev_sibling.utf8_text(source.as_bytes());
+                if let Ok(text) = attr_text {
+                    if text.contains("bench") {
                         return true;
                     }
                 }

@@ -1,6 +1,6 @@
 [package]
 name = "raz-cli"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 description = "Universal command runner for Rust - Run any Rust file from anywhere with cursor-aware test targeting and override persistence"
 license = "MIT"
@@ -18,10 +18,10 @@ name = "raz"
 path = "src/main.rs"
 
 [dependencies]
-raz-common = { path = "../../raz-common", version = "0.2.3" }
-raz-core = { path = "../../raz-core", version = "0.2.3" }
-raz-config = { path = "../../raz-config", version = "0.2.3" }
-raz-override = { path = "../../raz-override", version = "0.2.3" }
+raz-common = { path = "../../raz-common", version = "0.2.4" }
+raz-core = { path = "../../raz-core", version = "0.2.4" }
+raz-config = { path = "../../raz-config", version = "0.2.4" }
+raz-override = { path = "../../raz-override", version = "0.2.4" }
 clap = { workspace = true }
 tokio = { workspace = true }
 serde_json = { workspace = true }
