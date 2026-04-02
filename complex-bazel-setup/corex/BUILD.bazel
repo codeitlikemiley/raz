@@ -1,0 +1,23 @@
+load("@corex_crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test", "rust_doc_test")
+
+rust_library(
+    name = "corex_lib",
+    srcs = ["src/lib.rs"],
+    deps = all_crate_deps(),
+    visibility = ["//visibility:public"],
+    crate_name = "corex",
+)
+
+rust_test(
+    name = "corex_tests",
+    crate = ":corex_lib",
+    deps = all_crate_deps(normal_dev = True),
+)
+
+rust_doc_test(
+    name = "corex_doc_test",
+    crate = ":corex_lib",
+    deps = all_crate_deps(normal_dev = True),
+)
+

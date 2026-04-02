@@ -1,0 +1,15 @@
+load("@combos_crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+rust_binary(
+    name = "backend_bin",
+    srcs = ["src/main.rs"],
+    deps = all_crate_deps(normal = True),
+)
+
+rust_test(
+    name = "backend_tests",
+    crate = ":backend_bin",
+    deps = all_crate_deps(normal_dev = True),
+)
+

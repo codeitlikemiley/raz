@@ -1,0 +1,29 @@
+{
+  "bazel": {
+    "test_framework": {
+      "command": "bazel",
+      "subcommand": "test",
+      "target": "{target}",
+      "args": ["--test_output", "streamed"],
+      "test_args": ["--nocapture", "--exact", "{test_filter}"]
+    },
+    "binary_framework": {
+      "command": "bazel",
+      "subcommand": "run",
+      "target": "{target}"
+    }
+  },
+  "overrides": [
+    {
+      "match": {
+        "file_path": "/Volumes/goldcoders/code/raz/complex-bazel-setup/combos/frontend/src/main.rs",
+        "function_name": "it_works_too",
+        "module_path": "tests",
+        "package": "frontend"
+      },
+      "bazel": {
+        "test_args": ["--nocapture"]
+      }
+    }
+  ]
+}

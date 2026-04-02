@@ -1,0 +1,73 @@
+load("@server_crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test", "rust_test_suite")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+
+rust_binary(
+    name = "server_bin",
+    srcs = ["src/main.rs"],
+    deps = all_crate_deps(normal = True) + [
+        "//corex:corex_lib",
+    ],
+    crate_root = "src/main.rs",
+)
+
+rust_test(
+    name = "tests",
+    crate = ":server_bin",
+    deps = all_crate_deps(normal_dev = True),
+)
+
+
+rust_test_suite(
+    name = "integration_tests",
+    srcs = glob(["tests/**"]),
+    deps = all_crate_deps(normal_dev = True),
+)
+
+cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+)
+
+rust_binary(
+    name = "bench",
+    srcs = ["benches/fibonacci_benchmark.rs"],
+    deps = all_crate_deps(normal_dev = True),
+    crate_root = "benches/fibonacci_benchmark.rs",
+)
+
+
+rust_test(
+    name = "bench_test",
+    crate = ":bench",   
+)
+
+rust_binary(
+    name = "axum_example",
+    srcs = ["examples/axum.rs"],
+    deps = all_crate_deps(normal_dev = True) + [
+        "//corex:corex_lib",  # include if needed
+    ],
+    crate_root = "examples/axum.rs",
+)
+
+rust_test(
+    name = "axum_example_test",
+    crate = ":axum_example",
+    deps = all_crate_deps(normal_dev = True),
+)
+
+rust_binary(
+    name = "proxy",
+    srcs = ["src/bin/proxy.rs"],
+    deps = all_crate_deps(normal = True) + [
+        "//corex:corex_lib",  # include if proxy depends on corex
+    ],
+    crate_root = "src/bin/proxy.rs",
+)
+
+rust_test(
+    name = "proxy_test",
+    crate = ":proxy",
+    deps = all_crate_deps(normal_dev = True),
+)

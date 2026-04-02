@@ -1,0 +1,40 @@
+# MODULE.bazel
+# Bring in Rust rules
+bazel_dep(name = "rules_rust", version = "0.63.0")  # check for latest release
+
+# Use crate_universe extension
+crate = use_extension(
+    "@rules_rust//crate_universe:extensions.bzl",
+    "crate",
+)
+
+# combos workspace
+crate.from_cargo(
+    name = "combos_crates",
+    manifests = [
+        "//combos:Cargo.toml",
+        "//combos/backend:Cargo.toml",
+        "//combos/frontend:Cargo.toml",
+    ],
+    cargo_lockfile = "//combos:Cargo.lock",
+)
+
+# corex single crate
+crate.from_cargo(
+    name = "corex_crates",
+    manifests = ["//corex:Cargo.toml"],
+    cargo_lockfile = "//corex:Cargo.lock",
+)
+
+# server single crate
+crate.from_cargo(
+    name = "server_crates",
+    manifests = ["//server:Cargo.toml"],
+    cargo_lockfile = "//server:Cargo.lock",
+)
+
+# Make repos available in BUILD files
+use_repo(crate, "combos_crates")
+use_repo(crate, "corex_crates")
+use_repo(crate, "server_crates")
+

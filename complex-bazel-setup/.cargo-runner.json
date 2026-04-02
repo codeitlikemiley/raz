@@ -1,0 +1,18 @@
+{
+  "bazel": {
+    "workspace": "complex_bazel_setup",
+    "test_framework": {
+      "command": "bazel",
+      "subcommand": "test",
+      "target": "{target}",
+      "args": ["--test_output", "streamed"],
+      "test_args": ["--nocapture", "--exact", "{test_filter}"]
+    },
+    "binary_framework": {
+      "command": "bazel",
+      "subcommand": "run",
+      "target": "{target}"
+    }
+  },
+  "overrides": []
+}
