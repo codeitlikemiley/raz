@@ -33,6 +33,8 @@ RAZ is a universal command runner that executes any Rust file from any directory
 - 🛡️ **Deferred Save** - Failed commands never save bad configurations
 - 🔧 **IDE Integration** - Works with VS Code, Vim, IntelliJ, and any editor
 - 🚀 **Zero Configuration** - Works instantly with any Rust project structure
+- 🔥 **Bazel Support** - First-class Bazel + Rust integration with target inference, CodeLens, and status bar indicators
+- 🧩 **Framework Dispatch** - Automatically routes Dioxus and Leptos projects to their specialized runners
 
 ## Key Concepts
 
@@ -77,11 +79,13 @@ RAZ works across multiple environments:
 
 | Component | Description |
 |-----------|-------------|
+| [`windrunner`](windrunner/) | Core build engine: command generation, build-system detection, framework dispatch, template DSL |
 | [`raz-core`](raz-core/) [![crates.io](https://img.shields.io/crates/v/raz-core.svg)](https://crates.io/crates/raz-core) | Core command generation and execution engine |
 | [`raz-validation`](raz-validation/) [![crates.io](https://img.shields.io/crates/v/raz-validation.svg)](https://crates.io/crates/raz-validation) | Framework-aware smart options validation |
 | [`raz-override`](raz-override/) [![crates.io](https://img.shields.io/crates/v/raz-override.svg)](https://crates.io/crates/raz-override) | Persistent override management with deferred save |
 | [`raz-config`](raz-config/) [![crates.io](https://img.shields.io/crates/v/raz-config.svg)](https://crates.io/crates/raz-config) | Configuration and settings management |
 | [`raz-common`](raz-common/) [![crates.io](https://img.shields.io/crates/v/raz-common.svg)](https://crates.io/crates/raz-common) | Shared utilities and types |
+| [`complex-bazel-setup`](complex-bazel-setup/) | Reference Bazel + Rust workspace for integration testing |
 
 
 

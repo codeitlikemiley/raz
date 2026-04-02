@@ -15,6 +15,8 @@
 - **Framework Aware**: Specialized commands for Leptos, Dioxus, Tauri, Bevy, Yew, and more
 - **Cross-IDE Override Persistence**: Save overrides in VS Code, use them in terminal, Vim, IntelliJ, or anywhere
 - **Zero Configuration**: Works immediately without any setup
+- **Bazel Integration**: Automatic Bazel workspace detection with Bazel-aware CodeLens, status bar badge, and config tree view
+- **Generate rust-project.json**: One-click `rust-project.json` generation for Bazel workspaces via `raz.generateRustProject`
 
 ## Usage
 
@@ -148,6 +150,66 @@ Use VS Code commands to manage your saved overrides:
 - **Command Palette**: Access override management through Cmd+Shift+P
 
 For CLI-based management, see the [Override Management Guide](https://github.com/codeitlikemiley/raz/blob/main/docs/override-management.md).
+
+## Bazel Projects
+
+RAZ has first-class support for Bazel + Rust projects. When a `BUILD.bazel` or `BUILD` file is detected in the project hierarchy, the extension switches into Bazel mode.
+
+### Bazel-Aware CodeLens
+
+CodeLens annotations change automatically in Bazel mode:
+
+| Context | Label |
+|---------|-------|
+| Binary (`main.rs`) | `▶ Run (Bazel)` |
+| Test function | `⚡ Test (Bazel)` |
+| Doc-test | `⚠️ Doc-tests not supported in Bazel` |
+
+### Status Bar Badge
+
+The RAZ status bar item (bottom-right) shows:
+- **`$(flame) Bazel`** — Bazel project detected
+- **`$(package) Cargo`** — standard Cargo project
+
+Clicking opens the active `.cargo-runner.json`.
+
+### Bazel Config Tree View
+
+In the **RAZ Override** sidebar panel, Bazel projects show a **Bazel Config** section with:
+- Inferred target label (e.g. `//server:unit_tests`)
+- Active test runner (from `bazel.test_framework` in `.cargo-runner.json`)
+- ⚠️ Doc-test limitation notice
+- Click any item to open `.cargo-runner.json`
+
+### Generating rust-project.json
+
+Use the Command Palette → **"RAZ: Generate Rust Project (Bazel)"** or run directly:
+
+```bash
+bazel run @rules_rust//tools/rust_analyzer:gen_rust_project -- //...
+```
+
+### Flat Bazel Override Shape
+
+When writing per-function overrides in `.cargo-runner.json`, the `"bazel"` block inside an override entry uses a **flat shape** — no nested `test_framework`:
+
+```json
+{
+  "overrides": [
+    {
+      "match": { "function_name": "my_slow_test", "package": "server" },
+      "bazel": {
+        "test_args": ["--nocapture", "--test-threads=1"]
+      }
+    }
+  ]
+}
+```
+
+Available `bazel` override fields: `command`, `subcommand`, `target`, `args`, `extra_args`, `test_args`, `exec_args`, `extra_env`.
+
+> ⚠️ The old nested form `"bazel": { "test_framework": { "test_args": [...] } }` inside overrides is no longer supported. Use the flat shape above.
+
 
 ## Configuration
 

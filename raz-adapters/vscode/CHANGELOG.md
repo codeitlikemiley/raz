@@ -5,6 +5,37 @@ All notable changes to the RAZ VS Code extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-02
+
+### Added
+
+#### Bazel Integration
+- **Bazel-aware CodeLens** — CodeLens now detects Bazel workspaces and renders contextually correct labels:
+  - `▶ Run (Bazel)` / `⚡ Test (Bazel)` instead of generic Cargo labels
+  - `⚠️ Doc-tests not supported in Bazel` inline warning for doc-test positions
+  - Inferred Bazel target label shown in CodeLens description (e.g. `//server:unit_tests`)
+- **Dynamic status bar badge** — the bottom-status-bar item now shows:
+  - `$(flame) Bazel` for Bazel projects
+  - `$(package) Cargo` for standard Cargo projects
+  - Clicking opens the `.cargo-runner.json` config file
+- **Bazel Config section in Override Tree** — when a project is Bazel-based, the override tree panel shows a collapsible **Bazel Config** section with:
+  - Inferred target label (`//package:target`)
+  - Active test runner (`bazel test` by default)
+  - ⚠️ Doc-test limitation notice
+  - Click-to-open `.cargo-runner.json`
+
+#### Override Tree UX
+- **Flat `BazelOverride` config shape** — overrides no longer require `"bazel": { "test_framework": { ... } }` nesting. Write fields directly:
+  ```json
+  { "match": { "function_name": "my_test" }, "bazel": { "test_args": ["--nocapture"] } }
+  ```
+- Override tree reads `bazel.test_framework.command + subcommand` from the top-level project config to show the active runner in the Bazel Config tree item.
+
+#### Project Generation
+- `raz.generateRustProject` command exposed to the activity bar — runs `bazel run @rules_rust//tools/rust_analyzer:gen_rust_project -- //...` for Bazel workspaces.
+
+---
+
 ## [0.2.1] - 2025-07-05
 
 ### Added
