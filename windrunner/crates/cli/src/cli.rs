@@ -34,8 +34,9 @@ pub enum Commands {
     /// Analyze a Rust file and list all runnable items
     #[command(visible_alias = "a")]
     Analyze {
-        /// Path to the Rust file with optional line number (e.g., src/main.rs:10)
-        filepath: String,
+        /// Path to the Rust file with optional line number (e.g., src/main.rs:10).
+        /// Defaults to the cwd entry point (src/main.rs, src/lib.rs, or first .rs found).
+        filepath: Option<String>,
 
         /// Show verbose output with command details
         #[arg(short, long)]
@@ -48,8 +49,9 @@ pub enum Commands {
     /// Run Rust code at a specific location
     #[command(visible_alias = "r")]
     Run {
-        /// Path to the Rust file with optional line number (e.g., src/main.rs:10)
-        filepath: String,
+        /// Path to the Rust file with optional line number (e.g., src/main.rs:10).
+        /// Defaults to the cwd entry point (src/main.rs, src/lib.rs, or first .rs found).
+        filepath: Option<String>,
 
         /// Print the command without executing it
         #[arg(short, long)]
@@ -198,7 +200,10 @@ impl Commands {
                 filepath,
                 verbose,
                 config,
-            } => analyze_command(&filepath, verbose, config),
+            } => {
+                let fp = resolve_filepath_arg(filepath)?;
+                analyze_command(&fp, verbose, config)
+            }
             Commands::Run { filepath, dry_run } => {
                 if let Ok(mut f) = std::fs::OpenOptions::new()
                     .append(true)
@@ -211,7 +216,8 @@ impl Commands {
                     )
                     .ok();
                 }
-                run_command(&filepath, dry_run)
+                let fp = resolve_filepath_arg(filepath)?;
+                run_command(&fp, dry_run)
             }
             Commands::Init {
                 cwd,
@@ -257,4 +263,75 @@ impl Commands {
             }
         }
     }
+}
+
+/// Resolve an optional filepath argument to a concrete path string.
+///
+/// If `arg` is `None`, auto-detect the best Rust entry point from cwd:
+///   1. `src/main.rs`          — standard binary crate
+///   2. `src/bin/<first>.rs`   — named binary (no main.rs)
+///   3. `src/lib.rs`           — library-only crate (maps to `cargo test`)
+///   4. First `*.rs` in `src/` — fallback for non-standard layouts
+///   5. First `*.rs` in cwd    — last resort
+fn resolve_filepath_arg(arg: Option<String>) -> anyhow::Result<String> {
+    if let Some(path) = arg {
+        return Ok(path);
+    }
+
+    let cwd = std::env::current_dir()?;
+
+    // 1. src/main.rs
+    let main_rs = cwd.join("src/main.rs");
+    if main_rs.exists() {
+        return Ok(main_rs.to_string_lossy().into_owned());
+    }
+
+    // 2. src/bin/*.rs — named binaries (sorted for determinism)
+    let bin_dir = cwd.join("src/bin");
+    if let Ok(entries) = std::fs::read_dir(&bin_dir) {
+        let mut bins: Vec<_> = entries
+            .flatten()
+            .filter(|e| e.path().extension().map_or(false, |x| x == "rs"))
+            .collect();
+        bins.sort_by_key(|e| e.file_name());
+        if let Some(first) = bins.first() {
+            return Ok(first.path().to_string_lossy().into_owned());
+        }
+    }
+
+    // 3. src/lib.rs — library crate; cargo runner maps this to `cargo test`
+    let lib_rs = cwd.join("src/lib.rs");
+    if lib_rs.exists() {
+        return Ok(lib_rs.to_string_lossy().into_owned());
+    }
+
+    // 4. Any other .rs in src/
+    if let Ok(entries) = std::fs::read_dir(cwd.join("src")) {
+        let mut rs_files: Vec<_> = entries
+            .flatten()
+            .filter(|e| e.path().extension().map_or(false, |x| x == "rs"))
+            .collect();
+        rs_files.sort_by_key(|e| e.file_name());
+        if let Some(first) = rs_files.first() {
+            return Ok(first.path().to_string_lossy().into_owned());
+        }
+    }
+
+    // 5. Any .rs in cwd itself
+    if let Ok(entries) = std::fs::read_dir(&cwd) {
+        let mut rs_files: Vec<_> = entries
+            .flatten()
+            .filter(|e| e.path().extension().map_or(false, |x| x == "rs"))
+            .collect();
+        rs_files.sort_by_key(|e| e.file_name());
+        if let Some(first) = rs_files.first() {
+            return Ok(first.path().to_string_lossy().into_owned());
+        }
+    }
+
+    anyhow::bail!(
+        "No Rust entry point found in {}.\n\
+         Hint: pass a file explicitly, e.g.  cargo runner run src/main.rs",
+        cwd.display()
+    )
 }
