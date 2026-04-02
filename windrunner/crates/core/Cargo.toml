@@ -1,0 +1,24 @@
+[package]
+name = "cargo-runner-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tree-sitter = { workspace = true }
+tree-sitter-rust = { workspace = true }
+tree-sitter-starlark = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+md5 = { workspace = true }
+cargo_toml = { workspace = true }
+tracing = { workspace = true }
+regex = "1.11"
+serde_starlark = "0.1.17"
+
+[dev-dependencies]
+insta = "1.43.1"
+tempfile = "3.20"
