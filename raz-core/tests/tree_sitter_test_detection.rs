@@ -233,6 +233,39 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_multiple_attributes_and_line_range() -> Result<(), Box<dyn std::error::Error>> {
+        let source = r#"
+#[tokio::test]
+#[should_panic]
+fn async_panic_test() {
+    assert!(false);
+}
+"#;
+
+        let mut detector = TreeSitterTestDetector::new()?;
+        let entry_points = detector.detect_entry_points(source, None)?;
+
+        let test = entry_points
+            .iter()
+            .find(|ep| ep.name == "async_panic_test")
+            .expect("Should find async_panic_test");
+        
+        assert_eq!(test.entry_type, EntryPointType::Test);
+        
+        // Expected: start_line should be 2 (the #[tokio::test] line)
+        println!("Test {} line range: {:?}", test.name, test.line_range);
+        
+        // Test cursor on the attribute line
+        // Line 0 is empty (newline after r#"
+        // Line 1 is #[tokio::test]
+        let cursor_on_attr = Position { line: 1, column: 5 };
+        let context = detector.find_test_context_at_cursor(source, cursor_on_attr)?;
+        assert!(context.is_some(), "Cursor on attribute line should be in test context");
+        
+        Ok(())
+    }
 }
 
 #[cfg(not(feature = "advanced-analysis"))]

@@ -282,7 +282,9 @@ impl TreeSitterTestDetector {
             "mod_item" => {
                 // Get module name first
                 let module_name = self.get_module_name(&node, source)?;
-                let start_line = node.start_position().row as u32 + 1;
+                
+                // Get line range, including preceding attributes
+                let start_line = self.get_item_start_line_including_attributes(&node);
                 let end_line = node.end_position().row as u32 + 1;
 
                 // Check if this is a test module or if we're inside a test context
@@ -339,7 +341,9 @@ impl TreeSitterTestDetector {
             }
             "function_item" => {
                 let fn_name = self.get_function_name(&node, source)?;
-                let start_line = node.start_position().row as u32 + 1;
+                
+                // Get line range, including preceding attributes
+                let start_line = self.get_item_start_line_including_attributes(&node);
                 let end_line = node.end_position().row as u32 + 1;
 
                 // Check if this is a test function
@@ -411,7 +415,7 @@ impl TreeSitterTestDetector {
 
     /// Check if a module node is a test module (#[cfg(test)])
     fn is_test_module(&self, node: &Node, source: &str) -> bool {
-        // Look for #[cfg(test)] attribute
+        // Look for #[cfg(test)] attribute in children (internal attributes)
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() == "attribute_item" {
@@ -420,6 +424,23 @@ impl TreeSitterTestDetector {
                     return true;
                 }
             }
+        }
+
+        // Look for #[cfg(test)] attribute in preceding siblings (outer attributes)
+        let mut current = node.prev_sibling();
+        while let Some(sibling) = current {
+            match sibling.kind() {
+                "attribute_item" => {
+                    if let Ok(text) = sibling.utf8_text(source.as_bytes()) {
+                        if text.contains("cfg(test)") {
+                            return true;
+                        }
+                    }
+                }
+                "line_comment" | "block_comment" => {}
+                _ => break,
+            }
+            current = sibling.prev_sibling();
         }
 
         // Also check if module name contains "test"
@@ -432,17 +453,27 @@ impl TreeSitterTestDetector {
 
     /// Check if a function node is a test function (#[test])
     fn is_test_function(&self, node: &Node, source: &str) -> bool {
-        // Check previous sibling for test attributes
-        if let Some(prev_sibling) = node.prev_sibling() {
-            if prev_sibling.kind() == "attribute_item" {
-                let attr_text = prev_sibling.utf8_text(source.as_bytes());
-                if let Ok(text) = attr_text {
-                    // Match various test attributes
-                    if text.contains("test") && !text.contains("bench") {
-                        return true;
+        // Check all preceding attributes for test markers (handles multiple attributes)
+        let mut current = node.prev_sibling();
+        while let Some(sibling) = current {
+            match sibling.kind() {
+                "attribute_item" => {
+                    if let Ok(text) = sibling.utf8_text(source.as_bytes()) {
+                        // Match various test attributes (#[test], #[tokio::test], #[rstest], etc.)
+                        if text.contains("test") && !text.contains("bench") {
+                            return true;
+                        }
                     }
                 }
+                "line_comment" | "block_comment" => {
+                    // Skip comments when looking for attributes
+                }
+                _ => {
+                    // Not an attribute or comment, stop searching
+                    break;
+                }
             }
+            current = sibling.prev_sibling();
         }
 
         false
@@ -450,16 +481,21 @@ impl TreeSitterTestDetector {
 
     /// Check if a function node is a benchmark function (#[bench])
     fn is_bench_function(&self, node: &Node, source: &str) -> bool {
-        // Check previous sibling for bench attributes
-        if let Some(prev_sibling) = node.prev_sibling() {
-            if prev_sibling.kind() == "attribute_item" {
-                let attr_text = prev_sibling.utf8_text(source.as_bytes());
-                if let Ok(text) = attr_text {
-                    if text.contains("bench") {
-                        return true;
+        // Check all preceding attributes for bench markers
+        let mut current = node.prev_sibling();
+        while let Some(sibling) = current {
+            match sibling.kind() {
+                "attribute_item" => {
+                    if let Ok(text) = sibling.utf8_text(source.as_bytes()) {
+                        if text.contains("bench") {
+                            return true;
+                        }
                     }
                 }
+                "line_comment" | "block_comment" => {}
+                _ => break,
             }
+            current = sibling.prev_sibling();
         }
 
         false
@@ -491,6 +527,48 @@ impl TreeSitterTestDetector {
         }
 
         Err(RazError::analysis("Function name not found".to_string()))
+    }
+
+    /// Get the start line of an item, including any preceding attributes
+    fn get_item_start_line_including_attributes(&self, node: &Node) -> u32 {
+        let mut start_line = node.start_position().row as u32 + 1;
+        let mut current = node.prev_sibling();
+
+        while let Some(sibling) = current {
+            match sibling.kind() {
+                "attribute_item" => {
+                    start_line = sibling.start_position().row as u32 + 1;
+                }
+                "line_comment" | "block_comment" => {
+                    // Skip comments but don't use them as the start line of the item
+                }
+                _ => break,
+            }
+            current = sibling.prev_sibling();
+        }
+
+        start_line
+    }
+
+    /// Get the start byte of an item, including any preceding attributes
+    fn get_item_start_byte_including_attributes(&self, node: &Node) -> usize {
+        let mut start_byte = node.start_byte();
+        let mut current = node.prev_sibling();
+
+        while let Some(sibling) = current {
+            match sibling.kind() {
+                "attribute_item" => {
+                    start_byte = sibling.start_byte();
+                }
+                "line_comment" | "block_comment" => {
+                    // Skip comments but don't use them as the start byte of the item
+                }
+                _ => break,
+            }
+            current = sibling.prev_sibling();
+        }
+
+        start_byte
     }
 
     /// Find what test context the cursor is in
@@ -575,8 +653,9 @@ impl TreeSitterTestDetector {
         source: &str,
         cursor_byte: usize,
     ) -> RazResult<Option<String>> {
-        // Check if cursor is within this node
-        if cursor_byte >= node.start_byte() && cursor_byte <= node.end_byte() {
+        // Check if cursor is within this node (including preceding attributes)
+        let start_byte = self.get_item_start_byte_including_attributes(&node);
+        if cursor_byte >= start_byte && cursor_byte <= node.end_byte() {
             match node.kind() {
                 "function_item" => {
                     if let Ok(name) = self.get_function_name(&node, source) {
@@ -801,7 +880,7 @@ impl TreeSitterTestDetector {
         context: &mut TestContext,
         module_stack: &mut Vec<String>,
     ) -> RazResult<()> {
-        let node_start = node.start_byte();
+        let node_start = self.get_item_start_byte_including_attributes(&node);
         let node_end = node.end_byte();
 
         // Check if cursor is within this node
@@ -822,7 +901,7 @@ impl TreeSitterTestDetector {
                             name: module_name,
                             full_path: module_stack.join("::"),
                             line_range: (
-                                node.start_position().row as u32 + 1,
+                                self.get_item_start_line_including_attributes(&node),
                                 node.end_position().row as u32 + 1,
                             ),
                         });
@@ -840,7 +919,7 @@ impl TreeSitterTestDetector {
                         context.in_test_function = Some(TestFunction {
                             name: fn_name,
                             full_path,
-                            line: node.start_position().row as u32 + 1,
+                            line: self.get_item_start_line_including_attributes(&node),
                         });
                     }
                 }
