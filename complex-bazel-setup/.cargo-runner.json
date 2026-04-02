@@ -1,18 +1,39 @@
 {
   "bazel": {
-    "workspace": "complex_bazel_setup",
-    "test_framework": {
+    "benchmark_framework": {
+      "args": [
+        "--test_output",
+        "streamed",
+        "--test_arg",
+        "--bench"
+      ],
       "command": "bazel",
       "subcommand": "test",
       "target": "{target}",
-      "args": ["--test_output", "streamed"],
-      "test_args": ["--nocapture", "--exact", "{test_filter}"]
+      "test_args": [
+        "{bench_filter}"
+      ]
     },
     "binary_framework": {
       "command": "bazel",
       "subcommand": "run",
       "target": "{target}"
-    }
+    },
+    "test_framework": {
+      "args": [
+        "--test_output",
+        "streamed"
+      ],
+      "command": "bazel",
+      "subcommand": "test",
+      "target": "{target}",
+      "test_args": [
+        "--nocapture",
+        "--exact",
+        "{test_filter}"
+      ]
+    },
+    "workspace": "complex-bazel-setup"
   },
   "overrides": []
 }

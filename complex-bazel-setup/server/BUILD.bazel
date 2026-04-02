@@ -71,3 +71,19 @@ rust_test(
     crate = ":proxy",
     deps = all_crate_deps(normal_dev = True),
 )
+# BEGIN raz-managed
+rust_binary(
+    name = "example_axum",
+    srcs = ["examples/axum.rs"],
+    crate_root = "examples/axum.rs",
+    deps = all_crate_deps(normal = True),
+)
+
+rust_binary(
+    name = "bench_fibonacci_benchmark",
+    srcs = ["benches/fibonacci_benchmark.rs"],
+    crate_root = "benches/fibonacci_benchmark.rs",
+    deps = all_crate_deps(normal_dev = True),
+)
+
+# END raz-managed
