@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    analyze_command, bazel_add_command, bazel_sync_command, build_sync_command, init_command,
-    override_command, run_command, unset_command,
+    analyze_command, bazel_add_command, bazel_init_command, bazel_sync_command,
+    build_sync_command, init_command, override_command, run_command, unset_command,
 };
 
 #[derive(Parser)]
@@ -181,6 +181,34 @@ pub enum Commands {
         #[arg(short, long)]
         dry_run: bool,
     },
+
+    /// Convert a plain `cargo new` project into a Bazel + Rust workspace
+    ///
+    /// Generates MODULE.bazel, .bazelversion, .bazelrc, BUILD.bazel (root + crate),
+    /// Cargo.lock, and .cargo-runner.json, then runs `bazel sync` to pull deps.
+    ///
+    /// Examples:
+    ///   cargo runner bazel-init              # convert current directory
+    ///   cargo runner bazel-init --skip-sync  # generate files, skip bazel sync
+    ///   cargo runner bazel-init --force      # overwrite existing files
+    #[command(name = "bazel-init")]
+    BazelInit {
+        /// Specify the project directory (defaults to cwd)
+        #[arg(short, long)]
+        cwd: Option<String>,
+
+        /// Overwrite existing Bazel files
+        #[arg(short, long)]
+        force: bool,
+
+        /// Skip running `bazel sync` after scaffolding
+        #[arg(long)]
+        skip_sync: bool,
+
+        /// Override the Bazel workspace name (defaults to directory name)
+        #[arg(long, value_name = "NAME")]
+        workspace_name: Option<String>,
+    },
 }
 
 impl Commands {
@@ -261,6 +289,17 @@ impl Commands {
             Commands::BuildSync { crate_name, dry_run } => {
                 build_sync_command(crate_name.as_deref(), dry_run)
             }
+            Commands::BazelInit {
+                cwd,
+                force,
+                skip_sync,
+                workspace_name,
+            } => bazel_init_command(
+                cwd.as_deref(),
+                force,
+                skip_sync,
+                workspace_name.as_deref(),
+            ),
         }
     }
 }

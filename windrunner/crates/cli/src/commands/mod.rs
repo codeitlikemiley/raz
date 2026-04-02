@@ -1,5 +1,6 @@
 pub mod analyze;
 pub mod bazel_add;
+pub mod bazel_init;
 pub mod bazel_sync;
 pub mod build_sync;
 pub mod init;
@@ -9,6 +10,7 @@ pub mod unset;
 
 pub use analyze::analyze_command;
 pub use bazel_add::bazel_add_command;
+pub use bazel_init::bazel_init_command;
 pub use bazel_sync::bazel_sync_command;
 pub use build_sync::build_sync_command;
 pub use init::init_command;
