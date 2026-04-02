@@ -79,15 +79,31 @@ pub fn build_sync_command(crate_filter: Option<&str>, dry_run: bool) -> Result<(
 fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_run: bool) -> Result<()> {
     println!("\n📁 Scanning: {}", dir.display());
 
-    let targets = infer_targets(dir, crate_name, repo_name);
+    let build_path = dir.join("BUILD.bazel");
+
+    // Read the existing file so we can skip already-defined targets
+    let existing_content = if build_path.exists() {
+        std::fs::read_to_string(&build_path)
+            .with_context(|| format!("reading {}", build_path.display()))?
+    } else {
+        String::new()
+    };
+
+    // Collect names already defined *outside* the managed block
+    let existing_names = names_outside_managed_block(&existing_content);
+
+    let (targets, skipped) = infer_targets(dir, crate_name, repo_name, &existing_names);
+
+    for name in &skipped {
+        println!("   ~ skipping '{name}' (already defined)");
+    }
 
     if targets.is_empty() {
-        println!("   ✓ No new targets detected.");
+        println!("   ✓ No new targets to add.");
         return Ok(());
     }
 
     let generated = render_managed_block(&targets);
-    let build_path = dir.join("BUILD.bazel");
 
     if dry_run {
         println!("   Would write to: {}", build_path.display());
@@ -95,10 +111,8 @@ fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_run: bool) -
         return Ok(());
     }
 
-    if build_path.exists() {
-        let existing = std::fs::read_to_string(&build_path)
-            .with_context(|| format!("reading {}", build_path.display()))?;
-        let updated = splice_managed_block(&existing, &generated);
+    if !existing_content.is_empty() {
+        let updated = splice_managed_block(&existing_content, &generated);
         std::fs::write(&build_path, updated)
             .with_context(|| format!("writing {}", build_path.display()))?;
     } else {
@@ -128,6 +142,17 @@ enum BazelTarget {
 }
 
 impl BazelTarget {
+    /// The Bazel `name = "..."` value this target would produce.
+    fn bazel_name(&self) -> String {
+        match self {
+            Self::Library { name, .. } => format!("{name}_lib"),
+            Self::Binary { name, .. } => name.clone(),
+            Self::TestSuite { .. } => "integration_tests".to_string(),
+            Self::Example { name, .. } => format!("example_{name}"),
+            Self::Bench { name, .. } => format!("bench_{name}"),
+        }
+    }
+
     fn description(&self) -> String {
         match self {
             Self::Library { name, .. } => format!("rust_library({name})"),
@@ -195,12 +220,29 @@ rust_test(
     }
 }
 
-fn infer_targets(dir: &Path, crate_name: &str, repo_name: &str) -> Vec<BazelTarget> {
-    let mut targets = Vec::new();
+/// Returns all `name = "..."` values found anywhere in the file.
+/// This ensures `build-sync` is idempotent — targets already in the managed
+/// block are treated the same as hand-authored ones and are never duplicated.
+fn names_outside_managed_block(content: &str) -> std::collections::HashSet<String> {
+    let re = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap();
+    re.captures_iter(content)
+        .map(|c| c[1].to_string())
+        .collect()
+}
+
+/// Returns `(new_targets, skipped_names)` where `skipped_names` are targets
+/// that already exist in the hand-authored part of the file.
+fn infer_targets(
+    dir: &Path,
+    crate_name: &str,
+    repo_name: &str,
+    existing_names: &std::collections::HashSet<String>,
+) -> (Vec<BazelTarget>, Vec<String>) {
+    let mut candidates: Vec<BazelTarget> = Vec::new();
 
     // src/lib.rs → rust_library + unit_tests
     if dir.join("src/lib.rs").exists() {
-        targets.push(BazelTarget::Library {
+        candidates.push(BazelTarget::Library {
             name: crate_name.to_string(),
             repo_name: repo_name.to_string(),
         });
@@ -208,7 +250,7 @@ fn infer_targets(dir: &Path, crate_name: &str, repo_name: &str) -> Vec<BazelTarg
 
     // src/main.rs → rust_binary named <crate>_bin
     if dir.join("src/main.rs").exists() {
-        targets.push(BazelTarget::Binary {
+        candidates.push(BazelTarget::Binary {
             name: format!("{}_bin", crate_name),
             src: "src/main.rs".to_string(),
             repo_name: repo_name.to_string(),
@@ -221,7 +263,7 @@ fn infer_targets(dir: &Path, crate_name: &str, repo_name: &str) -> Vec<BazelTarg
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "rs") {
                 let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                targets.push(BazelTarget::Binary {
+                candidates.push(BazelTarget::Binary {
                     name: stem.clone(),
                     src: format!("src/bin/{}.rs", stem),
                     repo_name: repo_name.to_string(),
@@ -232,7 +274,7 @@ fn infer_targets(dir: &Path, crate_name: &str, repo_name: &str) -> Vec<BazelTarg
 
     // tests/ → rust_test_suite
     if dir.join("tests").exists() {
-        targets.push(BazelTarget::TestSuite {
+        candidates.push(BazelTarget::TestSuite {
             name: "integration_tests".to_string(),
             repo_name: repo_name.to_string(),
         });
@@ -244,7 +286,7 @@ fn infer_targets(dir: &Path, crate_name: &str, repo_name: &str) -> Vec<BazelTarg
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "rs") {
                 let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                targets.push(BazelTarget::Example {
+                candidates.push(BazelTarget::Example {
                     name: stem.clone(),
                     src: format!("examples/{}.rs", stem),
                     repo_name: repo_name.to_string(),
@@ -259,7 +301,7 @@ fn infer_targets(dir: &Path, crate_name: &str, repo_name: &str) -> Vec<BazelTarg
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "rs") {
                 let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                targets.push(BazelTarget::Bench {
+                candidates.push(BazelTarget::Bench {
                     name: stem.clone(),
                     src: format!("benches/{}.rs", stem),
                     repo_name: repo_name.to_string(),
@@ -268,7 +310,19 @@ fn infer_targets(dir: &Path, crate_name: &str, repo_name: &str) -> Vec<BazelTarg
         }
     }
 
-    targets
+    // Partition into new vs already-defined
+    let mut targets = Vec::new();
+    let mut skipped = Vec::new();
+    for target in candidates {
+        let bazel_name = target.bazel_name();
+        if existing_names.contains(&bazel_name) {
+            skipped.push(bazel_name);
+        } else {
+            targets.push(target);
+        }
+    }
+
+    (targets, skipped)
 }
 
 // ── rendering ─────────────────────────────────────────────────────────────────
