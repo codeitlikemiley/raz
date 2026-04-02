@@ -2,8 +2,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    analyze_command, bazel_add_command, bazel_init_command, bazel_sync_command,
-    build_sync_command, init_command, override_command, run_command, unset_command,
+    analyze_command, bazel_add_command, bazel_clean_command, bazel_init_command,
+    bazel_query_command, bazel_sync_command, bazel_test_command, build_sync_command,
+    init_command, override_command, run_command, unset_command, watch_command,
 };
 
 #[derive(Parser)]
@@ -209,6 +210,114 @@ pub enum Commands {
         #[arg(long, value_name = "NAME")]
         workspace_name: Option<String>,
     },
+
+    /// List Bazel targets in the workspace
+    ///
+    /// Wraps `bazel query` with a friendlier interface.
+    ///
+    /// Examples:
+    ///   cargo runner bazel-query               # list all targets
+    ///   cargo runner bazel-query --tests        # list only rust_test targets
+    ///   cargo runner bazel-query --bins         # list only rust_binary targets
+    ///   cargo runner bazel-query 'deps(//:foo)' # raw bazel query expression
+    #[command(name = "bazel-query")]
+    BazelQuery {
+        /// Bazel query expression (defaults to `//...`)
+        #[arg(value_name = "EXPR")]
+        expr: Option<String>,
+
+        /// Output format passed to `--output` (default: label)
+        #[arg(long, default_value = "label")]
+        output: String,
+
+        /// Show only rust_test targets
+        #[arg(long)]
+        tests: bool,
+
+        /// Show only rust_binary targets
+        #[arg(long)]
+        bins: bool,
+    },
+
+    /// Clean Bazel build outputs and optionally the shared caches
+    ///
+    /// Examples:
+    ///   cargo runner bazel-clean               # clean build outputs
+    ///   cargo runner bazel-clean --expunge     # remove all Bazel state
+    ///   cargo runner bazel-clean --disk-cache  # clear shared build cache
+    ///   cargo runner bazel-clean --all-caches  # clear disk + repo caches
+    #[command(name = "bazel-clean")]
+    BazelClean {
+        /// Run `bazel clean --expunge` (removes all Bazel state for this workspace)
+        #[arg(long)]
+        expunge: bool,
+
+        /// Clear the shared disk cache (~/.cache/bazel-disk)
+        #[arg(long)]
+        disk_cache: bool,
+
+        /// Clear the shared repository cache (~/.cache/bazel-repo)
+        #[arg(long)]
+        repo_cache: bool,
+
+        /// Clear both disk and repository caches
+        #[arg(long)]
+        all_caches: bool,
+    },
+
+    /// Run `bazel test` for a crate or the whole workspace
+    ///
+    /// Examples:
+    ///   cargo runner test                           # test everything (//...)
+    ///   cargo runner test //:my_crate_test          # specific target
+    ///   cargo runner test --filter my_fn            # run tests matching a name
+    ///   cargo runner test --crate server            # test a named crate
+    ///   cargo runner test --streamed                # show all output live
+    #[command(name = "test")]
+    BazelTest {
+        /// Bazel target to test (defaults to //...)
+        #[arg(value_name = "TARGET")]
+        target: Option<String>,
+
+        /// Filter to a specific test name (passed as --test_arg=--exact <name>)
+        #[arg(long, short = 'f', value_name = "NAME")]
+        filter: Option<String>,
+
+        /// Limit to a specific crate by name or directory basename
+        #[arg(long, value_name = "CRATE")]
+        crate_name: Option<String>,
+
+        /// Stream all test output (--test_output=streamed)
+        #[arg(long)]
+        streamed: bool,
+    },
+
+    /// Watch src/ for changes and trigger a Bazel build, test, or run
+    ///
+    /// Examples:
+    ///   cargo runner watch               # watch + bazel build on change
+    ///   cargo runner watch --test        # watch + bazel test on change
+    ///   cargo runner watch --run         # watch + bazel run on change
+    ///   cargo runner watch --target //:my_bin --run
+    ///   cargo runner watch --debounce 500
+    #[command(name = "watch")]
+    Watch {
+        /// Bazel target to build/test/run (auto-detected from cwd if omitted)
+        #[arg(long, value_name = "TARGET")]
+        target: Option<String>,
+
+        /// Run the target instead of building it
+        #[arg(long, short = 'r')]
+        run: bool,
+
+        /// Test the target instead of building it
+        #[arg(long, short = 't')]
+        test: bool,
+
+        /// Debounce delay in milliseconds (default: 300)
+        #[arg(long, default_value = "300", value_name = "MS")]
+        debounce: u64,
+    },
 }
 
 impl Commands {
@@ -300,6 +409,29 @@ impl Commands {
                 skip_sync,
                 workspace_name.as_deref(),
             ),
+            Commands::BazelQuery { expr, output, tests, bins } => {
+                bazel_query_command(expr.as_deref(), &output, tests, bins)
+            }
+            Commands::BazelClean {
+                expunge,
+                disk_cache,
+                repo_cache,
+                all_caches,
+            } => bazel_clean_command(expunge, disk_cache, repo_cache, all_caches),
+            Commands::BazelTest {
+                target,
+                filter,
+                crate_name,
+                streamed,
+            } => bazel_test_command(
+                target.as_deref(),
+                filter.as_deref(),
+                crate_name.as_deref(),
+                streamed,
+            ),
+            Commands::Watch { target, run, test, debounce } => {
+                watch_command(target.as_deref(), run, test, debounce)
+            }
         }
     }
 }
