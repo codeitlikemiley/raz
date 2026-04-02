@@ -1,1 +1,1 @@
-{"root":["./src/debugger.ts","./src/extension.ts","./src/overridetreeprovider.ts","./src/taskprovider.ts","./src/types/toml.d.ts","./src/utils/workspace.ts"],"version":"5.8.2"}
+{"root":["./src/bazelcommands.ts","./src/buildsystemstatus.ts","./src/codelensprovider.ts","./src/debugger.ts","./src/extension.ts","./src/overridetreeprovider.ts","./src/taskprovider.ts","./src/types/toml.d.ts","./src/utils/buildsystem.ts","./src/utils/workspace.ts"],"version":"5.8.2"}

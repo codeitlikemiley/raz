@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as toml from 'toml';
 import { getAllRazDirectories } from './utils/workspace';
+import { detectBuildSystem, deriveBazelTarget } from './utils/buildSystem';
 
 interface OverrideEntry {
     key: {
@@ -222,8 +223,88 @@ export class RazOverrideTreeProvider implements vscode.TreeDataProvider<Override
     }
 
     private getProjectChildren(projectPath: string, isGlobal = false): OverrideItem[] {
-        // Simply get the overrides for this project
-        return this.getProjectOverrides(projectPath, isGlobal);
+        const items: OverrideItem[] = [];
+
+        // E3 — Bazel config section
+        if (!isGlobal) {
+            // Pick a representative file to detect the build system
+            const probe = path.join(projectPath, 'src', 'lib.rs');
+            const buildSystem = detectBuildSystem(probe);
+
+            if (buildSystem === 'bazel') {
+                const target = deriveBazelTarget(probe);
+                const configJson = path.join(projectPath, '.cargo-runner.json');
+
+                // Read bazel.test_framework if present
+                let testFramework = 'default';
+                if (fs.existsSync(configJson)) {
+                    try {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const cfg: any = JSON.parse(fs.readFileSync(configJson, 'utf8'));
+                        const tf = cfg?.bazel?.test_framework;
+                        if (tf?.command && tf?.subcommand) {
+                            testFramework = `${tf.command} ${tf.subcommand}`;
+                        }
+                    } catch { /* ignore */ }
+                }
+
+                const bazelHeader = new OverrideItem(
+                    `Bazel Config`,
+                    vscode.TreeItemCollapsibleState.Expanded,
+                    'razBazelHeader',
+                    projectPath,
+                );
+                bazelHeader.iconPath = new vscode.ThemeIcon('flame');
+                bazelHeader.tooltip = 'Bazel build system settings for this package';
+                bazelHeader.description = target ?? '(target not resolved)';
+                items.push(bazelHeader);
+
+                // Target item
+                const targetItem = new OverrideItem(
+                    target ? `Target: ${target}` : 'Target: (not resolved)',
+                    vscode.TreeItemCollapsibleState.None,
+                    'razBazelTarget',
+                    projectPath,
+                );
+                targetItem.iconPath = new vscode.ThemeIcon('symbol-constant');
+                targetItem.tooltip = target
+                    ? `Inferred Bazel target label.\nFull command: bazel test ${target} --test_output=streamed`
+                    : 'Could not resolve BUILD label. Ensure a BUILD.bazel file exists in the package.';
+                items.push(targetItem);
+
+                // Test framework item  
+                const tfItem = new OverrideItem(
+                    `Test runner: ${testFramework}`,
+                    vscode.TreeItemCollapsibleState.None,
+                    'razBazelTestRunner',
+                    path.join(projectPath, '.cargo-runner.json'),
+                );
+                tfItem.iconPath = new vscode.ThemeIcon('beaker');
+                tfItem.tooltip = 'Configure via bazel.test_framework in .cargo-runner.json';
+                tfItem.command = fs.existsSync(configJson) ? {
+                    command: 'vscode.open',
+                    title: 'Open config',
+                    arguments: [vscode.Uri.file(configJson)],
+                } : undefined;
+                items.push(tfItem);
+
+                // Doc-test limitation notice
+                const docItem = new OverrideItem(
+                    `⚠️  Doc-tests not supported`,
+                    vscode.TreeItemCollapsibleState.None,
+                    'razBazelDocTestWarning',
+                );
+                docItem.iconPath = new vscode.ThemeIcon('warning');
+                docItem.tooltip =
+                    'Bazel does not support `cargo test --doc`.\n' +
+                    'Convert doc-tests to #[test] unit tests within the same module.';
+                items.push(docItem);
+            }
+        }
+
+        // Standard overrides
+        items.push(...this.getProjectOverrides(projectPath, isGlobal));
+        return items;
     }
     
     private getProjectOverrides(projectPath: string, isGlobal = false): OverrideItem[] {

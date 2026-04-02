@@ -153,6 +153,42 @@
 				"command": "raz.debugGlobalOverrides",
 				"title": "Debug Global Overrides",
 				"category": "RAZ"
+			},
+			{
+				"command": "raz.showBuildSystemInfo",
+				"title": "Show Build System Info",
+				"category": "RAZ",
+				"icon": "$(info)"
+			},
+			{
+				"command": "raz.generateRustProject",
+				"title": "Generate rust-project.json (Bazel)",
+				"category": "RAZ",
+				"icon": "$(file-add)"
+			},
+			{
+				"command": "raz.bazelSync",
+				"title": "Sync Bazel Crate-Universe",
+				"category": "RAZ",
+				"icon": "$(sync)"
+			},
+			{
+				"command": "raz.bazelAdd",
+				"title": "Add Crate (Bazel)",
+				"category": "RAZ",
+				"icon": "$(package)"
+			},
+			{
+				"command": "raz.buildSync",
+				"title": "Scaffold / Update BUILD.bazel Targets",
+				"category": "RAZ",
+				"icon": "$(file-code)"
+			},
+			{
+				"command": "raz.initBazel",
+				"title": "Init Bazel Config (.cargo-runner.json)",
+				"category": "RAZ",
+				"icon": "$(gear)"
 			}
 		],
 		"keybindings": [
@@ -173,6 +209,21 @@
 			"view/title": [
 				{
 					"command": "raz.refreshOverrides",
+					"when": "view == razOverrides",
+					"group": "navigation"
+				},
+				{
+					"command": "raz.generateRustProject",
+					"when": "view == razOverrides",
+					"group": "navigation"
+				},
+				{
+					"command": "raz.bazelSync",
+					"when": "view == razOverrides",
+					"group": "navigation"
+				},
+				{
+					"command": "raz.buildSync",
 					"when": "view == razOverrides",
 					"group": "navigation"
 				}
@@ -226,6 +277,21 @@
 					"type": "boolean",
 					"default": true,
 					"description": "Enable automatic breakpoint detection for debugging integration with rust-analyzer"
+				},
+				"raz.enableCodeLens": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable RAZ CodeLens above Rust functions to quickly run them"
+				},
+				"raz.cargoRunnerPath": {
+					"type": "string",
+					"default": "",
+					"description": "Path to the cargo-runner binary. Leave empty to resolve from system PATH (requires `cargo install cargo-runner`)."
+				},
+				"raz.bazelAutoSync": {
+					"type": "boolean",
+					"default": true,
+					"description": "When a Cargo.toml is saved inside a Bazel workspace, prompt to run `cargo runner sync` automatically."
 				}
 			}
 		}

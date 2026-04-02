@@ -14,6 +14,17 @@ import { registerTaskProvider, executeRazAsTask } from "./taskProvider";
 import { executeWithDebuggingSupport, registerDebugCommands } from "./debugger";
 import { findNearestRazDirectory, getAllRazDirectories } from "./utils/workspace";
 import { RazOverrideTreeProvider } from "./overrideTreeProvider";
+import { RazCodeLensProvider } from "./codeLensProvider";
+import { BuildSystemStatusBar, showBuildSystemInfo } from "./buildSystemStatus";
+import {
+	registerBazelSync,
+	registerBazelAdd,
+	registerBuildSync,
+	registerInitBazel,
+	registerCargoTomlWatcher,
+	showBazelActions,
+} from "./bazelCommands";
+import { detectBuildSystem } from "./utils/buildSystem";
 
 let outputChannel: vscode.OutputChannel;
 let terminal: vscode.Terminal | undefined;
@@ -505,6 +516,15 @@ export async function activate(
 	);
 	outputChannel.appendLine("✅ raz.runCommandWithOverride registered");
 
+	// Register CodeLens provider
+	context.subscriptions.push(
+		vscode.languages.registerCodeLensProvider(
+			{ language: 'rust', scheme: 'file' },
+			new RazCodeLensProvider()
+		)
+	);
+	outputChannel.appendLine("✅ razCodeLensProvider registered");
+
 	// Register clear overrides command
 	context.subscriptions.push(
 		vscode.commands.registerCommand("raz.clearOverrides", async () => {
@@ -966,6 +986,89 @@ export async function activate(
 	context.subscriptions.push(watcher);
 	
 	outputChannel.appendLine("✅ RAZ Override tree view registered");
+
+	// E5 — Build system status bar badge
+	new BuildSystemStatusBar(context);
+	outputChannel.appendLine("✅ Build system status bar registered");
+
+	// E5 — Info panel command (triggered by clicking the badge)
+	// For Bazel files: shows action quick-pick with sync/add/build-sync shortcuts.
+	// For Cargo files: shows the standard informational panel.
+	context.subscriptions.push(
+		vscode.commands.registerCommand('raz.showBuildSystemInfo', async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) { return; }
+			const filePath = editor.document.uri.fsPath;
+			const buildSystem = detectBuildSystem(filePath);
+			if (buildSystem === 'bazel') {
+				await showBazelActions(filePath);
+			} else {
+				await showBuildSystemInfo(filePath);
+			}
+		}),
+	);
+	outputChannel.appendLine("✅ raz.showBuildSystemInfo registered");
+
+	// E4 — Generate rust-project.json for Bazel workspaces
+	context.subscriptions.push(
+		vscode.commands.registerCommand('raz.generateRustProject', async () => {
+			const editor = vscode.window.activeTextEditor;
+			const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!wsRoot) {
+				vscode.window.showErrorMessage('RAZ: No workspace folder open.');
+				return;
+			}
+
+			const razPath = editor?.document.uri.fsPath ?? wsRoot;
+			const { exec: execCb } = await import('node:child_process');
+			const { promisify } = await import('node:util');
+			const execAsync = promisify(execCb);
+
+			const outPath = path.join(wsRoot, 'rust-project.json');
+
+			try {
+				// Try raz generate-rust-project first, fall back to bazel run
+				await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: 'RAZ', cancellable: false },
+					async (progress) => {
+						progress.report({ message: 'Generating rust-project.json…' });
+						const { stdout, stderr } = await execAsync(
+							`raz generate-rust-project`,
+							{ cwd: wsRoot },
+						).catch(async () => {
+							// Fallback: bazel run @rules_rust//tools/rust_analyzer:gen_rust_project
+							return execAsync(
+								'bazel run @rules_rust//tools/rust_analyzer:gen_rust_project',
+								{ cwd: wsRoot },
+							);
+						});
+						outputChannel.appendLine(stdout);
+						if (stderr) { outputChannel.appendLine(stderr); }
+					},
+				);
+
+				const exists = fs.existsSync(outPath);
+				const msg = exists
+					? `rust-project.json generated at ${outPath}`
+					: 'Command finished — check terminal for output';
+				vscode.window.showInformationMessage(`RAZ: ${msg}`);
+			} catch (err) {
+				vscode.window.showErrorMessage(`RAZ: Failed to generate rust-project.json: ${err}`);
+				outputChannel.appendLine(`raz.generateRustProject error: ${err}`);
+			}
+			
+			void razPath; // suppress unused warning
+		}),
+	);
+	outputChannel.appendLine("✅ raz.generateRustProject registered");
+
+	// ── Bazel transparent-proxy commands (Phase 1) ────────────────────────────
+	registerBazelSync(context, outputChannel);
+	registerBazelAdd(context, outputChannel);
+	registerBuildSync(context, outputChannel);
+	registerInitBazel(context, outputChannel);
+	registerCargoTomlWatcher(context, outputChannel);
+	outputChannel.appendLine("✅ Bazel transparent-proxy commands registered");
 }
 
 async function setupRazBinary(_context: vscode.ExtensionContext): Promise<void> {
