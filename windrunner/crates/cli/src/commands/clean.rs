@@ -99,3 +99,35 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     }
     std::path::PathBuf::from(path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expand_tilde_home_prefix() {
+        let result = expand_tilde("~/.cache/bazel-disk");
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(result, std::path::PathBuf::from(format!("{}/.cache/bazel-disk", home)));
+    }
+
+    #[test]
+    fn expand_tilde_no_tilde() {
+        let result = expand_tilde("/usr/local/bin");
+        assert_eq!(result, std::path::PathBuf::from("/usr/local/bin"));
+    }
+
+    #[test]
+    fn expand_tilde_bare_tilde_no_slash() {
+        // "~something" is NOT expanded (only "~/" is)
+        let result = expand_tilde("~something");
+        assert_eq!(result, std::path::PathBuf::from("~something"));
+    }
+
+    #[test]
+    fn expand_tilde_nested_path() {
+        let result = expand_tilde("~/a/b/c/d");
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(result, std::path::PathBuf::from(format!("{}/a/b/c/d", home)));
+    }
+}

@@ -683,3 +683,55 @@ build --@rules_rust//:extra_rustc_flags=-Dwarnings
 # build --cpu=darwin_arm64
 "#;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── module_bazel_content ──────────────────────────────────────
+
+    #[test]
+    fn module_bazel_has_workspace_name() {
+        let content = module_bazel_content("my_workspace", "my_repo");
+        assert!(content.contains("module(name = \"my_workspace\")"));
+    }
+
+    #[test]
+    fn module_bazel_has_repo_refs() {
+        let content = module_bazel_content("ws", "my_deps");
+        assert!(content.contains("name = \"my_deps\""));
+        assert!(content.contains("use_repo(crate, \"my_deps\")"));
+    }
+
+    #[test]
+    fn module_bazel_has_rules_rust_version() {
+        let content = module_bazel_content("ws", "repo");
+        assert!(content.contains(RULES_RUST_VERSION));
+    }
+
+    // ── crate_build_content ───────────────────────────────────────
+
+    #[test]
+    fn build_content_library_has_lib_targets() {
+        let content = crate_build_content("mylib", "repo", true);
+        assert!(content.contains("rust_library"));
+        assert!(content.contains("rust_test"));
+        assert!(content.contains("rust_doc_test"));
+        assert!(content.contains("name = \"mylib\""));
+    }
+
+    #[test]
+    fn build_content_binary_has_bin_target() {
+        let content = crate_build_content("mycli", "repo", false);
+        assert!(content.contains("rust_binary"));
+        assert!(!content.contains("rust_library"));
+        assert!(!content.contains("rust_doc_test"));
+        assert!(content.contains("name = \"mycli\""));
+    }
+
+    #[test]
+    fn build_content_uses_repo_for_deps() {
+        let content = crate_build_content("pkg", "custom_repo", true);
+        assert!(content.contains("@custom_repo"));
+        assert!(content.contains("all_crate_deps"));
+    }
+}

@@ -656,3 +656,134 @@ fn find_workspace_root(start: &Path) -> Option<PathBuf> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── extract_string_value ──────────────────────────────────────
+
+    #[test]
+    fn extract_string_double_quotes() {
+        assert_eq!(extract_string_value("name = \"foo\""), Some("foo".to_string()));
+    }
+
+    #[test]
+    fn extract_string_single_quotes() {
+        assert_eq!(extract_string_value("name = 'bar'"), Some("bar".to_string()));
+    }
+
+    #[test]
+    fn extract_string_with_spaces() {
+        assert_eq!(extract_string_value("name  =  \"spaced\""), Some("spaced".to_string()));
+    }
+
+    #[test]
+    fn extract_string_empty() {
+        assert_eq!(extract_string_value("name = \"\""), None);
+    }
+
+    #[test]
+    fn extract_string_no_equals() {
+        assert_eq!(extract_string_value("name"), None);
+    }
+
+    // ── parse_cargo_targets ───────────────────────────────────────
+
+    #[test]
+    fn parse_single_bin() {
+        let toml = "[[bin]]\nname = \"my-cli\"\npath = \"src/main.rs\"";
+        let targets = parse_cargo_targets(toml, "bin");
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "my-cli");
+        assert_eq!(targets[0].path, Some("src/main.rs".to_string()));
+    }
+
+    #[test]
+    fn parse_multiple_bins() {
+        let toml = "[[bin]]\nname = \"a\"\n\n[[bin]]\nname = \"b\"\npath = \"src/b.rs\"";
+        let targets = parse_cargo_targets(toml, "bin");
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].name, "a");
+        assert_eq!(targets[0].path, None);
+        assert_eq!(targets[1].name, "b");
+        assert_eq!(targets[1].path, Some("src/b.rs".to_string()));
+    }
+
+    #[test]
+    fn parse_tests() {
+        let toml = "[[test]]\nname = \"integration\"\npath = \"tests/it.rs\"";
+        let targets = parse_cargo_targets(toml, "test");
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "integration");
+    }
+
+    #[test]
+    fn parse_no_matching_sections() {
+        let toml = "[package]\nname = \"foo\"\n\n[dependencies]\ntokio = \"1\"";
+        let targets = parse_cargo_targets(toml, "bin");
+        assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn parse_bin_stops_at_other_section() {
+        let toml = "[[bin]]\nname = \"cli\"\n\n[dependencies]\ntokio = \"1\"";
+        let targets = parse_cargo_targets(toml, "bin");
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "cli");
+    }
+
+    // ── splice_managed_block ──────────────────────────────────────
+
+    #[test]
+    fn splice_replaces_existing_block() {
+        let existing = "# hand authored\nrust_binary(name = \"foo\")\n\n# BEGIN raz-managed\nold stuff\n# END raz-managed\n";
+        let new_block = "# BEGIN raz-managed\nnew stuff\n# END raz-managed\n";
+        let result = splice_managed_block(existing, new_block);
+        assert!(result.contains("new stuff"));
+        assert!(!result.contains("old stuff"));
+        assert!(result.contains("hand authored"));
+    }
+
+    #[test]
+    fn splice_appends_when_no_markers() {
+        let existing = "# hand authored\nrust_binary(name = \"foo\")\n";
+        let new_block = "# BEGIN raz-managed\nnew stuff\n# END raz-managed\n";
+        let result = splice_managed_block(existing, new_block);
+        assert!(result.contains("hand authored"));
+        assert!(result.contains("new stuff"));
+    }
+
+    // ── names_outside_managed_block ───────────────────────────────
+
+    #[test]
+    fn names_extracts_all_names() {
+        let content = "rust_binary(name = \"foo\")\nrust_test(name = \"bar\")\n";
+        let names = names_outside_managed_block(content);
+        assert!(names.contains("foo"));
+        assert!(names.contains("bar"));
+    }
+
+    #[test]
+    fn names_empty_content() {
+        let names = names_outside_managed_block("");
+        assert!(names.is_empty());
+    }
+
+    // ── build_file_header ─────────────────────────────────────────
+
+    #[test]
+    fn header_contains_repo_name() {
+        let header = build_file_header("my_crate_deps");
+        assert!(header.contains("@my_crate_deps"));
+        assert!(header.contains("rust_binary"));
+        assert!(header.contains("rust_library"));
+    }
+
+    #[test]
+    fn header_with_build_script() {
+        let header = build_file_header_with_build_script("repo");
+        assert!(header.contains("cargo_build_script"));
+        assert!(header.contains("@repo"));
+    }
+}

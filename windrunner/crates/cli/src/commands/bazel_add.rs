@@ -186,3 +186,44 @@ fn run_gen_rust_project(bazel_root: &Path) {
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_name_standard() {
+        let toml = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"";
+        assert_eq!(extract_crate_name(toml), Some("my-crate".to_string()));
+    }
+
+    #[test]
+    fn extract_name_single_quotes() {
+        let toml = "[package]\nname = 'my-crate'";
+        assert_eq!(extract_crate_name(toml), Some("my-crate".to_string()));
+    }
+
+    #[test]
+    fn extract_name_missing_package() {
+        let toml = "[workspace]\nmembers = [\"a\", \"b\"]";
+        assert_eq!(extract_crate_name(toml), None);
+    }
+
+    #[test]
+    fn extract_name_ignores_dependency_name() {
+        let toml = "[dependencies]\nname = \"not-this\"\n\n[package]\nname = \"real-name\"";
+        assert_eq!(extract_crate_name(toml), Some("real-name".to_string()));
+    }
+
+    #[test]
+    fn extract_name_with_spaces() {
+        let toml = "[package]\nname  =  \"spaced\"";
+        assert_eq!(extract_crate_name(toml), Some("spaced".to_string()));
+    }
+
+    #[test]
+    fn extract_name_empty_value() {
+        let toml = "[package]\nname = \"\"";
+        assert_eq!(extract_crate_name(toml), None);
+    }
+}

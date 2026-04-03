@@ -195,3 +195,53 @@ fn is_rust_change(event: &Event) -> bool {
     matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_))
         && event.paths.iter().any(|p| p.extension().map_or(false, |e| e == "rs"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── mode_str ──────────────────────────────────────────────────
+
+    #[test]
+    fn mode_str_run() {
+        assert_eq!(mode_str(true, false), "run");
+    }
+
+    #[test]
+    fn mode_str_test() {
+        assert_eq!(mode_str(false, true), "test");
+    }
+
+    #[test]
+    fn mode_str_default_build() {
+        assert_eq!(mode_str(false, false), "build");
+    }
+
+    #[test]
+    fn mode_str_run_takes_priority() {
+        // If both are true, run wins (evaluated first)
+        assert_eq!(mode_str(true, true), "run");
+    }
+
+    // ── cargo_mode_cmd ────────────────────────────────────────────
+
+    #[test]
+    fn cargo_mode_cmd_run() {
+        assert_eq!(cargo_mode_cmd("run"), "run");
+    }
+
+    #[test]
+    fn cargo_mode_cmd_test() {
+        assert_eq!(cargo_mode_cmd("test"), "test");
+    }
+
+    #[test]
+    fn cargo_mode_cmd_build_default() {
+        assert_eq!(cargo_mode_cmd("build"), "build");
+    }
+
+    #[test]
+    fn cargo_mode_cmd_unknown_defaults_to_build() {
+        assert_eq!(cargo_mode_cmd("anything"), "build");
+    }
+}
