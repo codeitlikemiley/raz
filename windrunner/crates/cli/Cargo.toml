@@ -23,3 +23,8 @@ tracing-subscriber = { workspace = true }
 walkdir = "2.5"
 regex = "1"
 notify = "6"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
