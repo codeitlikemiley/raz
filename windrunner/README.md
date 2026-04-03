@@ -18,7 +18,7 @@ windrunner/
 | **ResolverChain** | `crates/core/src/command/resolver/` | Composable resolver pipeline replacing legacy if/else dispatch |
 | **CommandTemplate** | `crates/core/src/command/template/` | DSL-based template engine (`{target}`, `{test_filter}`, etc.) |
 | **BazelCommandBuilder** | `crates/core/src/command/builder/bazel/` | Bazel command generation via `CommandTemplate::parse().render()` |
-| **UnifiedRunner** | `crates/core/src/runners/unified_runner.rs` | Framework-aware dispatch (Dioxus → Leptos → Cargo) |
+| **UnifiedRunner** | `crates/core/src/runners/unified_runner.rs` | Build-system & framework-aware dispatch |
 | **DioxusRunner** | `crates/core/src/runners/dioxus_runner.rs` | Dioxus-specific `dx` command runner |
 | **LeptosRunner** | `crates/core/src/runners/leptos_runner.rs` | Leptos-specific `cargo-leptos` runner |
 | **Config** | `crates/core/src/config/` | v2 schema: `BazelConfig`, `BazelOverride`, `Override` |
@@ -125,23 +125,170 @@ All `BazelOverride` fields:
 
 ---
 
-## Build System Detection
+## Build System & Framework Detection
 
-`UnifiedRunner` dispatches to framework-specific runners before falling back to generic Cargo:
-
-```
-detect Dioxus.toml in ancestor dirs  →  DioxusRunner
-Cargo.toml mentions leptos            →  LeptosRunner
-default                               →  CargoRunner
-```
-
-Separate from framework detection, **build system** detection:
+`UnifiedRunner` checks for framework-specific CLIs first, then falls back to build-system detection:
 
 ```
-BUILD.bazel or BUILD present  →  Bazel
-Cargo.toml present            →  Cargo
-(none)                        →  Rustc (standalone files)
+┌─ Framework detection (highest priority) ──────────────────────┐
+│  Dioxus.toml in ancestor dirs    →  DioxusRunner  (dx CLI)    │
+│  "leptos" in Cargo.toml          →  LeptosRunner  (cargo-leptos)
+└───────────────────────────────────────────────────────────────┘
+         │ (no framework detected)
+         ▼
+┌─ Build system detection ──────────────────────────────────────┐
+│  MODULE.bazel present            →  BazelRunner               │
+│  Cargo.toml present              →  CargoRunner               │
+│  (none)                          →  RustcRunner (standalone)   │
+└───────────────────────────────────────────────────────────────┘
 ```
+
+### Framework vs Bazel — design boundary
+
+Framework-managed projects (Dioxus, Leptos, Tauri) **always use their native CLI**, never Bazel. These frameworks orchestrate WASM compilation, asset bundling, hot-reload dev servers, and platform-specific builds internally — capabilities that Bazel cannot replicate.
+
+Bazel support targets **pure Rust projects**: API servers, CLI tools, libraries, and monorepos with shared dependency graphs.
+
+| Framework | CLI | Bazel support? |
+|-----------|-----|----------------|
+| Dioxus | `dx serve / dx build` | ❌ Not supported — use `dx` |
+| Leptos | `cargo leptos watch / build` | ❌ Not supported — use `cargo-leptos` |
+| Tauri | `cargo tauri dev / build` | ❌ Not supported — use Tauri CLI |
+| Pure Rust (lib, bin, tests) | `cargo` or `bazel` | ✅ Fully supported |
+
+---
+
+## Bazel — One-Command Workflow
+
+> **Goal**: Use a Bazel-managed Rust workspace as if it were plain Cargo — no manual Bazel bookkeeping.
+
+### Prerequisites
+
+```bash
+cargo install cargo-runner  # installs the cargo-runner binary
+```
+
+### `cargo runner init --bazel`
+
+This is the **single entry point** for all Bazel scaffolding. It handles both initial setup and subsequent syncs.
+
+#### First run — scaffolds the workspace
+
+```bash
+cargo runner init --bazel
+```
+
+Generates:
+- `MODULE.bazel` — bzlmod dependency graph via `crate.from_cargo()`
+- `.bazelversion` — pins Bazel 7.4.1
+- `.bazelrc` — build flags + shared disk/repo caches
+- `BUILD.bazel` — targets for each crate (see below)
+- `Cargo.lock` — required by `crate_universe`
+- `.cargo-runner.json` — framework defaults
+
+Then runs:
+1. `bazel sync` — downloads toolchain + resolves crate deps
+2. `bazel build --nobuild //...` — validates all BUILD files without compiling
+
+#### Re-run — idempotent sync
+
+```bash
+cargo runner init --bazel   # safe to re-run anytime
+```
+
+Re-scans source files, adds missing targets, skips existing ones. The single command replaces the old `build-sync` workflow.
+
+#### Workspace support
+
+For Cargo workspaces, `init --bazel` automatically:
+- Parses `[workspace] members` (supports explicit lists and globs)
+- Generates per-member `BUILD.bazel` files
+- Creates a unified `MODULE.bazel` at the root
+
+### Target inference
+
+`init --bazel` uses a **combined** strategy for discovering Bazel targets:
+
+| Source | Strategy | Target generated |
+|--------|----------|-----------------|
+| `src/lib.rs` | Always | `rust_library` + `rust_test` (unit tests) + `rust_doc_test` |
+| `src/main.rs` | Always | `rust_binary` |
+| `src/bin/*.rs` | Only if `fn main()` present | `rust_binary` per file |
+| `src/bin/*/main.rs` | Subdirectory binaries | `rust_binary` per dir |
+| `tests/*.rs` | Always (harness provides entry) | `rust_test_suite` |
+| `examples/*.rs` | Only if `fn main()` present | `rust_binary` |
+| `benches/*.rs` | Only if `fn main()` present | `rust_binary` |
+| `build.rs` | Always | `cargo_build_script` + warning |
+| `Cargo.toml` `[[bin]]` | Explicit definitions win | `rust_binary` per entry |
+| `Cargo.toml` `[[test]]` | Explicit definitions | `rust_test_suite` |
+| `Cargo.toml` `[[bench]]` | Explicit definitions | `rust_binary` per entry |
+| `Cargo.toml` `[[example]]` | Explicit definitions | `rust_binary` per entry |
+
+**Priority**: Explicit `Cargo.toml` definitions always win over filesystem convention.
+
+**`fn main()` heuristic**: Files in `src/bin/` and `examples/` are only scaffolded as binaries if they contain `fn main()` — helper modules are silently skipped.
+
+### Doctests
+
+Library crates (`src/lib.rs`) automatically get a `rust_doc_test` target:
+
+```python
+rust_doc_test(
+    name = "doc_tests",
+    crate = ":my_lib",
+)
+```
+
+Doctests use Bazel natively. There is **no cargo fallback** — if it's a Bazel project, everything goes through Bazel.
+
+### BUILD.bazel safety model
+
+`build-sync` only modifies lines inside a **managed block** — anything outside the fences is left untouched:
+
+```python
+# Hand-authored rules above are NEVER touched
+
+# BEGIN raz-managed — do not edit this block manually
+rust_library(...)
+rust_test(...)
+rust_doc_test(...)
+# END raz-managed
+```
+
+Deduplication is name-aware and content-aware:
+- Exact name matches are skipped
+- Any existing `rust_doc_test(` rule (regardless of name) prevents duplicate doc test targets
+
+### Other commands
+
+| Command | What it does |
+|---------|-------------|
+| `cargo runner add <crate> [--features f] [--dev]` | `cargo add` + `cargo update` + `bazel sync` + `gen_rust_project` in one shot |
+| `cargo runner sync [--crate <name>] [--skip-ide]` | Sync Bazel crate-universe after any `Cargo.toml` edit |
+| `cargo runner build-sync [--crate <name>] [--dry-run]` | Update `BUILD.bazel` targets (also runs as part of `init --bazel`) |
+| `cargo runner clean` | Context-aware clean: `bazel clean` (Bazel) or `cargo clean` (Cargo) |
+| `cargo runner watch` | Context-aware file watcher: `ibazel` (Bazel) or `cargo watch` (Cargo) |
+| `cargo runner run <file>:<line>` | Scope-based execution: detects build system and runs the target at the given line |
+
+---
+
+## Scoped Execution
+
+`cargo runner run path/to/file.rs:25` works identically for both Cargo and Bazel projects:
+
+```
+1. Parse file:line → find the smallest scope containing that line
+2. Detect build system (Bazel or Cargo)
+3. Generate the right command with test filter / bench filter
+```
+
+| What you cursor into | Cargo generates | Bazel generates |
+|---------------------|-----------------|-----------------|
+| `#[test] fn test_add()` | `cargo test test_add --exact` | `bazel test //:unit_tests --test_arg="test_add"` |
+| `mod tests { }` block | `cargo test tests::` | `bazel test //:unit_tests --test_arg="tests::"` |
+| `/// ``` doctest` | `cargo test --doc add` | `bazel test //:doc_tests` |
+| `fn main()` binary | `cargo run --bin name` | `bazel run //:name` |
+| Benchmark function | `cargo bench name` | `bazel run //:bench_name -c opt` |
 
 ---
 
@@ -158,10 +305,10 @@ The resolver pipeline evaluates in priority order:
 
 ## CommandTemplate DSL
 
-Templates use `{placeholder}` syntax:
+Templates use `{placeholder}` syntax with conditionals:
 
 ```
-bazel test {target} --test_output streamed --test_arg --exact --test_arg {test_filter}
+{cmd?bazel} test {target} {?test_output:--test_output={test_output}} {?test_filter:--test_arg=--exact --test_arg={test_filter}}
 ```
 
 Render:
@@ -169,14 +316,12 @@ Render:
 let cmd = CommandTemplate::parse(template_str)?.render(&ctx)?;
 ```
 
-The `BazelCommandBuilder::expand_template` method now uses this engine (with a `legacy_expand()` fallback if parsing fails).
-
 ---
 
 ## Testing
 
 ```bash
-# Run full test suite (139 tests)
+# Run full test suite
 cargo test -p cargo-runner-core
 
 # Run a specific test module
@@ -185,79 +330,19 @@ cargo test -p cargo-runner-core bazel_builder
 
 ---
 
-## Bazel Transparent-Proxy CLI (Phase 1)
-
-> **Goal**: use a Bazel-managed Rust workspace as if it were plain Cargo — no manual Bazel bookkeeping.
-
-### Prerequisites
-
-```bash
-cargo install cargo-runner  # installs the cargo-runner binary
-```
-
-### Commands
-
-| Command | What it does |
-|---------|-------------|
-| `cargo runner init --bazel [--workspace-name <name>]` | Generate `.cargo-runner.json` pre-populated with Bazel framework defaults |
-| `cargo runner add <crate> [--features f] [--dev] [--crate-dir <dir>]` | `cargo add` + `cargo update` + `bazel sync` + `gen_rust_project` in one shot |
-| `cargo runner sync [--crate <name>] [--skip-ide]` | Sync Bazel crate-universe after any `Cargo.toml` edit |
-| `cargo runner build-sync [--crate <name>] [--dry-run]` | Scaffold / update `BUILD.bazel` targets from the crate's `src/` layout |
-
-### Typical first-time workflow
-
-```bash
-# 1. Generate the config
-cargo runner init --bazel --workspace-name my_workspace
-
-# 2. Add dependencies the same way you would with plain Cargo
-cargo runner add tokio --features full
-cargo runner add serde --features derive
-
-# 3. After adding new source files, refresh BUILD.bazel
-cargo runner build-sync
-
-# 4. Preview BUILD.bazel changes without writing
-cargo runner build-sync --dry-run
-```
-
-### `build-sync` safety model
-
-`build-sync` only modifies lines inside a **managed block** — anything outside
-the fences is left untouched:
-
-```python
-# BEGIN raz-managed — do not edit this block manually
-rust_library(...)
-rust_test_suite(...)
-# END raz-managed
-```
-
-Hand-authored targets outside the block are never touched.
-
-### Fallback matrix
-
-| Scenario | Behaviour |
-|----------|-----------|
-| `cargo test --doc` | Falls back to `cargo test` via `UnifiedRunner` (Bazel has no doc-test support) |
-| `cargo runner watch` | Phase 2 — file watcher TBD |
-| Non-Bazel workspace | All four commands operate in no-op / warning mode |
-
----
-
 ### VSCode Extension integration
 
-The four commands are also accessible from the IDE:
+Commands are accessible from the IDE:
 
 | Command palette entry | VS Code command ID |
 |-----------------------|--------------------|
+| RAZ: Init Bazel Config | `raz.initBazel` |
 | RAZ: Sync Bazel Crate-Universe | `raz.bazelSync` |
 | RAZ: Add Crate (Bazel) | `raz.bazelAdd` |
 | RAZ: Scaffold / Update BUILD.bazel Targets | `raz.buildSync` |
-| RAZ: Init Bazel Config (.cargo-runner.json) | `raz.initBazel` |
 
 Clicking the **`$(flame) Bazel`** status-bar badge on any `.rs` file in a Bazel
-workspace opens an action quick-pick that exposes all four commands directly.
+workspace opens an action quick-pick that exposes all commands directly.
 
 A **Cargo.toml watcher** (`raz.bazelAutoSync` setting, default `true`) detects
 saves in Bazel-managed crates and prompts you to run `cargo runner sync`

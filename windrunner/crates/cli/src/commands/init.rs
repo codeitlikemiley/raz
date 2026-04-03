@@ -1,8 +1,14 @@
 use anyhow::{Context, Result};
+use std::collections::HashSet;
 use std::{env, fs, path::PathBuf};
 use tracing::info;
 use walkdir::WalkDir;
 
+use crate::commands::build_sync::{
+    build_file_header, build_file_header_with_build_script, infer_targets, render_managed_block,
+    BazelTarget,
+};
+use crate::config::bazel_workspace::crate_repo_name;
 use crate::config::generators::{
     create_default_config, create_root_config, create_workspace_config,
 };
@@ -19,6 +25,7 @@ pub fn init_command(
     single_file_script: bool,
     bazel: bool,
     workspace_name: Option<&str>,
+    skip_sync: bool,
 ) -> Result<()> {
     // Determine the project root
     let project_root = if let Some(cwd) = cwd {
@@ -33,36 +40,11 @@ pub fn init_command(
 
     // ── Handle --bazel ──────────────────────────────────────────────────────
     if bazel {
-        let config_path = project_root.join(".cargo-runner.json");
-        if config_path.exists() && !force {
-            println!("❌ Config already exists at: {}", config_path.display());
-            println!("   Use --force to overwrite");
-            return Ok(());
-        }
-        let ws_name = workspace_name
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                project_root
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string()
-            });
-        println!("🔥 Generating Bazel .cargo-runner.json for workspace: {}", ws_name);
-        let config = create_bazel_config(&ws_name);
-        fs::write(&config_path, config)
-            .with_context(|| format!("Failed to write config to {}", config_path.display()))?;
-        println!("✅ Created: {}", config_path.display());
-        println!("\n📌 Next steps:");
-        println!("   1. Set your Bazel target labels in the config if needed");
-        println!("   2. Run: cargo runner sync  (after any cargo add)");
-        println!("   3. Run: cargo runner build-sync  (after adding new source files)");
-        return Ok(());
+        return handle_bazel_init(&project_root, force, workspace_name, skip_sync);
     }
 
     // ── Handle --rustc / --single-file-script ──────────────────────────────
     if rustc || single_file_script {
-        // Generate a single config file in the current directory
         let config_path = project_root.join(".cargo-runner.json");
 
         if config_path.exists() && !force {
@@ -87,27 +69,23 @@ pub fn init_command(
 
         println!("✅ Created config: {}", config_path.display());
 
-        // Print example usage
         if rustc {
             println!("\n📌 Example rustc config usage:");
             println!("   Add your rustc-specific settings to the 'rustc' section");
-            println!("   Configure test_framework, binary_framework, etc.");
         } else {
             println!("\n📌 Example single-file-script config usage:");
             println!("   Add cargo script settings to the 'single_file_script' section");
-            println!("   Configure extra_args, extra_env, etc.");
         }
 
         return Ok(());
     }
 
-    // Normal cargo project initialization
+    // ── Normal cargo project initialization ───────────────────────────────
     println!(
         "🚀 Initializing cargo-runner in: {}",
         project_root.display()
     );
 
-    // Create a .cargo-runner.env file for easy sourcing
     let env_file_path = project_root.join(".cargo-runner.env");
     let env_content = format!("export PROJECT_ROOT=\"{}\"", project_root.display());
     fs::write(&env_file_path, &env_content)
@@ -115,14 +93,12 @@ pub fn init_command(
 
     println!("✅ Created environment file: {}", env_file_path.display());
 
-    // Find all Cargo.toml files recursively, excluding bazel directories
     let mut cargo_tomls = Vec::new();
 
     for entry in WalkDir::new(&project_root)
         .follow_links(true)
         .into_iter()
         .filter_entry(|e| {
-            // Skip bazel-generated directories
             if let Some(name) = e.file_name().to_str() {
                 if name.starts_with("bazel-") {
                     return false;
@@ -139,11 +115,9 @@ pub fn init_command(
 
     println!("📦 Found {} Cargo.toml files", cargo_tomls.len());
 
-    // Generate .cargo-runner.json for each project
     let mut created = 0;
     let mut skipped = 0;
 
-    // Create root config with linkedProjects
     let root_config_path = project_root.join(".cargo-runner.json");
     if !root_config_path.exists() || force {
         let root_config = create_root_config(&project_root, &cargo_tomls)?;
@@ -163,9 +137,7 @@ pub fn init_command(
         skipped += 1;
     }
 
-    // Generate configs for each sub-project
     for cargo_toml in &cargo_tomls {
-        // Skip if this is the root Cargo.toml
         if cargo_toml == &project_root.join("Cargo.toml") {
             continue;
         }
@@ -173,25 +145,19 @@ pub fn init_command(
         let project_dir = cargo_toml.parent().unwrap();
         let config_path = project_dir.join(".cargo-runner.json");
 
-        // Check if config already exists
         if config_path.exists() && !force {
             info!("Skipping existing config: {}", config_path.display());
             skipped += 1;
             continue;
         }
 
-        // Check if this is a workspace-only Cargo.toml
         let config = if is_workspace_only(cargo_toml)? {
-            // Create workspace config (no package name)
             create_workspace_config()
         } else {
-            // Read package name from Cargo.toml
             let package_name = get_package_name(cargo_toml)?;
-            // Create package configuration
             create_default_config(&package_name)
         };
 
-        // Write configuration file
         fs::write(&config_path, config)
             .with_context(|| format!("Failed to write config to {}", config_path.display()))?;
 
@@ -208,7 +174,6 @@ pub fn init_command(
         );
     }
 
-    // Print instructions for using PROJECT_ROOT
     println!("\n📌 To use PROJECT_ROOT in your current shell:");
     println!("   source {}", env_file_path.display());
     println!("\n   Or add to your shell profile (~/.bashrc, ~/.zshrc, etc.):");
@@ -216,3 +181,505 @@ pub fn init_command(
 
     Ok(())
 }
+
+// ── Bazel scaffold (absorbed from bazel-init) ─────────────────────────────────
+//
+// Called when `cargo runner init --bazel` is run.
+// Decision tree:
+//   - MODULE.bazel exists + !force  → update .cargo-runner.json only
+//   - MODULE.bazel missing OR force  → full workspace scaffold + .cargo-runner.json
+//
+fn handle_bazel_init(
+    project_root: &PathBuf,
+    force: bool,
+    workspace_name: Option<&str>,
+    skip_sync: bool,
+) -> Result<()> {
+    let module_bazel = project_root.join("MODULE.bazel");
+    let already_bazel = module_bazel.exists();
+
+    let ws_name = workspace_name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            project_root
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string()
+        });
+
+    // Detect Cargo workspace members
+    let cargo_toml_path = project_root.join("Cargo.toml");
+    let workspace_members = if cargo_toml_path.exists() {
+        parse_workspace_members(&cargo_toml_path)?
+    } else {
+        Vec::new()
+    };
+    let is_workspace = !workspace_members.is_empty();
+
+    if already_bazel && !force {
+        // Already a Bazel workspace — re-sync BUILD.bazel targets + config
+        println!("🔥 Bazel workspace already initialised: {}", ws_name);
+        println!("   Re-scanning source files to update BUILD.bazel targets…\n");
+
+        // Run build-sync logic across all detected crates
+        let crates = crate::config::bazel_workspace::find_bazel_crates(project_root)
+            .unwrap_or_default();
+
+        if crates.is_empty() {
+            // No BUILD.bazel files yet — fall through to full scaffold
+            println!("   No existing BUILD.bazel files found. Running full scaffold…\n");
+        } else {
+            for krate in &crates {
+                crate::commands::build_sync::process_crate(
+                    &krate.dir,
+                    &krate.name,
+                    &krate.repo_name,
+                    false,
+                )?;
+            }
+
+            write_bazel_runner_config(project_root, &ws_name, false)?;
+            println!("\n✅ BUILD.bazel targets up to date.");
+            println!("\n📌 Tip: use --force to regenerate all scaffolding files (MODULE.bazel, .bazelrc, etc.)");
+            return Ok(());
+        }
+    }
+
+    // Full scaffold
+    if is_workspace {
+        println!("🚀 Scaffolding Bazel workspace (Cargo workspace with {} members): {}",
+            workspace_members.len(), ws_name);
+    } else {
+        println!("🚀 Scaffolding Bazel workspace: {}", ws_name);
+    }
+    println!("   Directory: {}", project_root.display());
+    println!();
+
+    // Derive repo name for the workspace
+    let repo_name = ws_name.replace('-', "_");
+
+    // ── Generate MODULE.bazel ─────────────────────────────────────────────
+    // For workspaces: crate.from_cargo() reads the root Cargo.toml which
+    // references all members. One repo covers all crates.
+    write_file_if(project_root, "MODULE.bazel", &module_bazel_content(&ws_name, &repo_name), force)?;
+    write_file_if(project_root, ".bazelversion", BAZEL_VERSION, force)?;
+    write_file_if(project_root, ".bazelrc", BAZELRC_CONTENT, force)?;
+
+    if is_workspace {
+        // ── Workspace mode: scaffold each member ─────────────────────────
+        // Root BUILD.bazel is empty (no Rust sources at root)
+        write_file_if(project_root, "BUILD.bazel", EMPTY_BUILD_CONTENT, force)?;
+
+        for member_rel in &workspace_members {
+            let member_dir = project_root.join(member_rel);
+            if !member_dir.exists() {
+                println!("   ⚠️  member '{}' not found, skipping", member_rel);
+                continue;
+            }
+
+            let member_name = read_cargo_package_name(&member_dir)
+                .unwrap_or_else(|| {
+                    member_dir
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                });
+            let member_repo = crate_repo_name(&repo_name);
+
+            println!("\n📁 {}/", member_rel);
+
+            // Generate BUILD.bazel for this member using build-sync inference
+            let build_path = member_dir.join("BUILD.bazel");
+            if build_path.exists() && !force {
+                println!("   ~ skipping BUILD.bazel (already exists, use --force)");
+            } else {
+                let existing_names = HashSet::new();
+                let (targets, _skipped) =
+                    infer_targets(&member_dir, &member_name, &member_repo, &existing_names, "");
+
+                if targets.is_empty() {
+                    println!("   ⚠️  no targets inferred for {}", member_name);
+                } else {
+                    let has_build_script = targets
+                        .iter()
+                        .any(|t| matches!(t, BazelTarget::BuildScript));
+                    let header = if has_build_script {
+                        build_file_header_with_build_script(&repo_name)
+                    } else {
+                        build_file_header(&repo_name)
+                    };
+                    let managed = render_managed_block(&targets);
+                    let content = format!("{}\n{}", header, managed);
+                    fs::write(&build_path, content)
+                        .with_context(|| format!("Failed to write {}", build_path.display()))?;
+                    for t in &targets {
+                        println!("   ✅ {}", t.description());
+                    }
+                }
+            }
+
+            // Warn about build.rs
+            if member_dir.join("build.rs").exists() {
+                println!("   ⚠️  build.rs detected — review the generated cargo_build_script() rule.");
+                println!("      See: https://bazelbuild.github.io/rules_rust/cargo.html#cargo_build_script");
+            }
+        }
+    } else {
+        // ── Single-crate mode (existing behavior) ────────────────────────
+        let has_main = project_root.join("src/main.rs").exists();
+        let has_lib = project_root.join("src/lib.rs").exists();
+        let pkg_name = read_cargo_package_name(project_root)
+            .unwrap_or_else(|| ws_name.clone());
+        write_file_if(
+            project_root,
+            "BUILD.bazel",
+            &crate_build_content(&pkg_name, &repo_name, has_lib && !has_main),
+            force,
+        )?;
+    }
+
+    // ── Ensure Cargo.lock exists ──────────────────────────────────────────
+    let lockfile = project_root.join("Cargo.lock");
+    if !lockfile.exists() {
+        println!("\n📦 Generating Cargo.lock ...");
+        let status = std::process::Command::new("cargo")
+            .arg("generate-lockfile")
+            .current_dir(project_root)
+            .status()
+            .context("Failed to run `cargo generate-lockfile`")?;
+        if !status.success() {
+            anyhow::bail!("`cargo generate-lockfile` failed");
+        }
+    }
+
+    // ── Write .cargo-runner.json ──────────────────────────────────────────
+    write_bazel_runner_config(project_root, &ws_name, force)?;
+
+    println!();
+    println!("✅ Workspace scaffolded:");
+    println!("   MODULE.bazel   — bzlmod deps");
+    println!("   .bazelversion  — pins Bazel {}", BAZEL_VERSION);
+    println!("   .bazelrc       — build flags + shared caches");
+    if is_workspace {
+        println!("   BUILD.bazel    — per-member targets ({} members)", workspace_members.len());
+    } else {
+        let has_main = project_root.join("src/main.rs").exists();
+        println!("   BUILD.bazel    — {} target(s)", if has_main { "rust_binary" } else { "rust_library" });
+    }
+    println!("   Cargo.lock     — required by crate_universe");
+    println!("   .cargo-runner.json");
+
+    if !skip_sync {
+        println!();
+        println!("⏳ Running bazel sync (first run downloads ~1 GB of toolchain — cached forever after) …");
+        let status = std::process::Command::new("bazel")
+            .arg("sync")
+            .current_dir(project_root)
+            .status()
+            .context("Failed to run `bazel sync`")?;
+        if !status.success() {
+            println!("⚠️  bazel sync had errors — workspace files are ready but deps may be incomplete.");
+            println!("   Run `bazel sync` manually to retry.");
+        } else {
+            println!("✅ bazel sync complete.");
+
+            // Validate BUILD files without compiling — catches config errors early
+            print!("🔍 Validating BUILD files… ");
+            let validate = std::process::Command::new("bazel")
+                .args(["build", "--nobuild", "//..."])
+                .current_dir(project_root)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .output();
+            match validate {
+                Ok(out) if out.status.success() => println!("✅ all targets valid."),
+                Ok(out) => {
+                    println!("⚠️  some targets have errors:");
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    // Show only the error lines, not the progress noise
+                    for line in stderr.lines().filter(|l| l.contains("ERROR") || l.contains("error")) {
+                        println!("   {}", line);
+                    }
+                    println!("   Run `bazel build --nobuild //...` for full details.");
+                }
+                Err(_) => println!("⚠️  could not run validation (bazel not found?)"),
+            }
+        }
+    } else {
+        println!();
+        println!("⏭️  Skipped bazel sync (--skip-sync). Run manually:");
+        println!("   bazel sync");
+    }
+
+    println!();
+    println!("📌 Next:");
+    println!("   cargo runner run        — build + run via Bazel");
+    println!("   cargo runner add <crate> — add a dep + sync in one step");
+    if is_workspace {
+        println!("   cargo runner build-sync — update BUILD.bazel after adding new files");
+    }
+
+    Ok(())
+}
+
+fn write_bazel_runner_config(project_root: &PathBuf, ws_name: &str, force: bool) -> Result<()> {
+    let config_path = project_root.join(".cargo-runner.json");
+    if config_path.exists() && !force {
+        println!("   ℹ️  .cargo-runner.json already exists (--force to overwrite)");
+        return Ok(());
+    }
+    let config = create_bazel_config(ws_name);
+    fs::write(&config_path, config)
+        .with_context(|| format!("Failed to write {}", config_path.display()))?;
+    println!("   ✅ .cargo-runner.json");
+    Ok(())
+}
+
+fn write_file_if(root: &PathBuf, name: &str, content: &str, force: bool) -> Result<()> {
+    let path = root.join(name);
+    if path.exists() && !force {
+        println!("   ~ skipping {} (already exists, use --force)", name);
+        return Ok(());
+    }
+    fs::write(&path, content)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    println!("   ✅ {}", name);
+    Ok(())
+}
+
+fn read_cargo_package_name(root: &PathBuf) -> Option<String> {
+    let content = fs::read_to_string(root.join("Cargo.toml")).ok()?;
+    let mut in_package = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[package]" {
+            in_package = true;
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            in_package = false;
+        }
+        if in_package && trimmed.starts_with("name") {
+            if let Some(val) = trimmed.splitn(2, '=').nth(1) {
+                return Some(val.trim().trim_matches('"').trim_matches('\'').to_string());
+            }
+        }
+    }
+    None
+}
+
+// ── Scaffolding templates ─────────────────────────────────────────────────────
+
+const RULES_RUST_VERSION: &str = "0.63.0";
+const BAZEL_VERSION: &str = "7.4.1";
+
+/// Parse `[workspace] members = ["a", "b"]` from a Cargo.toml.
+///
+/// Supports both inline arrays and multi-line arrays. Returns an empty vec if
+/// the file is not a workspace or has no members.
+fn parse_workspace_members(cargo_toml_path: &std::path::Path) -> Result<Vec<String>> {
+    let content = fs::read_to_string(cargo_toml_path)
+        .with_context(|| format!("Failed to read {}", cargo_toml_path.display()))?;
+
+    if !content.contains("[workspace]") {
+        return Ok(Vec::new());
+    }
+
+    let mut in_workspace = false;
+    let mut in_members = false;
+    let mut members = Vec::new();
+    let mut members_line_buf = String::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Track sections
+        if trimmed == "[workspace]" || trimmed.starts_with("[workspace]") {
+            in_workspace = true;
+            continue;
+        }
+        if trimmed.starts_with('[') && trimmed != "[workspace]" {
+            in_workspace = false;
+            in_members = false;
+            continue;
+        }
+
+        if !in_workspace {
+            continue;
+        }
+
+        // Look for `members = [...]`
+        if trimmed.starts_with("members") {
+            if let Some(rhs) = trimmed.splitn(2, '=').nth(1) {
+                let rhs = rhs.trim();
+                if rhs.contains('[') && rhs.contains(']') {
+                    // Single-line: members = ["a", "b"]
+                    members_line_buf = rhs.to_string();
+                } else if rhs.contains('[') {
+                    // Multi-line start: members = [
+                    in_members = true;
+                    members_line_buf = rhs.to_string();
+                    continue;
+                }
+            }
+        } else if in_members {
+            members_line_buf.push_str(trimmed);
+            if trimmed.contains(']') {
+                in_members = false;
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
+        // Parse the collected buffer
+        if !members_line_buf.is_empty() {
+            // Extract strings between quotes
+            let mut in_quote = false;
+            let mut current = String::new();
+            for ch in members_line_buf.chars() {
+                match ch {
+                    '"' => {
+                        if in_quote {
+                            if !current.is_empty() {
+                                members.push(current.clone());
+                                current.clear();
+                            }
+                        }
+                        in_quote = !in_quote;
+                    }
+                    _ if in_quote => current.push(ch),
+                    _ => {}
+                }
+            }
+            members_line_buf.clear();
+        }
+    }
+
+    // Expand globs like "crates/*"
+    let mut expanded = Vec::new();
+    let parent = cargo_toml_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    for member in members {
+        if member.ends_with("/*") || member.ends_with("/**") {
+            let base = member.trim_end_matches("/**").trim_end_matches("/*");
+            let base_dir = parent.join(base);
+            if let Ok(entries) = std::fs::read_dir(&base_dir) {
+                let mut dirs: Vec<_> = entries
+                    .flatten()
+                    .filter(|e| e.path().join("Cargo.toml").exists())
+                    .collect();
+                dirs.sort_by_key(|e| e.file_name());
+                for entry in dirs {
+                    let rel = format!("{}/{}", base, entry.file_name().to_string_lossy());
+                    expanded.push(rel);
+                }
+            }
+        } else {
+            expanded.push(member);
+        }
+    }
+
+    Ok(expanded)
+}
+
+fn module_bazel_content(ws_name: &str, repo: &str) -> String {
+    format!(
+        r#"# MODULE.bazel — generated by `cargo runner init --bazel`
+module(name = "{ws_name}")
+
+bazel_dep(name = "rules_rust", version = "{RULES_RUST_VERSION}")
+
+crate = use_extension(
+    "@rules_rust//crate_universe:extensions.bzl",
+    "crate",
+)
+
+crate.from_cargo(
+    name = "{repo}",
+    manifests = ["//:Cargo.toml"],
+    cargo_lockfile = "//:Cargo.lock",
+)
+
+use_repo(crate, "{repo}")
+"#
+    )
+}
+
+fn crate_build_content(pkg_name: &str, repo: &str, is_lib: bool) -> String {
+    if is_lib {
+        format!(
+            r#"load("@{repo}//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library", "rust_test")
+
+rust_library(
+    name = "{pkg_name}",
+    srcs = glob(["src/**/*.rs"]),
+    deps = all_crate_deps(normal = True),
+    visibility = ["//visibility:public"],
+)
+
+rust_test(
+    name = "{pkg_name}_test",
+    crate = ":{pkg_name}",
+    deps = all_crate_deps(normal = True, normal_dev = True),
+)
+
+rust_doc_test(
+    name = "doc_tests",
+    crate = ":{pkg_name}",
+)
+"#
+        )
+    } else {
+        format!(
+            r#"load("@{repo}//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "{pkg_name}",
+    srcs = glob(["src/**/*.rs"]),
+    deps = all_crate_deps(normal = True),
+    visibility = ["//visibility:public"],
+)
+"#
+        )
+    }
+}
+
+/// Root BUILD.bazel for workspaces — empty since sources live in member crates.
+const EMPTY_BUILD_CONTENT: &str = "# BUILD.bazel — workspace root (no Rust sources here)\n\
+# See member directories for individual crate targets.\n";
+
+const BAZELRC_CONTENT: &str = r#"# .bazelrc — generated by `cargo runner init --bazel`
+#
+# Download minimization
+# ---------------------
+# Bazel downloads the Rust toolchain + all crates on first run (~1–2 GB).
+# Everything is cached in ~/.cache/bazel after that — subsequent runs are fast.
+
+# ── Disk cache (reused across workspaces on the same machine) ─────────────────
+build --disk_cache=~/.cache/bazel-disk
+fetch --disk_cache=~/.cache/bazel-disk
+
+# ── Repository cache (share downloaded archives across Bazel workspaces) ──────
+common --repository_cache=~/.cache/bazel-repo
+
+# ── Build defaults ────────────────────────────────────────────────────────────
+build --jobs=auto
+build --keep_going
+
+# ── Test defaults ─────────────────────────────────────────────────────────────
+test --test_output=errors
+test --keep_going
+
+# ── Rust / rules_rust ─────────────────────────────────────────────────────────
+build --@rules_rust//:extra_rustc_flags=-Dwarnings
+
+# ── macOS / Apple Silicon ─────────────────────────────────────────────────────
+# Uncomment if building on Apple Silicon and Bazel picks the wrong CPU:
+# build --cpu=darwin_arm64
+"#;
+

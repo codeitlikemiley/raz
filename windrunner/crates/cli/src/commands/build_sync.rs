@@ -76,8 +76,16 @@ pub fn build_sync_command(crate_filter: Option<&str>, dry_run: bool) -> Result<(
 
 // ── per-crate logic ───────────────────────────────────────────────────────────
 
-fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_run: bool) -> Result<()> {
+pub(crate) fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_run: bool) -> Result<()> {
     println!("\n📁 Scanning: {}", dir.display());
+
+    // Warn about build.rs — Bazel doesn't use Cargo build scripts
+    if dir.join("build.rs").exists() {
+        println!("   ⚠️  build.rs detected — Bazel ignores Cargo build scripts.");
+        println!("      If your build.rs generates code or sets env vars, add a");
+        println!("      `cargo_build_script()` rule to BUILD.bazel manually.");
+        println!("      See: https://bazelbuild.github.io/rules_rust/cargo.html#cargo_build_script");
+    }
 
     let build_path = dir.join("BUILD.bazel");
 
@@ -92,7 +100,7 @@ fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_run: bool) -
     // Collect names already defined *outside* the managed block
     let existing_names = names_outside_managed_block(&existing_content);
 
-    let (targets, skipped) = infer_targets(dir, crate_name, repo_name, &existing_names);
+    let (targets, skipped) = infer_targets(dir, crate_name, repo_name, &existing_names, &existing_content);
 
     for name in &skipped {
         println!("   ~ skipping '{name}' (already defined)");
@@ -133,37 +141,43 @@ fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_run: bool) -
 
 #[allow(dead_code)] // repo_name fields used for future per-crate load() generation
 #[derive(Debug)]
-enum BazelTarget {
+pub(crate) enum BazelTarget {
     Library { name: String, repo_name: String },
     Binary { name: String, src: String, repo_name: String },
     TestSuite { name: String, repo_name: String },
     Example { name: String, src: String, repo_name: String },
     Bench { name: String, src: String, repo_name: String },
+    DocTest { crate_name: String },
+    BuildScript,
 }
 
 impl BazelTarget {
     /// The Bazel `name = "..."` value this target would produce.
-    fn bazel_name(&self) -> String {
+    pub(crate) fn bazel_name(&self) -> String {
         match self {
             Self::Library { name, .. } => format!("{name}_lib"),
             Self::Binary { name, .. } => name.clone(),
             Self::TestSuite { .. } => "integration_tests".to_string(),
             Self::Example { name, .. } => format!("example_{name}"),
             Self::Bench { name, .. } => format!("bench_{name}"),
+            Self::DocTest { .. } => "doc_tests".to_string(),
+            Self::BuildScript => "build_script".to_string(),
         }
     }
 
-    fn description(&self) -> String {
+    pub(crate) fn description(&self) -> String {
         match self {
             Self::Library { name, .. } => format!("rust_library({name})"),
             Self::Binary { name, .. } => format!("rust_binary({name})"),
             Self::TestSuite { name, .. } => format!("rust_test_suite({name})"),
             Self::Example { name, .. } => format!("rust_binary(example_{name})"),
             Self::Bench { name, .. } => format!("rust_binary(bench_{name})"),
+            Self::DocTest { crate_name } => format!("rust_doc_test({crate_name})"),
+            Self::BuildScript => "cargo_build_script(build_script)".to_string(),
         }
     }
 
-    fn render(&self) -> String {
+    pub(crate) fn render(&self) -> String {
         match self {
             Self::Library { name, repo_name: _ } => format!(
                 r#"rust_library(
@@ -216,6 +230,18 @@ rust_test(
 )
 "#,
             ),
+            Self::DocTest { crate_name } => format!(
+                r#"rust_doc_test(
+    name = "doc_tests",
+    crate = ":{crate_name}_lib",
+)
+"#,
+            ),
+            Self::BuildScript => r#"cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+)
+"#.to_string(),
         }
     }
 }
@@ -232,82 +258,187 @@ fn names_outside_managed_block(content: &str) -> std::collections::HashSet<Strin
 
 /// Returns `(new_targets, skipped_names)` where `skipped_names` are targets
 /// that already exist in the hand-authored part of the file.
-fn infer_targets(
+///
+/// Target inference uses a **combined** strategy:
+///   1. If `Cargo.toml` has explicit `[[bin]]`/`[[test]]`/`[[bench]]`/`[[example]]`
+///      sections, those definitions win (names, paths, harness settings).
+///   2. Otherwise, fall back to Rust filesystem conventions **but verify that
+///      files in `src/bin/` and `examples/` actually contain `fn main()`**
+///      before treating them as binary targets—a `.rs` file without `fn main()`
+///      is just a helper module.
+///   3. `tests/*.rs` never need a `fn main()` check (the test harness provides
+///      the entry point).
+///   4. `benches/*.rs` are detected by convention; `harness = false` in
+///      `Cargo.toml` `[[bench]]` is noted so the Bazel rule can match.
+pub(crate) fn infer_targets(
     dir: &Path,
     crate_name: &str,
     repo_name: &str,
     existing_names: &std::collections::HashSet<String>,
+    existing_content: &str,
 ) -> (Vec<BazelTarget>, Vec<String>) {
     let mut candidates: Vec<BazelTarget> = Vec::new();
 
-    // src/lib.rs → rust_library + unit_tests
+    // Parse Cargo.toml for explicit target definitions
+    let cargo_toml = dir.join("Cargo.toml");
+    let cargo_content = std::fs::read_to_string(&cargo_toml).unwrap_or_default();
+    let explicit_bins = parse_cargo_targets(&cargo_content, "bin");
+    let explicit_tests = parse_cargo_targets(&cargo_content, "test");
+    let explicit_benches = parse_cargo_targets(&cargo_content, "bench");
+    let explicit_examples = parse_cargo_targets(&cargo_content, "example");
+
+    // ── src/lib.rs → rust_library + unit_tests + doc_tests ──────────────────
     if dir.join("src/lib.rs").exists() {
         candidates.push(BazelTarget::Library {
             name: crate_name.to_string(),
             repo_name: repo_name.to_string(),
         });
-    }
-
-    // src/main.rs → rust_binary named <crate>_bin
-    if dir.join("src/main.rs").exists() {
-        candidates.push(BazelTarget::Binary {
-            name: format!("{}_bin", crate_name),
-            src: "src/main.rs".to_string(),
-            repo_name: repo_name.to_string(),
+        candidates.push(BazelTarget::DocTest {
+            crate_name: crate_name.to_string(),
         });
     }
 
-    // src/bin/*.rs → individual rust_binary per file
-    if let Ok(entries) = std::fs::read_dir(dir.join("src/bin")) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "rs") {
-                let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+    // ── Binaries ────────────────────────────────────────────────────────────
+    if !explicit_bins.is_empty() {
+        // Cargo.toml has explicit [[bin]] definitions → use those
+        for target in &explicit_bins {
+            let path = target.path.as_deref().unwrap_or_else(|| {
+                if target.name == crate_name { "src/main.rs" } else { "" }
+            });
+            if !path.is_empty() {
                 candidates.push(BazelTarget::Binary {
-                    name: stem.clone(),
-                    src: format!("src/bin/{}.rs", stem),
+                    name: target.name.clone(),
+                    src: path.to_string(),
                     repo_name: repo_name.to_string(),
                 });
             }
         }
+    } else {
+        // Convention: src/main.rs → binary named <crate>_bin
+        if dir.join("src/main.rs").exists() {
+            candidates.push(BazelTarget::Binary {
+                name: format!("{}_bin", crate_name),
+                src: "src/main.rs".to_string(),
+                repo_name: repo_name.to_string(),
+            });
+        }
+
+        // Convention: src/bin/*.rs → one binary per file WITH fn main()
+        scan_rs_dir_with_main_check(dir, "src/bin", &mut candidates, |stem, src| {
+            BazelTarget::Binary {
+                name: stem,
+                src,
+                repo_name: repo_name.to_string(),
+            }
+        });
+
+        // Convention: src/bin/*/main.rs → subdirectory binaries
+        if let Ok(entries) = std::fs::read_dir(dir.join("src/bin")) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() && path.join("main.rs").exists() {
+                    let stem = path.file_name().unwrap().to_string_lossy().to_string();
+                    candidates.push(BazelTarget::Binary {
+                        name: stem.clone(),
+                        src: format!("src/bin/{}/main.rs", stem),
+                        repo_name: repo_name.to_string(),
+                    });
+                }
+            }
+        }
     }
 
-    // tests/ → rust_test_suite
-    if dir.join("tests").exists() {
+    // ── Tests ───────────────────────────────────────────────────────────────
+    if !explicit_tests.is_empty() {
+        // Cargo.toml has explicit [[test]] definitions
+        // Still use a single test_suite — Bazel handles the glob
         candidates.push(BazelTarget::TestSuite {
             name: "integration_tests".to_string(),
             repo_name: repo_name.to_string(),
         });
+    } else if dir.join("tests").exists() {
+        // Convention: tests/ directory exists → rust_test_suite
+        // No fn main() check needed — test harness provides it
+        let has_rs_files = std::fs::read_dir(dir.join("tests"))
+            .map(|entries| {
+                entries.flatten().any(|e| {
+                    e.path().extension().map_or(false, |ext| ext == "rs")
+                })
+            })
+            .unwrap_or(false);
+
+        if has_rs_files {
+            candidates.push(BazelTarget::TestSuite {
+                name: "integration_tests".to_string(),
+                repo_name: repo_name.to_string(),
+            });
+        }
     }
 
-    // examples/*.rs → rust_binary per file
-    if let Ok(entries) = std::fs::read_dir(dir.join("examples")) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "rs") {
-                let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                candidates.push(BazelTarget::Example {
-                    name: stem.clone(),
-                    src: format!("examples/{}.rs", stem),
-                    repo_name: repo_name.to_string(),
-                });
+    // ── Examples ────────────────────────────────────────────────────────────
+    if !explicit_examples.is_empty() {
+        // Cargo.toml has explicit [[example]] definitions → use those
+        for target in &explicit_examples {
+            let default_path = format!("examples/{}.rs", target.name);
+            let path = target.path.as_deref().unwrap_or(&default_path);
+            candidates.push(BazelTarget::Example {
+                name: target.name.clone(),
+                src: path.to_string(),
+                repo_name: repo_name.to_string(),
+            });
+        }
+    } else {
+        // Convention: examples/*.rs → one binary per file WITH fn main()
+        scan_rs_dir_with_main_check(dir, "examples", &mut candidates, |stem, src| {
+            BazelTarget::Example {
+                name: stem,
+                src,
+                repo_name: repo_name.to_string(),
+            }
+        });
+
+        // Convention: examples/*/main.rs → subdirectory examples
+        if let Ok(entries) = std::fs::read_dir(dir.join("examples")) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() && path.join("main.rs").exists() {
+                    let stem = path.file_name().unwrap().to_string_lossy().to_string();
+                    candidates.push(BazelTarget::Example {
+                        name: stem.clone(),
+                        src: format!("examples/{}/main.rs", stem),
+                        repo_name: repo_name.to_string(),
+                    });
+                }
             }
         }
     }
 
-    // benches/*.rs → rust_binary per file
-    if let Ok(entries) = std::fs::read_dir(dir.join("benches")) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "rs") {
-                let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                candidates.push(BazelTarget::Bench {
-                    name: stem.clone(),
-                    src: format!("benches/{}.rs", stem),
-                    repo_name: repo_name.to_string(),
-                });
-            }
+    // ── Benches ─────────────────────────────────────────────────────────────
+    if !explicit_benches.is_empty() {
+        // Cargo.toml has explicit [[bench]] definitions → use those
+        for target in &explicit_benches {
+            let default_path = format!("benches/{}.rs", target.name);
+            let path = target.path.as_deref().unwrap_or(&default_path);
+            candidates.push(BazelTarget::Bench {
+                name: target.name.clone(),
+                src: path.to_string(),
+                repo_name: repo_name.to_string(),
+            });
         }
+    } else {
+        // Convention: benches/*.rs → check for fn main() (criterion-style)
+        scan_rs_dir_with_main_check(dir, "benches", &mut candidates, |stem, src| {
+            BazelTarget::Bench {
+                name: stem,
+                src,
+                repo_name: repo_name.to_string(),
+            }
+        });
+    }
+
+    // ── build.rs → cargo_build_script ───────────────────────────────────────
+    if dir.join("build.rs").exists() {
+        candidates.push(BazelTarget::BuildScript);
     }
 
     // Partition into new vs already-defined
@@ -315,7 +446,20 @@ fn infer_targets(
     let mut skipped = Vec::new();
     for target in candidates {
         let bazel_name = target.bazel_name();
-        if existing_names.contains(&bazel_name) {
+
+        // For Library targets, init.rs generates `name = "<crate>"` but
+        // infer_targets generates `name = "<crate>_lib"`. Check both forms.
+        let is_existing = existing_names.contains(&bazel_name) || match &target {
+            BazelTarget::Library { name, .. } => existing_names.contains(name),
+            BazelTarget::DocTest { .. } => {
+                // Skip if ANY rust_doc_test rule exists in the file,
+                // regardless of its name attribute.
+                existing_content.contains("rust_doc_test(")
+            }
+            _ => false,
+        };
+
+        if is_existing {
             skipped.push(bazel_name);
         } else {
             targets.push(target);
@@ -325,17 +469,162 @@ fn infer_targets(
     (targets, skipped)
 }
 
+// ── helpers for target inference ──────────────────────────────────────────────
+
+/// Simple representation of a `[[bin]]`, `[[test]]`, `[[bench]]`, or
+/// `[[example]]` entry parsed from Cargo.toml.
+#[derive(Debug)]
+struct CargoTarget {
+    name: String,
+    path: Option<String>,
+}
+
+/// Parse `[[<kind>]]` sections from Cargo.toml text.
+///
+/// Extracts `name` and `path` fields from each section. Uses simple line-based
+/// scanning (no TOML crate dependency).
+fn parse_cargo_targets(content: &str, kind: &str) -> Vec<CargoTarget> {
+    let header = format!("[[{}]]", kind);
+    let mut targets = Vec::new();
+    let mut current_name: Option<String> = None;
+    let mut current_path: Option<String> = None;
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == header {
+            // Save previous section
+            if let Some(name) = current_name.take() {
+                targets.push(CargoTarget { name, path: current_path.take() });
+            }
+            current_path = None;
+            in_section = true;
+            continue;
+        }
+
+        // Any other section header ends our section
+        if trimmed.starts_with('[') {
+            if let Some(name) = current_name.take() {
+                targets.push(CargoTarget { name, path: current_path.take() });
+            }
+            current_path = None;
+            in_section = false;
+            continue;
+        }
+
+        if !in_section {
+            continue;
+        }
+
+        if trimmed.starts_with("name") {
+            if let Some(val) = extract_string_value(trimmed) {
+                current_name = Some(val);
+            }
+        } else if trimmed.starts_with("path") {
+            if let Some(val) = extract_string_value(trimmed) {
+                current_path = Some(val);
+            }
+        }
+    }
+
+    // Flush last section
+    if let Some(name) = current_name {
+        targets.push(CargoTarget { name, path: current_path });
+    }
+
+    targets
+}
+
+/// Extract the string value from a line like `name = "foo"`.
+fn extract_string_value(line: &str) -> Option<String> {
+    let rhs = line.splitn(2, '=').nth(1)?.trim();
+    let val = rhs.trim_matches('"').trim_matches('\'');
+    if val.is_empty() { None } else { Some(val.to_string()) }
+}
+
+/// Scan a directory for `.rs` files that contain `fn main()`, and push
+/// targets via the provided constructor. Files without `fn main()` are
+/// silently skipped (they're helper modules, not entry points).
+fn scan_rs_dir_with_main_check<F>(
+    crate_dir: &Path,
+    rel_dir: &str,
+    candidates: &mut Vec<BazelTarget>,
+    make_target: F,
+)
+where
+    F: Fn(String, String) -> BazelTarget,
+{
+    let abs_dir = crate_dir.join(rel_dir);
+    let entries = match std::fs::read_dir(&abs_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() || path.extension().map_or(true, |e| e != "rs") {
+            continue;
+        }
+
+        if !file_has_fn_main(&path) {
+            continue;
+        }
+
+        let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+        let src = format!("{}/{}.rs", rel_dir, stem);
+        candidates.push(make_target(stem, src));
+    }
+}
+
+/// Quick check whether a file contains a `fn main()` declaration.
+///
+/// This is a best-effort heuristic — it looks for `fn main()` or `fn main ()`
+/// anywhere on a non-comment line. It won't be fooled by `// fn main()` but
+/// could theoretically match inside a string literal (acceptable trade-off for
+/// a scaffolding tool).
+fn file_has_fn_main(path: &Path) -> bool {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        // Skip single-line comments
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        // Look for fn main with optional whitespace variations
+        if trimmed.contains("fn main()") || trimmed.contains("fn main ()") {
+            return true;
+        }
+    }
+
+    false
+}
+
 // ── rendering ─────────────────────────────────────────────────────────────────
 
-fn build_file_header(repo_name: &str) -> String {
+pub(crate) fn build_file_header(repo_name: &str) -> String {
     format!(
         r#"load("@{repo_name}//:defs.bzl", "all_crate_deps")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test", "rust_test_suite")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_doc_test", "rust_library", "rust_test", "rust_test_suite")
 "#
     )
 }
 
-fn render_managed_block(targets: &[BazelTarget]) -> String {
+/// Build header that also includes the `cargo_build_script` load.
+pub(crate) fn build_file_header_with_build_script(repo_name: &str) -> String {
+    format!(
+        r#"load("@{repo_name}//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_doc_test", "rust_library", "rust_test", "rust_test_suite")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+"#
+    )
+}
+
+pub(crate) fn render_managed_block(targets: &[BazelTarget]) -> String {
     let body: String = targets.iter().map(|t| t.render()).collect::<Vec<_>>().join("\n");
     format!("{MANAGED_BEGIN}\n{body}\n{MANAGED_END}\n")
 }

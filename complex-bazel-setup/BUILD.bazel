@@ -1,1 +1,9 @@
-# Root BUILD.bazel file - marks this as a Bazel package
+load("@complex_bazel_setup//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "complex-bazel-setup",
+    srcs = glob(["src/**/*.rs"]),
+    deps = all_crate_deps(normal = True),
+    visibility = ["//visibility:public"],
+)

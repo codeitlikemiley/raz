@@ -1,11 +1,8 @@
 pub mod analyze;
 pub mod bazel_add;
-pub mod bazel_clean;
-pub mod bazel_init;
-pub mod bazel_query;
 pub mod bazel_sync;
-pub mod bazel_test;
 pub mod build_sync;
+pub mod clean;
 pub mod init;
 pub mod override_cmd;
 pub mod run;
@@ -14,12 +11,9 @@ pub mod watch;
 
 pub use analyze::analyze_command;
 pub use bazel_add::bazel_add_command;
-pub use bazel_clean::bazel_clean_command;
-pub use bazel_init::bazel_init_command;
-pub use bazel_query::bazel_query_command;
 pub use bazel_sync::bazel_sync_command;
-pub use bazel_test::bazel_test_command;
 pub use build_sync::build_sync_command;
+pub use clean::clean_command;
 pub use init::init_command;
 pub use override_cmd::override_command;
 pub use run::run_command;

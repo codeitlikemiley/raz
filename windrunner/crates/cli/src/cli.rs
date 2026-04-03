@@ -2,8 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    analyze_command, bazel_add_command, bazel_clean_command, bazel_init_command,
-    bazel_query_command, bazel_sync_command, bazel_test_command, build_sync_command,
+    analyze_command, bazel_add_command, bazel_sync_command, build_sync_command, clean_command,
     init_command, override_command, run_command, unset_command, watch_command,
 };
 
@@ -47,7 +46,12 @@ pub enum Commands {
         #[arg(short, long)]
         config: bool,
     },
+
     /// Run Rust code at a specific location
+    ///
+    /// Intelligently dispatches to `cargo run`, `cargo test`, `cargo bench`,
+    /// or the Bazel equivalent based on the file and project configuration.
+    /// Defaults to cwd entry point when no file is provided.
     #[command(visible_alias = "r")]
     Run {
         /// Path to the Rust file with optional line number (e.g., src/main.rs:10).
@@ -58,7 +62,17 @@ pub enum Commands {
         #[arg(short, long)]
         dry_run: bool,
     },
+
     /// Initialize cargo-runner configuration
+    ///
+    /// Without flags: scans the project tree and generates .cargo-runner.json files.
+    ///
+    /// With --bazel:
+    ///   If the project is already a Bazel workspace (MODULE.bazel exists),
+    ///   updates .cargo-runner.json only.
+    ///   If not yet a Bazel workspace, scaffolds the full workspace
+    ///   (MODULE.bazel, .bazelversion, .bazelrc, BUILD.bazel, Cargo.lock)
+    ///   and writes .cargo-runner.json, then runs `bazel sync`.
     Init {
         /// Specify the current working directory
         #[arg(short, long)]
@@ -76,20 +90,27 @@ pub enum Commands {
         #[arg(long)]
         single_file_script: bool,
 
-        /// Generate a Bazel-aware .cargo-runner.json (for Bazel + Rust projects)
+        /// Generate a Bazel-aware .cargo-runner.json.
+        /// Also scaffolds the full Bazel workspace if one does not yet exist.
         #[arg(long)]
         bazel: bool,
 
-        /// Bazel workspace name to embed in the generated config (default: directory name)
+        /// Bazel workspace name (defaults to directory name)
         #[arg(long, value_name = "NAME")]
         workspace_name: Option<String>,
+
+        /// Skip `bazel sync` after scaffolding the Bazel workspace
+        #[arg(long)]
+        skip_sync: bool,
     },
+
     /// Remove cargo-runner configuration
     Unset {
         /// Clean up all generated configuration files
         #[arg(short, long)]
         clean: bool,
     },
+
     /// Create override configuration for a specific file location
     #[command(visible_alias = "o")]
     Override {
@@ -100,27 +121,22 @@ pub enum Commands {
         #[arg(short, long)]
         root: bool,
 
-        /// Override arguments in the format: [-- <OVERRIDE_ARGS>...]
-        ///
-        /// Examples:
-        ///   cargo runner override src/main.rs:10 -- --extra-args --release
-        ///   cargo runner override src/main.rs:10 -- --remove-args
-        ///   cargo runner override src/main.rs:10 -- --extra-env RUST_LOG=debug
+        /// Override arguments: -- --extra-args / --remove-args / --extra-env KEY=val
         #[arg(last = true)]
         override_args: Vec<String>,
     },
 
-    // ── Bazel transparent-proxy commands ─────────────────────────────────
+    // ── Bazel transparent-proxy commands ──────────────────────────────────────
+    // Low-level Bazel pipeline steps; most users only need init + run.
 
-    /// Sync Bazel crate-universe after `cargo add` (runs cargo update + bazel sync + gen IDE files)
+    /// Sync Bazel crate-universe after `cargo add`
     ///
-    /// Run this after adding any external dependency with `cargo add` or
-    /// after editing Cargo.toml directly. Bazel does not auto-detect Cargo
-    /// lock changes; this command bridges the gap.
+    /// Run this after adding any external dependency with `cargo add` or after
+    /// editing Cargo.toml directly.
     ///
     /// Examples:
-    ///   cargo runner sync              # sync all crates in the workspace
-    ///   cargo runner sync --crate server    # sync only the `server` crate
+    ///   cargo runner sync                       # sync all crates
+    ///   cargo runner sync --crate-name server   # sync only the `server` crate
     Sync {
         /// Limit sync to a specific crate (by name or directory basename)
         #[arg(long, value_name = "CRATE")]
@@ -133,22 +149,18 @@ pub enum Commands {
 
     /// Add an external crate to a Bazel + Rust project (cargo add + bazel sync + IDE refresh)
     ///
-    /// Wraps `cargo add` and automatically runs the full Bazel sync pipeline
-    /// so the new dependency is immediately available both in code and in the IDE.
-    ///
     /// Examples:
     ///   cargo runner add tokio --features full
     ///   cargo runner add serde --features derive --dev
-    ///   cargo runner add tokio --crate-dir server --features full
     Add {
         /// Name of the crate to add (e.g. `tokio`)
         crate_name: String,
 
-        /// Comma-separated list of features to enable (e.g. `full,rt-multi-thread`)
+        /// Comma-separated list of features to enable
         #[arg(long, value_name = "FEATURES")]
         features: Option<String>,
 
-        /// Add as a dev-dependency (`[dev-dependencies]`)
+        /// Add as a dev-dependency
         #[arg(long)]
         dev: bool,
 
@@ -163,14 +175,8 @@ pub enum Commands {
 
     /// Scaffold or update BUILD.bazel targets based on the crate's src/ layout
     ///
-    /// Scans the crate for new files (src/bin/*.rs, tests/*.rs, examples/*.rs,
-    /// benches/*.rs) and generates the corresponding Bazel targets. Only touches
-    /// lines inside the `# BEGIN raz-managed` / `# END raz-managed` block,
-    /// leaving hand-authored stanzas untouched.
-    ///
     /// Examples:
     ///   cargo runner build-sync              # sync the current crate
-    ///   cargo runner build-sync --crate server    # sync a specific crate
     ///   cargo runner build-sync --dry-run    # preview without writing
     #[command(name = "build-sync")]
     BuildSync {
@@ -183,138 +189,51 @@ pub enum Commands {
         dry_run: bool,
     },
 
-    /// Convert a plain `cargo new` project into a Bazel + Rust workspace
+    // ── Unified utility commands ───────────────────────────────────────────────
+
+    /// Clean build outputs (auto-detects Cargo or Bazel)
     ///
-    /// Generates MODULE.bazel, .bazelversion, .bazelrc, BUILD.bazel (root + crate),
-    /// Cargo.lock, and .cargo-runner.json, then runs `bazel sync` to pull deps.
-    ///
-    /// Examples:
-    ///   cargo runner bazel-init              # convert current directory
-    ///   cargo runner bazel-init --skip-sync  # generate files, skip bazel sync
-    ///   cargo runner bazel-init --force      # overwrite existing files
-    #[command(name = "bazel-init")]
-    BazelInit {
-        /// Specify the project directory (defaults to cwd)
-        #[arg(short, long)]
-        cwd: Option<String>,
-
-        /// Overwrite existing Bazel files
-        #[arg(short, long)]
-        force: bool,
-
-        /// Skip running `bazel sync` after scaffolding
-        #[arg(long)]
-        skip_sync: bool,
-
-        /// Override the Bazel workspace name (defaults to directory name)
-        #[arg(long, value_name = "NAME")]
-        workspace_name: Option<String>,
-    },
-
-    /// List Bazel targets in the workspace
-    ///
-    /// Wraps `bazel query` with a friendlier interface.
+    /// For Cargo projects runs `cargo clean`.
+    /// For Bazel projects runs `bazel clean`, with optional cache clearing.
     ///
     /// Examples:
-    ///   cargo runner bazel-query               # list all targets
-    ///   cargo runner bazel-query --tests        # list only rust_test targets
-    ///   cargo runner bazel-query --bins         # list only rust_binary targets
-    ///   cargo runner bazel-query 'deps(//:foo)' # raw bazel query expression
-    #[command(name = "bazel-query")]
-    BazelQuery {
-        /// Bazel query expression (defaults to `//...`)
-        #[arg(value_name = "EXPR")]
-        expr: Option<String>,
-
-        /// Output format passed to `--output` (default: label)
-        #[arg(long, default_value = "label")]
-        output: String,
-
-        /// Show only rust_test targets
-        #[arg(long)]
-        tests: bool,
-
-        /// Show only rust_binary targets
-        #[arg(long)]
-        bins: bool,
-    },
-
-    /// Clean Bazel build outputs and optionally the shared caches
-    ///
-    /// Examples:
-    ///   cargo runner bazel-clean               # clean build outputs
-    ///   cargo runner bazel-clean --expunge     # remove all Bazel state
-    ///   cargo runner bazel-clean --disk-cache  # clear shared build cache
-    ///   cargo runner bazel-clean --all-caches  # clear disk + repo caches
-    #[command(name = "bazel-clean")]
-    BazelClean {
-        /// Run `bazel clean --expunge` (removes all Bazel state for this workspace)
+    ///   cargo runner clean            # clean (auto-detect)
+    ///   cargo runner clean --cache    # Bazel: also clear shared disk + repo caches
+    ///   cargo runner clean --expunge  # Bazel: bazel clean --expunge
+    Clean {
+        /// Bazel: run `bazel clean --expunge` (removes all Bazel state for this workspace)
         #[arg(long)]
         expunge: bool,
 
-        /// Clear the shared disk cache (~/.cache/bazel-disk)
+        /// Bazel: clear shared caches (~/.cache/bazel-disk and ~/.cache/bazel-repo)
         #[arg(long)]
-        disk_cache: bool,
-
-        /// Clear the shared repository cache (~/.cache/bazel-repo)
-        #[arg(long)]
-        repo_cache: bool,
-
-        /// Clear both disk and repository caches
-        #[arg(long)]
-        all_caches: bool,
+        cache: bool,
     },
 
-    /// Run `bazel test` for a crate or the whole workspace
+    /// Watch src/ for file changes and auto-trigger build/run/test (auto-detects Cargo or Bazel)
+    ///
+    /// Uses `cargo watch` if installed (Cargo projects), otherwise falls back to
+    /// a built-in notify-based watcher. Bazel projects always use the notify watcher.
     ///
     /// Examples:
-    ///   cargo runner test                           # test everything (//...)
-    ///   cargo runner test //:my_crate_test          # specific target
-    ///   cargo runner test --filter my_fn            # run tests matching a name
-    ///   cargo runner test --crate server            # test a named crate
-    ///   cargo runner test --streamed                # show all output live
-    #[command(name = "test")]
-    BazelTest {
-        /// Bazel target to test (defaults to //...)
-        #[arg(value_name = "TARGET")]
-        target: Option<String>,
-
-        /// Filter to a specific test name (passed as --test_arg=--exact <name>)
-        #[arg(long, short = 'f', value_name = "NAME")]
-        filter: Option<String>,
-
-        /// Limit to a specific crate by name or directory basename
-        #[arg(long, value_name = "CRATE")]
-        crate_name: Option<String>,
-
-        /// Stream all test output (--test_output=streamed)
-        #[arg(long)]
-        streamed: bool,
-    },
-
-    /// Watch src/ for changes and trigger a Bazel build, test, or run
-    ///
-    /// Examples:
-    ///   cargo runner watch               # watch + bazel build on change
-    ///   cargo runner watch --test        # watch + bazel test on change
-    ///   cargo runner watch --run         # watch + bazel run on change
-    ///   cargo runner watch --target //:my_bin --run
+    ///   cargo runner watch               # watch + build on change
+    ///   cargo runner watch --run         # watch + run on change
+    ///   cargo runner watch --test        # watch + test on change
+    ///   cargo runner watch src/main.rs   # watch the file's directory
     ///   cargo runner watch --debounce 500
-    #[command(name = "watch")]
     Watch {
-        /// Bazel target to build/test/run (auto-detected from cwd if omitted)
-        #[arg(long, value_name = "TARGET")]
-        target: Option<String>,
+        /// Rust file to scope the watch directory to (defaults to src/ or cwd)
+        filepath: Option<String>,
 
-        /// Run the target instead of building it
+        /// Run the target on change instead of just building
         #[arg(long, short = 'r')]
         run: bool,
 
-        /// Test the target instead of building it
+        /// Test the target on change instead of just building
         #[arg(long, short = 't')]
         test: bool,
 
-        /// Debounce delay in milliseconds (default: 300)
+        /// Debounce delay in milliseconds before re-triggering (default: 300)
         #[arg(long, default_value = "300", value_name = "MS")]
         debounce: u64,
     },
@@ -363,6 +282,7 @@ impl Commands {
                 single_file_script,
                 bazel,
                 workspace_name,
+                skip_sync,
             } => init_command(
                 cwd.as_deref(),
                 force,
@@ -370,6 +290,7 @@ impl Commands {
                 single_file_script,
                 bazel,
                 workspace_name.as_deref(),
+                skip_sync,
             ),
             Commands::Unset { clean } => unset_command(clean),
             Commands::Override {
@@ -398,39 +319,11 @@ impl Commands {
             Commands::BuildSync { crate_name, dry_run } => {
                 build_sync_command(crate_name.as_deref(), dry_run)
             }
-            Commands::BazelInit {
-                cwd,
-                force,
-                skip_sync,
-                workspace_name,
-            } => bazel_init_command(
-                cwd.as_deref(),
-                force,
-                skip_sync,
-                workspace_name.as_deref(),
-            ),
-            Commands::BazelQuery { expr, output, tests, bins } => {
-                bazel_query_command(expr.as_deref(), &output, tests, bins)
-            }
-            Commands::BazelClean {
-                expunge,
-                disk_cache,
-                repo_cache,
-                all_caches,
-            } => bazel_clean_command(expunge, disk_cache, repo_cache, all_caches),
-            Commands::BazelTest {
-                target,
-                filter,
-                crate_name,
-                streamed,
-            } => bazel_test_command(
-                target.as_deref(),
-                filter.as_deref(),
-                crate_name.as_deref(),
-                streamed,
-            ),
-            Commands::Watch { target, run, test, debounce } => {
-                watch_command(target.as_deref(), run, test, debounce)
+
+            // Unified utilities
+            Commands::Clean { expunge, cache } => clean_command(expunge, cache),
+            Commands::Watch { filepath, run, test, debounce } => {
+                watch_command(filepath.as_deref(), run, test, debounce)
             }
         }
     }
