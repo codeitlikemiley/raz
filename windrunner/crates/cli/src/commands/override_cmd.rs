@@ -1012,3 +1012,217 @@ fn parse_override_args(args: &[String]) -> Map<String, Value> {
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(s: &str) -> Vec<String> {
+        s.split_whitespace().map(String::from).collect()
+    }
+
+    // ── @command.subcommand tokens ────────────────────────────────
+
+    #[test]
+    fn at_dx_run() {
+        let r = parse_override_args(&args("@dx.run"));
+        assert_eq!(r.get("command").unwrap(), "dx");
+        assert_eq!(r.get("subcommand").unwrap(), "run");
+    }
+
+    #[test]
+    fn at_dx_serve() {
+        let r = parse_override_args(&args("@dx.serve"));
+        assert_eq!(r.get("command").unwrap(), "dx");
+        assert_eq!(r.get("subcommand").unwrap(), "serve");
+    }
+
+    #[test]
+    fn at_cargo_subcommand_does_not_set_command() {
+        // @cargo.test → only subcommand, no command (cargo is the default)
+        let r = parse_override_args(&args("@cargo.test"));
+        assert!(r.get("command").is_none(), "cargo should not be set as command");
+        assert_eq!(r.get("subcommand").unwrap(), "test");
+    }
+
+    #[test]
+    fn at_cargo_leptos_watch_joins_subcommand() {
+        let r = parse_override_args(&args("@cargo.leptos.watch"));
+        assert!(r.get("command").is_none());
+        assert_eq!(r.get("subcommand").unwrap(), "leptos watch");
+    }
+
+    #[test]
+    fn at_cargo_leptos_serve() {
+        let r = parse_override_args(&args("@cargo.leptos.serve"));
+        assert!(r.get("command").is_none());
+        assert_eq!(r.get("subcommand").unwrap(), "leptos serve");
+    }
+
+    #[test]
+    fn at_bazel_run() {
+        let r = parse_override_args(&args("@bazel.run"));
+        assert_eq!(r.get("command").unwrap(), "bazel");
+        assert_eq!(r.get("subcommand").unwrap(), "run");
+    }
+
+    #[test]
+    fn at_command_without_subcommand() {
+        let r = parse_override_args(&args("@trunk"));
+        assert_eq!(r.get("command").unwrap(), "trunk");
+        assert!(r.get("subcommand").is_none());
+    }
+
+    // ── +channel token ────────────────────────────────────────────
+
+    #[test]
+    fn plus_nightly() {
+        let r = parse_override_args(&args("+nightly"));
+        assert_eq!(r.get("channel").unwrap(), "nightly");
+    }
+
+    #[test]
+    fn plus_stable() {
+        let r = parse_override_args(&args("+stable"));
+        assert_eq!(r.get("channel").unwrap(), "stable");
+    }
+
+    // ── ENV=value token ───────────────────────────────────────────
+
+    #[test]
+    fn env_var_simple() {
+        let r = parse_override_args(&args("RUST_LOG=debug"));
+        let env = r.get("extra_env").unwrap().as_object().unwrap();
+        assert_eq!(env.get("RUST_LOG").unwrap(), "debug");
+    }
+
+    #[test]
+    fn env_var_with_equals_in_value() {
+        let r = parse_override_args(&vec!["RUST_LOG=key=val".to_string()]);
+        let env = r.get("extra_env").unwrap().as_object().unwrap();
+        assert_eq!(env.get("RUST_LOG").unwrap(), "key=val");
+    }
+
+    #[test]
+    fn multiple_env_vars() {
+        let r = parse_override_args(&args("RUST_LOG=debug RUST_BACKTRACE=1"));
+        let env = r.get("extra_env").unwrap().as_object().unwrap();
+        assert_eq!(env.get("RUST_LOG").unwrap(), "debug");
+        assert_eq!(env.get("RUST_BACKTRACE").unwrap(), "1");
+    }
+
+    // ── /test binary args ─────────────────────────────────────────
+
+    #[test]
+    fn slash_test_args() {
+        let r = parse_override_args(&args("/--nocapture --show-output"));
+        let test_args = r.get("extra_test_binary_args").unwrap().as_array().unwrap();
+        assert_eq!(test_args, &["--nocapture", "--show-output"]);
+    }
+
+    #[test]
+    fn standalone_slash_then_args() {
+        let r = parse_override_args(&args("/ --nocapture"));
+        let test_args = r.get("extra_test_binary_args").unwrap().as_array().unwrap();
+        assert_eq!(test_args, &["--nocapture"]);
+    }
+
+    #[test]
+    fn slash_consumes_remaining_args() {
+        // Everything after / goes to test binary args, even @tokens
+        let r = parse_override_args(&args("/ --nocapture @dx.run"));
+        let test_args = r.get("extra_test_binary_args").unwrap().as_array().unwrap();
+        assert_eq!(test_args, &["--nocapture", "@dx.run"]);
+        assert!(r.get("command").is_none());
+    }
+
+    // ── Removal tokens ────────────────────────────────────────────
+
+    #[test]
+    fn remove_command() {
+        let r = parse_override_args(&args("-command"));
+        assert_eq!(r.get("remove_command").unwrap(), true);
+    }
+
+    #[test]
+    fn remove_command_alias() {
+        let r = parse_override_args(&args("-cmd"));
+        assert_eq!(r.get("remove_command").unwrap(), true);
+    }
+
+    #[test]
+    fn remove_subcommand() {
+        let r = parse_override_args(&args("-subcommand"));
+        assert_eq!(r.get("remove_subcommand").unwrap(), true);
+    }
+
+    #[test]
+    fn remove_channel() {
+        let r = parse_override_args(&args("-channel"));
+        assert_eq!(r.get("remove_channel").unwrap(), true);
+    }
+
+    #[test]
+    fn remove_args() {
+        let r = parse_override_args(&args("-arg"));
+        assert_eq!(r.get("remove_args").unwrap(), true);
+    }
+
+    #[test]
+    fn remove_env() {
+        let r = parse_override_args(&args("-env"));
+        assert_eq!(r.get("remove_env").unwrap(), true);
+    }
+
+    #[test]
+    fn remove_test_args() {
+        let r = parse_override_args(&args("-test"));
+        assert_eq!(r.get("remove_test_args").unwrap(), true);
+    }
+
+    #[test]
+    fn remove_specific_env_key() {
+        let r = parse_override_args(&args("-RUST_LOG"));
+        let keys = r.get("remove_env_keys").unwrap().as_array().unwrap();
+        assert_eq!(keys, &["RUST_LOG"]);
+    }
+
+    // ── Extra args (passthrough) ──────────────────────────────────
+
+    #[test]
+    fn extra_args_passthrough() {
+        let r = parse_override_args(&args("--release --features=web"));
+        let extra = r.get("extra_args").unwrap().as_array().unwrap();
+        assert_eq!(extra, &["--release", "--features=web"]);
+    }
+
+    // ── Combined tokens ───────────────────────────────────────────
+
+    #[test]
+    fn combined_command_channel_env_args() {
+        let r = parse_override_args(&args("@dx.serve +nightly RUST_LOG=debug --release"));
+        assert_eq!(r.get("command").unwrap(), "dx");
+        assert_eq!(r.get("subcommand").unwrap(), "serve");
+        assert_eq!(r.get("channel").unwrap(), "nightly");
+        let env = r.get("extra_env").unwrap().as_object().unwrap();
+        assert_eq!(env.get("RUST_LOG").unwrap(), "debug");
+        let extra = r.get("extra_args").unwrap().as_array().unwrap();
+        assert_eq!(extra, &["--release"]);
+    }
+
+    #[test]
+    fn command_with_removal_flag_skips_it() {
+        // @dx.serve + -command → command is NOT set (removed)
+        let r = parse_override_args(&args("@dx.serve -command"));
+        assert!(r.get("command").is_none());
+        assert_eq!(r.get("subcommand").unwrap(), "serve");
+    }
+
+    // ── Empty input ───────────────────────────────────────────────
+
+    #[test]
+    fn empty_args() {
+        let r = parse_override_args(&[]);
+        assert!(r.is_empty());
+    }
+}
