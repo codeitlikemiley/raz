@@ -112,6 +112,16 @@ pub enum Commands {
     },
 
     /// Create override configuration for a specific file location
+    ///
+    /// Override tokens (passed after `--`):
+    /// - `@cmd.sub` — Set command and subcommand (e.g., `@dx.run`)
+    /// - `+channel` — Set Rust toolchain channel (e.g., `+nightly`)
+    /// - `KEY=value` — Set environment variable (e.g., `RUST_LOG=debug`)
+    /// - `/args...` — Test binary args (like `--` in cargo test)
+    /// - `-command` — Remove command override
+    /// - `-` — Remove the entire override
+    ///
+    /// Named flags: `--command`, `--subcommand`, `--channel`
     #[command(visible_alias = "o")]
     Override {
         /// File path with optional line number (e.g., src/main.rs:10)
@@ -121,7 +131,19 @@ pub enum Commands {
         #[arg(short, long)]
         root: bool,
 
-        /// Override arguments: -- --extra-args / --remove-args / --extra-env KEY=val
+        /// Set the command (e.g., dx, cargo, bazel)
+        #[arg(long)]
+        command: Option<String>,
+
+        /// Set the subcommand (e.g., serve, run, build, watch)
+        #[arg(long)]
+        subcommand: Option<String>,
+
+        /// Set the Rust toolchain channel (e.g., nightly, stable)
+        #[arg(long)]
+        channel: Option<String>,
+
+        /// Override tokens and extra arguments (see help above)
         #[arg(last = true)]
         override_args: Vec<String>,
     },
@@ -296,8 +318,11 @@ impl Commands {
             Commands::Override {
                 filepath,
                 root,
+                command,
+                subcommand,
+                channel,
                 override_args,
-            } => override_command(&filepath, root, override_args),
+            } => override_command(&filepath, root, command, subcommand, channel, override_args),
 
             // Bazel transparent-proxy commands
             Commands::Sync { crate_name, skip_ide } => {

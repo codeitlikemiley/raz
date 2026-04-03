@@ -7,7 +7,14 @@ use std::{
 
 use crate::utils::parser::parse_filepath_with_line;
 
-pub fn override_command(filepath_arg: &str, root: bool, override_args: Vec<String>) -> Result<()> {
+pub fn override_command(
+    filepath_arg: &str,
+    root: bool,
+    flag_command: Option<String>,
+    flag_subcommand: Option<String>,
+    flag_channel: Option<String>,
+    override_args: Vec<String>,
+) -> Result<()> {
     // Parse filepath and line number
     let (filepath, line) = parse_filepath_with_line(filepath_arg);
 
@@ -37,7 +44,7 @@ pub fn override_command(filepath_arg: &str, root: bool, override_args: Vec<Strin
         println!("   📄 No specific runnable found, creating file-level override");
 
         // For file-level overrides, we'll use the file path as the match criteria
-        return create_file_level_override(&filepath, root, override_args);
+        return create_file_level_override(&filepath, root, flag_command, flag_subcommand, flag_channel, override_args);
     }
 
     let runnable = runnable.unwrap();
@@ -140,8 +147,19 @@ pub fn override_command(filepath_arg: &str, root: bool, override_args: Vec<Strin
 
     override_config.insert("match".to_string(), Value::Object(matcher));
 
-    // Parse override arguments
-    let parsed_args = parse_override_args(&override_args);
+    // Parse override arguments (token-based: @dx.serve, +nightly, etc.)
+    let mut parsed_args = parse_override_args(&override_args);
+
+    // Named flags (--command, --subcommand, --channel) take precedence
+    if let Some(cmd) = &flag_command {
+        parsed_args.insert("command".to_string(), json!(cmd));
+    }
+    if let Some(sub) = &flag_subcommand {
+        parsed_args.insert("subcommand".to_string(), json!(sub));
+    }
+    if let Some(ch) = &flag_channel {
+        parsed_args.insert("channel".to_string(), json!(ch));
+    }
 
     // Check if we should remove the entire override
     if override_args.len() == 1 && override_args[0] == "-" {
@@ -631,10 +649,24 @@ pub fn override_command(filepath_arg: &str, root: bool, override_args: Vec<Strin
 fn create_file_level_override(
     filepath: &str,
     root: bool,
+    flag_command: Option<String>,
+    flag_subcommand: Option<String>,
+    flag_channel: Option<String>,
     override_args: Vec<String>,
 ) -> Result<()> {
     // Parse the override arguments - this returns a Map with the parsed configuration
-    let override_config = parse_override_args(&override_args);
+    let mut override_config = parse_override_args(&override_args);
+
+    // Named flags take precedence
+    if let Some(cmd) = &flag_command {
+        override_config.insert("command".to_string(), json!(cmd));
+    }
+    if let Some(sub) = &flag_subcommand {
+        override_config.insert("subcommand".to_string(), json!(sub));
+    }
+    if let Some(ch) = &flag_channel {
+        override_config.insert("channel".to_string(), json!(ch));
+    }
 
     // Create the match criteria for file-level override
     let mut match_criteria = Map::new();

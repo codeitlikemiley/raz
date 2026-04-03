@@ -1,26 +1,25 @@
-//! Dioxus runner — wraps CargoRunner with dx CLI detection.
+//! Dioxus runner — wraps CargoRunner with native `dx` CLI dispatch.
 //!
 //! Detects Dioxus projects (presence of `Dioxus.toml` in any ancestor) and
-//! surfaces that information for logging and future dispatch routing. Full
-//! `dx serve` command generation is configured via `.cargo-runner.json`.
+//! routes Binary runnables through `dx serve` instead of `cargo run`.
+//! Tests and benchmarks still go through CargoRunner since `cargo test` works.
 
 use std::path::Path;
 
 use crate::{
-    command::CargoCommand,
+    command::{CargoCommand, CommandType},
     config::Config,
     error::Result,
-    types::{FileType, Runnable},
+    types::{FileType, Runnable, RunnableKind},
 };
 
 use super::{cargo_runner::CargoRunner, traits::CommandRunner};
 
 /// Runner for Dioxus `dx`-managed projects.
 ///
-/// For now this delegates everything to `CargoRunner` because detailed `dx`
-/// command generation is handled via `.cargo-runner.json` overrides.
-/// The primary value today is `detect()`, which lets `UnifiedRunner` log
-/// and later route commands through the `dx` CLI.
+/// When a Binary runnable is detected in a Dioxus project, this runner
+/// generates `dx serve` instead of `cargo run`. For tests and benchmarks,
+/// it delegates to `CargoRunner` since `cargo test` works correctly.
 pub struct DioxusRunner {
     base: CargoRunner,
 }
@@ -71,11 +70,77 @@ impl CommandRunner for DioxusRunner {
         config: &Config,
         file_type: FileType,
     ) -> Result<CargoCommand> {
-        // Delegate to CargoRunner; dx-specific overrides live in .cargo-runner.json
-        self.base.build_command(runnable, config, file_type)
+        match &runnable.kind {
+            // Binary targets → dx serve (or override)
+            RunnableKind::Binary { .. } => {
+                // Check for overrides that customize the dx command
+                let identity = crate::types::FunctionIdentity {
+                    package: config.cargo.as_ref().and_then(|c| c.package.clone()),
+                    module_path: if runnable.module_path.is_empty() {
+                        None
+                    } else {
+                        Some(runnable.module_path.clone())
+                    },
+                    file_path: Some(runnable.file_path.clone()),
+                    function_name: runnable.get_function_name(),
+                    file_type: Some(file_type),
+                };
+
+                let override_config = config.get_override_for(&identity);
+
+                // Defaults
+                let mut command = "dx".to_string();
+                let mut subcommand = "serve".to_string();
+                let mut extra_args: Vec<String> = Vec::new();
+                let mut env: Vec<(String, String)> = Vec::new();
+
+                // Apply overrides from .cargo-runner.json
+                if let Some(ov) = override_config.and_then(|o| o.cargo.as_ref()) {
+                    if let Some(cmd) = &ov.command {
+                        command = cmd.clone();
+                    }
+                    if let Some(sub) = &ov.subcommand {
+                        subcommand = sub.clone();
+                    }
+                    if let Some(args) = &ov.extra_args {
+                        extra_args.extend(args.clone());
+                    }
+                    if let Some(extra_env) = &ov.extra_env {
+                        for (k, v) in extra_env {
+                            env.push((k.clone(), v.clone()));
+                        }
+                    }
+                }
+
+                tracing::info!(
+                    "DioxusRunner: Binary detected — generating `{} {}`",
+                    command,
+                    subcommand
+                );
+
+                let mut args = vec![command, subcommand];
+                args.extend(extra_args);
+
+                let cmd = CargoCommand {
+                    command_type: CommandType::Shell,
+                    args,
+                    working_dir: None,
+                    env,
+                    test_filter: None,
+                };
+                Ok(cmd)
+            }
+            // Tests, doctests, benchmarks → delegate to CargoRunner
+            // (cargo test works fine for Dioxus projects)
+            _ => self.base.build_command(runnable, config, file_type),
+        }
     }
 
     fn validate_command(&self, command: &CargoCommand) -> Result<()> {
+        // Shell commands (dx serve) don't need cargo-specific validation
+        if command.command_type == CommandType::Shell {
+            return Ok(());
+        }
         self.base.validate_command(command)
     }
 
@@ -109,5 +174,40 @@ mod tests {
 
         let file = tmp.path().join("src/lib.rs");
         assert!(!DioxusRunner::detect(&file));
+    }
+
+    #[test]
+    fn binary_runnable_produces_dx_serve() {
+        use crate::types::{Position, Scope, ScopeKind};
+
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("Dioxus.toml"), "").unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        let runner = DioxusRunner {
+            base: CargoRunner::new().unwrap(),
+        };
+
+        let runnable = Runnable {
+            label: "main".to_string(),
+            kind: RunnableKind::Binary { bin_name: None },
+            file_path: tmp.path().join("src/main.rs"),
+            module_path: String::new(),
+            scope: Scope {
+                start: Position { line: 0, character: 0 },
+                end: Position { line: 10, character: 0 },
+                kind: ScopeKind::Function,
+                name: Some("main".to_string()),
+            },
+            extended_scope: None,
+        };
+
+        let config = Config::default();
+        let cmd = runner
+            .build_command(&runnable, &config, FileType::CargoProject)
+            .unwrap();
+
+        assert_eq!(cmd.command_type, CommandType::Shell);
+        assert_eq!(cmd.to_shell_command(), "dx serve");
     }
 }

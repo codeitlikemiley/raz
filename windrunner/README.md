@@ -123,6 +123,77 @@ All `BazelOverride` fields:
 
 > **Migration note**: The previous nested form `"bazel": { "test_framework": { "test_args": [...] } }` inside overrides **is no longer valid**. Update to the flat shape above.
 
+### Override CLI
+
+Use `cargo runner override` to create overrides from the command line instead of editing JSON manually.
+
+#### Named flags
+
+```bash
+cargo runner override <filepath> --command <cmd> --subcommand <sub> --channel <ch>
+```
+
+| Flag | What it sets |
+|------|-------------|
+| `--command` | The command binary (`dx`, `cargo`, `bazel`) |
+| `--subcommand` | The subcommand (`serve`, `run`, `build`, `watch`) |
+| `--channel` | Rust toolchain channel (`nightly`, `stable`) |
+
+#### Token syntax (after `--`)
+
+```bash
+cargo runner override <filepath> -- <tokens...>
+```
+
+| Token | Effect |
+|-------|--------|
+| `@cmd.sub` | Set command + subcommand (e.g., `@dx.run`) |
+| `+channel` | Set Rust toolchain channel (e.g., `+nightly`) |
+| `KEY=value` | Set environment variable (e.g., `RUST_LOG=debug`) |
+| `/args...` | Test binary args (like `--` in `cargo test`) |
+| `-command` | Remove the command override |
+| `-env` | Remove all env overrides |
+| `-` | Remove the entire override |
+| other | Appended as `extra_args` |
+
+#### Dioxus examples
+
+```bash
+# Default: dx serve — override to dx run
+cargo runner override src/main.rs --command dx --subcommand run
+
+# Same using token syntax
+cargo runner override src/main.rs -- @dx.run
+
+# Add --release flag
+cargo runner override src/main.rs -- @dx.serve --release
+
+# Add env vars
+cargo runner override src/main.rs -- @dx.serve RUST_LOG=debug
+```
+
+#### Leptos examples
+
+```bash
+# Default: cargo leptos serve — override to cargo leptos watch
+cargo runner override src/main.rs --subcommand watch
+
+# Same using token syntax (all three forms are equivalent)
+cargo runner override src/main.rs -- @cargo.watch
+cargo runner override src/main.rs -- @cargo.leptos.watch
+
+# Add --release
+cargo runner override src/main.rs --subcommand build -- --release
+```
+
+> **Note**: For Leptos, you only set `--subcommand` (not `--command`) because the command is always `cargo` — the runner constructs `cargo leptos <subcommand>` automatically.
+
+#### Remove an override
+
+```bash
+cargo runner override src/main.rs -- -
+```
+
 ---
 
 ## Build System & Framework Detection
