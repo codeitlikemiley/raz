@@ -4,7 +4,7 @@ pub mod templates;
 pub mod workspace;
 
 pub use bazel_workspace::{
-    crate_repo_name, find_bazel_crates, find_cargo_workspace_root, find_module_bazel, BazelCrate,
+    BazelCrate, crate_repo_name, find_bazel_crates, find_cargo_workspace_root, find_module_bazel,
 };
 pub use generators::{create_default_config, create_root_config, create_workspace_config};
 pub use templates::{

@@ -44,7 +44,14 @@ pub fn override_command(
         println!("   📄 No specific runnable found, creating file-level override");
 
         // For file-level overrides, we'll use the file path as the match criteria
-        return create_file_level_override(&filepath, root, flag_command, flag_subcommand, flag_channel, override_args);
+        return create_file_level_override(
+            &filepath,
+            root,
+            flag_command,
+            flag_subcommand,
+            flag_channel,
+            override_args,
+        );
     }
 
     let runnable = runnable.unwrap();
@@ -1041,7 +1048,10 @@ mod tests {
     fn at_cargo_subcommand_does_not_set_command() {
         // @cargo.test → only subcommand, no command (cargo is the default)
         let r = parse_override_args(&args("@cargo.test"));
-        assert!(r.get("command").is_none(), "cargo should not be set as command");
+        assert!(
+            r.get("command").is_none(),
+            "cargo should not be set as command"
+        );
         assert_eq!(r.get("subcommand").unwrap(), "test");
     }
 

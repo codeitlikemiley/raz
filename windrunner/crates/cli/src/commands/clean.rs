@@ -108,7 +108,10 @@ mod tests {
     fn expand_tilde_home_prefix() {
         let result = expand_tilde("~/.cache/bazel-disk");
         let home = std::env::var("HOME").unwrap();
-        assert_eq!(result, std::path::PathBuf::from(format!("{}/.cache/bazel-disk", home)));
+        assert_eq!(
+            result,
+            std::path::PathBuf::from(format!("{}/.cache/bazel-disk", home))
+        );
     }
 
     #[test]
@@ -128,6 +131,9 @@ mod tests {
     fn expand_tilde_nested_path() {
         let result = expand_tilde("~/a/b/c/d");
         let home = std::env::var("HOME").unwrap();
-        assert_eq!(result, std::path::PathBuf::from(format!("{}/a/b/c/d", home)));
+        assert_eq!(
+            result,
+            std::path::PathBuf::from(format!("{}/a/b/c/d", home))
+        );
     }
 }

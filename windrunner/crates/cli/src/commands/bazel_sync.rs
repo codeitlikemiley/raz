@@ -9,7 +9,7 @@
 //! The user sees only a compact progress story and never needs to know what
 //! Bazel commands are running underneath.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::Path;
 use std::process::Command;
 
@@ -32,14 +32,11 @@ pub fn bazel_sync_command(crate_filter: Option<&str>, skip_ide: bool) -> Result<
         )
     })?;
 
-    println!(
-        "🔥 Bazel workspace root: {}",
-        bazel_root.display()
-    );
+    println!("🔥 Bazel workspace root: {}", bazel_root.display());
 
     // ── 2. Discover crates ────────────────────────────────────────────────
-    let all_crates = find_bazel_crates(&bazel_root)
-        .context("failed to scan workspace for Bazel crates")?;
+    let all_crates =
+        find_bazel_crates(&bazel_root).context("failed to scan workspace for Bazel crates")?;
 
     if all_crates.is_empty() {
         bail!(
@@ -76,11 +73,11 @@ pub fn bazel_sync_command(crate_filter: Option<&str>, skip_ide: bool) -> Result<
     }
 
     // ── 4. bazel sync ──────────────────────────────────────────────────────
-    let repo_names: Vec<&str> = crates_to_sync.iter().map(|c| c.repo_name.as_str()).collect();
-    println!(
-        "🔄 bazel sync  →  {}",
-        repo_names.join(", ")
-    );
+    let repo_names: Vec<&str> = crates_to_sync
+        .iter()
+        .map(|c| c.repo_name.as_str())
+        .collect();
+    println!("🔄 bazel sync  →  {}", repo_names.join(", "));
     run_bazel_sync(&bazel_root, &repo_names)?;
 
     // ── 5. Regenerate rust-project.json ────────────────────────────────────

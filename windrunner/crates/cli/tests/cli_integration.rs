@@ -24,7 +24,11 @@ edition = "2021"
         ),
     )
     .unwrap();
-    fs::write(dir.join("src/main.rs"), "fn main() { println!(\"hello\"); }\n").unwrap();
+    fs::write(
+        dir.join("src/main.rs"),
+        "fn main() { println!(\"hello\"); }\n",
+    )
+    .unwrap();
 }
 
 /// Scaffold a Cargo project with a lib.rs and tests.
@@ -55,6 +59,68 @@ mod tests {
     }
 }
 "#,
+    )
+    .unwrap();
+}
+
+/// Scaffold a workspace root with a single binary member under `crates/<member>`.
+fn scaffold_workspace_member_binary(dir: &std::path::Path, member_dir: &str, package_name: &str) {
+    let member_path = dir.join(member_dir);
+    fs::create_dir_all(member_path.join("src")).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        format!(
+            r#"[workspace]
+members = ["{member_dir}"]
+resolver = "2"
+"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        member_path.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "{package_name}"
+version = "0.1.0"
+edition = "2021"
+"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        member_path.join("src/main.rs"),
+        "fn main() { println!(\"workspace member\"); }\n",
+    )
+    .unwrap();
+}
+
+/// Scaffold a minimal Bazel workspace with a binary package.
+fn scaffold_bazel_binary_workspace(dir: &std::path::Path, package_dir: &str, target_name: &str) {
+    let package_path = dir.join(package_dir);
+    fs::create_dir_all(package_path.join("src")).unwrap();
+    fs::write(
+        dir.join("MODULE.bazel"),
+        "module(name = \"test_workspace\")\n",
+    )
+    .unwrap();
+    fs::write(
+        package_path.join("BUILD.bazel"),
+        format!(
+            r#"
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "{target_name}",
+    srcs = ["src/main.rs"],
+)
+"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        package_path.join("src/main.rs"),
+        "fn main() { println!(\"hello from bazel\"); }\n",
     )
     .unwrap();
 }
@@ -153,7 +219,14 @@ fn override_with_named_flags() {
 
     // Override with named flags
     cargo_runner()
-        .args(["override", "src/main.rs", "--command", "dx", "--subcommand", "serve"])
+        .args([
+            "override",
+            "src/main.rs",
+            "--command",
+            "dx",
+            "--subcommand",
+            "serve",
+        ])
         .env("PROJECT_ROOT", &root)
         .current_dir(tmp.path())
         .assert()
@@ -169,12 +242,23 @@ fn override_with_named_flags() {
     // Verify the override has a match section with file_path
     let ov = &overrides[0];
     let match_section = ov.get("match").unwrap();
-    assert!(match_section.get("file_path").is_some(), "match should have file_path");
+    assert!(
+        match_section.get("file_path").is_some(),
+        "match should have file_path"
+    );
 
     // Verify the override contains the command/subcommand somewhere in its config
     let ov_str = serde_json::to_string(ov).unwrap();
-    assert!(ov_str.contains("dx"), "override should contain 'dx' command: {}", ov_str);
-    assert!(ov_str.contains("serve"), "override should contain 'serve' subcommand: {}", ov_str);
+    assert!(
+        ov_str.contains("dx"),
+        "override should contain 'dx' command: {}",
+        ov_str
+    );
+    assert!(
+        ov_str.contains("serve"),
+        "override should contain 'serve' subcommand: {}",
+        ov_str
+    );
 }
 
 #[test]
@@ -191,7 +275,14 @@ fn override_with_token_syntax() {
         .success();
 
     cargo_runner()
-        .args(["override", "src/main.rs", "--", "@dx.serve", "+nightly", "RUST_LOG=debug"])
+        .args([
+            "override",
+            "src/main.rs",
+            "--",
+            "@dx.serve",
+            "+nightly",
+            "RUST_LOG=debug",
+        ])
         .env("PROJECT_ROOT", &root)
         .current_dir(tmp.path())
         .assert()
@@ -236,7 +327,11 @@ fn override_leptos_token() {
     assert!(!overrides.is_empty());
 
     let ov_str = serde_json::to_string(&overrides[0]).unwrap();
-    assert!(ov_str.contains("leptos watch"), "should contain 'leptos watch': {}", ov_str);
+    assert!(
+        ov_str.contains("leptos watch"),
+        "should contain 'leptos watch': {}",
+        ov_str
+    );
 }
 
 #[test]
@@ -254,7 +349,14 @@ fn override_updates_existing() {
 
     // First override
     cargo_runner()
-        .args(["override", "src/main.rs", "--command", "dx", "--subcommand", "serve"])
+        .args([
+            "override",
+            "src/main.rs",
+            "--command",
+            "dx",
+            "--subcommand",
+            "serve",
+        ])
         .env("PROJECT_ROOT", &root)
         .current_dir(tmp.path())
         .assert()
@@ -274,9 +376,18 @@ fn override_updates_existing() {
     let overrides = config.get("overrides").unwrap().as_array().unwrap();
 
     // Should still be 1 override (updated, not duplicated)
-    assert_eq!(overrides.len(), 1, "should have exactly 1 override, got {}", overrides.len());
+    assert_eq!(
+        overrides.len(),
+        1,
+        "should have exactly 1 override, got {}",
+        overrides.len()
+    );
     let ov_str = serde_json::to_string(&overrides[0]).unwrap();
-    assert!(ov_str.contains("build"), "should contain new subcommand 'build': {}", ov_str);
+    assert!(
+        ov_str.contains("build"),
+        "should contain new subcommand 'build': {}",
+        ov_str
+    );
 }
 
 #[test]
@@ -294,7 +405,14 @@ fn override_remove_with_dash() {
 
     // Add an override
     cargo_runner()
-        .args(["override", "src/main.rs", "--command", "dx", "--subcommand", "serve"])
+        .args([
+            "override",
+            "src/main.rs",
+            "--command",
+            "dx",
+            "--subcommand",
+            "serve",
+        ])
         .env("PROJECT_ROOT", &root)
         .current_dir(tmp.path())
         .assert()
@@ -318,7 +436,11 @@ fn override_remove_with_dash() {
     let config_content = fs::read_to_string(tmp.path().join(".cargo-runner.json")).unwrap();
     let config: serde_json::Value = serde_json::from_str(&config_content).unwrap();
     let overrides = config.get("overrides").unwrap().as_array().unwrap();
-    assert!(overrides.is_empty(), "overrides should be empty after removal: {}", config_content);
+    assert!(
+        overrides.is_empty(),
+        "overrides should be empty after removal: {}",
+        config_content
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -345,6 +467,42 @@ fn run_dry_run_binary() {
         .assert()
         .success()
         .stdout(predicate::str::contains("cargo").and(predicate::str::contains("run")));
+}
+
+#[test]
+fn run_dry_run_workspace_member_binary_without_project_root_is_grounded() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_workspace_member_binary(tmp.path(), "crates/app", "workspace-app");
+
+    cargo_runner()
+        .args(["run", "crates/app/src/main.rs", "--dry-run"])
+        .env_remove("PROJECT_ROOT")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "cargo run --package workspace-app --bin workspace-app",
+        ));
+}
+
+#[test]
+fn run_dry_run_bazel_binary_outside_home_uses_bazel_dispatch() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_bazel_binary_workspace(tmp.path(), "app", "app");
+    let root = canonical(tmp.path());
+
+    cargo_runner()
+        .args(["run", "app/src/main.rs", "--dry-run"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bazel run //app:app"))
+        .stdout(predicate::str::contains(format!(
+            "Working directory: {}",
+            root
+        )));
 }
 
 #[test]
@@ -435,6 +593,40 @@ fn analyze_lib_with_tests() {
 }
 
 #[test]
+fn analyze_workspace_member_binary_shows_grounded_command_without_project_root() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_workspace_member_binary(tmp.path(), "crates/app", "workspace-app");
+
+    cargo_runner()
+        .args(["analyze", "crates/app/src/main.rs"])
+        .env_remove("PROJECT_ROOT")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "cargo run --package workspace-app --bin workspace-app",
+        ));
+}
+
+#[test]
+fn analyze_bazel_binary_outside_home_shows_bazel_dispatch() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_bazel_binary_workspace(tmp.path(), "app", "app");
+
+    cargo_runner()
+        .args(["analyze", "app/src/main.rs"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Final command: bazel run //app:app",
+        ))
+        .stdout(predicate::str::contains("command: bazel"));
+}
+
+#[test]
 fn analyze_verbose_shows_json() {
     let tmp = TempDir::new().unwrap();
     scaffold_cargo_project(tmp.path(), "test-verbose");
@@ -457,7 +649,11 @@ fn analyze_verbose_shows_json() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     // Verbose mode outputs structured/JSON-like content
-    assert!(stdout.contains("{") || stdout.contains("Binary"), "verbose output: {}", stdout);
+    assert!(
+        stdout.contains("{") || stdout.contains("Binary"),
+        "verbose output: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -508,7 +704,9 @@ fn unset_without_project_root() {
         .current_dir(tmp.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("PROJECT_ROOT is not currently set"));
+        .stdout(predicate::str::contains(
+            "PROJECT_ROOT is not currently set",
+        ));
 }
 
 #[test]
@@ -587,7 +785,14 @@ fn override_then_dry_run_shows_custom_command() {
 
     // Set override to dx serve (both named flags)
     cargo_runner()
-        .args(["override", "src/main.rs", "--command", "dx", "--subcommand", "serve"])
+        .args([
+            "override",
+            "src/main.rs",
+            "--command",
+            "dx",
+            "--subcommand",
+            "serve",
+        ])
         .env("PROJECT_ROOT", &root)
         .current_dir(tmp.path())
         .assert()
@@ -595,7 +800,11 @@ fn override_then_dry_run_shows_custom_command() {
 
     // Verify the override was stored
     let config_content = fs::read_to_string(tmp.path().join(".cargo-runner.json")).unwrap();
-    assert!(config_content.contains("dx"), "config should have dx: {}", config_content);
+    assert!(
+        config_content.contains("dx"),
+        "config should have dx: {}",
+        config_content
+    );
 
     // Dry run should show the overridden command
     let output = cargo_runner()

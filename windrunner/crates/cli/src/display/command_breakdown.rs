@@ -97,9 +97,13 @@ pub fn print_command_breakdown(command: &CargoCommand) {
                 if !extra_args.is_empty() {
                     println!("      • extraArgs: {:?}", extra_args);
                 }
-                
+
                 // Check for doc test limitation note
-                if let Some((_, msg)) = command.env.iter().find(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION") {
+                if let Some((_, msg)) = command
+                    .env
+                    .iter()
+                    .find(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION")
+                {
                     println!("      • ⚠️  Note: {}", msg);
                 }
             }

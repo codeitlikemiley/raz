@@ -54,9 +54,7 @@ pub fn build_sync_command(crate_filter: Option<&str>, dry_run: bool) -> Result<(
             .filter(|c| cwd.starts_with(&c.dir) || c.dir == cwd)
             .collect::<Vec<_>>();
         if local.is_empty() {
-            anyhow::bail!(
-                "Not inside a Bazel crate directory. Use --crate <dir> to specify one."
-            );
+            anyhow::bail!("Not inside a Bazel crate directory. Use --crate <dir> to specify one.");
         }
         local
     };
@@ -76,7 +74,12 @@ pub fn build_sync_command(crate_filter: Option<&str>, dry_run: bool) -> Result<(
 
 // ── per-crate logic ───────────────────────────────────────────────────────────
 
-pub(crate) fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_run: bool) -> Result<()> {
+pub(crate) fn process_crate(
+    dir: &Path,
+    crate_name: &str,
+    repo_name: &str,
+    dry_run: bool,
+) -> Result<()> {
     println!("\n📁 Scanning: {}", dir.display());
 
     // Warn about build.rs — Bazel doesn't use Cargo build scripts
@@ -84,7 +87,9 @@ pub(crate) fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_r
         println!("   ⚠️  build.rs detected — Bazel ignores Cargo build scripts.");
         println!("      If your build.rs generates code or sets env vars, add a");
         println!("      `cargo_build_script()` rule to BUILD.bazel manually.");
-        println!("      See: https://bazelbuild.github.io/rules_rust/cargo.html#cargo_build_script");
+        println!(
+            "      See: https://bazelbuild.github.io/rules_rust/cargo.html#cargo_build_script"
+        );
     }
 
     let build_path = dir.join("BUILD.bazel");
@@ -100,7 +105,13 @@ pub(crate) fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_r
     // Collect names already defined *outside* the managed block
     let existing_names = names_outside_managed_block(&existing_content);
 
-    let (targets, skipped) = infer_targets(dir, crate_name, repo_name, &existing_names, &existing_content);
+    let (targets, skipped) = infer_targets(
+        dir,
+        crate_name,
+        repo_name,
+        &existing_names,
+        &existing_content,
+    );
 
     for name in &skipped {
         println!("   ~ skipping '{name}' (already defined)");
@@ -142,12 +153,32 @@ pub(crate) fn process_crate(dir: &Path, crate_name: &str, repo_name: &str, dry_r
 #[allow(dead_code)] // repo_name fields used for future per-crate load() generation
 #[derive(Debug)]
 pub(crate) enum BazelTarget {
-    Library { name: String, repo_name: String },
-    Binary { name: String, src: String, repo_name: String },
-    TestSuite { name: String, repo_name: String },
-    Example { name: String, src: String, repo_name: String },
-    Bench { name: String, src: String, repo_name: String },
-    DocTest { crate_name: String },
+    Library {
+        name: String,
+        repo_name: String,
+    },
+    Binary {
+        name: String,
+        src: String,
+        repo_name: String,
+    },
+    TestSuite {
+        name: String,
+        repo_name: String,
+    },
+    Example {
+        name: String,
+        src: String,
+        repo_name: String,
+    },
+    Bench {
+        name: String,
+        src: String,
+        repo_name: String,
+    },
+    DocTest {
+        crate_name: String,
+    },
     BuildScript,
 }
 
@@ -195,7 +226,11 @@ rust_test(
 )
 "#,
             ),
-            Self::Binary { name, src, repo_name: _ } => format!(
+            Self::Binary {
+                name,
+                src,
+                repo_name: _,
+            } => format!(
                 r#"rust_binary(
     name = "{name}",
     srcs = ["{src}"],
@@ -204,7 +239,10 @@ rust_test(
 )
 "#,
             ),
-            Self::TestSuite { name: _, repo_name: _ } => format!(
+            Self::TestSuite {
+                name: _,
+                repo_name: _,
+            } => format!(
                 r#"rust_test_suite(
     name = "integration_tests",
     srcs = glob(["tests/**/*.rs"]),
@@ -212,7 +250,11 @@ rust_test(
 )
 "#,
             ),
-            Self::Example { name, src, repo_name: _ } => format!(
+            Self::Example {
+                name,
+                src,
+                repo_name: _,
+            } => format!(
                 r#"rust_binary(
     name = "example_{name}",
     srcs = ["{src}"],
@@ -221,7 +263,11 @@ rust_test(
 )
 "#,
             ),
-            Self::Bench { name, src, repo_name: _ } => format!(
+            Self::Bench {
+                name,
+                src,
+                repo_name: _,
+            } => format!(
                 r#"rust_binary(
     name = "bench_{name}",
     srcs = ["{src}"],
@@ -241,7 +287,8 @@ rust_test(
     name = "build_script",
     srcs = ["build.rs"],
 )
-"#.to_string(),
+"#
+            .to_string(),
         }
     }
 }
@@ -303,7 +350,11 @@ pub(crate) fn infer_targets(
         // Cargo.toml has explicit [[bin]] definitions → use those
         for target in &explicit_bins {
             let path = target.path.as_deref().unwrap_or_else(|| {
-                if target.name == crate_name { "src/main.rs" } else { "" }
+                if target.name == crate_name {
+                    "src/main.rs"
+                } else {
+                    ""
+                }
             });
             if !path.is_empty() {
                 candidates.push(BazelTarget::Binary {
@@ -361,9 +412,9 @@ pub(crate) fn infer_targets(
         // No fn main() check needed — test harness provides it
         let has_rs_files = std::fs::read_dir(dir.join("tests"))
             .map(|entries| {
-                entries.flatten().any(|e| {
-                    e.path().extension().map_or(false, |ext| ext == "rs")
-                })
+                entries
+                    .flatten()
+                    .any(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
             })
             .unwrap_or(false);
 
@@ -449,15 +500,16 @@ pub(crate) fn infer_targets(
 
         // For Library targets, init.rs generates `name = "<crate>"` but
         // infer_targets generates `name = "<crate>_lib"`. Check both forms.
-        let is_existing = existing_names.contains(&bazel_name) || match &target {
-            BazelTarget::Library { name, .. } => existing_names.contains(name),
-            BazelTarget::DocTest { .. } => {
-                // Skip if ANY rust_doc_test rule exists in the file,
-                // regardless of its name attribute.
-                existing_content.contains("rust_doc_test(")
-            }
-            _ => false,
-        };
+        let is_existing = existing_names.contains(&bazel_name)
+            || match &target {
+                BazelTarget::Library { name, .. } => existing_names.contains(name),
+                BazelTarget::DocTest { .. } => {
+                    // Skip if ANY rust_doc_test rule exists in the file,
+                    // regardless of its name attribute.
+                    existing_content.contains("rust_doc_test(")
+                }
+                _ => false,
+            };
 
         if is_existing {
             skipped.push(bazel_name);
@@ -496,7 +548,10 @@ fn parse_cargo_targets(content: &str, kind: &str) -> Vec<CargoTarget> {
         if trimmed == header {
             // Save previous section
             if let Some(name) = current_name.take() {
-                targets.push(CargoTarget { name, path: current_path.take() });
+                targets.push(CargoTarget {
+                    name,
+                    path: current_path.take(),
+                });
             }
             current_path = None;
             in_section = true;
@@ -506,7 +561,10 @@ fn parse_cargo_targets(content: &str, kind: &str) -> Vec<CargoTarget> {
         // Any other section header ends our section
         if trimmed.starts_with('[') {
             if let Some(name) = current_name.take() {
-                targets.push(CargoTarget { name, path: current_path.take() });
+                targets.push(CargoTarget {
+                    name,
+                    path: current_path.take(),
+                });
             }
             current_path = None;
             in_section = false;
@@ -530,7 +588,10 @@ fn parse_cargo_targets(content: &str, kind: &str) -> Vec<CargoTarget> {
 
     // Flush last section
     if let Some(name) = current_name {
-        targets.push(CargoTarget { name, path: current_path });
+        targets.push(CargoTarget {
+            name,
+            path: current_path,
+        });
     }
 
     targets
@@ -540,7 +601,11 @@ fn parse_cargo_targets(content: &str, kind: &str) -> Vec<CargoTarget> {
 fn extract_string_value(line: &str) -> Option<String> {
     let rhs = line.splitn(2, '=').nth(1)?.trim();
     let val = rhs.trim_matches('"').trim_matches('\'');
-    if val.is_empty() { None } else { Some(val.to_string()) }
+    if val.is_empty() {
+        None
+    } else {
+        Some(val.to_string())
+    }
 }
 
 /// Scan a directory for `.rs` files that contain `fn main()`, and push
@@ -551,8 +616,7 @@ fn scan_rs_dir_with_main_check<F>(
     rel_dir: &str,
     candidates: &mut Vec<BazelTarget>,
     make_target: F,
-)
-where
+) where
     F: Fn(String, String) -> BazelTarget,
 {
     let abs_dir = crate_dir.join(rel_dir);
@@ -625,19 +689,25 @@ load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 }
 
 pub(crate) fn render_managed_block(targets: &[BazelTarget]) -> String {
-    let body: String = targets.iter().map(|t| t.render()).collect::<Vec<_>>().join("\n");
+    let body: String = targets
+        .iter()
+        .map(|t| t.render())
+        .collect::<Vec<_>>()
+        .join("\n");
     format!("{MANAGED_BEGIN}\n{body}\n{MANAGED_END}\n")
 }
 
 /// Replace the existing managed block in `existing` with `new_block`, or
 /// append the block if no markers are found.
 fn splice_managed_block(existing: &str, new_block: &str) -> String {
-    if let (Some(start), Some(end)) = (
-        existing.find(MANAGED_BEGIN),
-        existing.find(MANAGED_END),
-    ) {
+    if let (Some(start), Some(end)) = (existing.find(MANAGED_BEGIN), existing.find(MANAGED_END)) {
         let end_pos = end + MANAGED_END.len();
-        format!("{}{}{}", &existing[..start], new_block, &existing[end_pos..])
+        format!(
+            "{}{}{}",
+            &existing[..start],
+            new_block,
+            &existing[end_pos..]
+        )
     } else {
         // Append
         format!("{}\n{}", existing.trim_end(), new_block)
@@ -665,17 +735,26 @@ mod tests {
 
     #[test]
     fn extract_string_double_quotes() {
-        assert_eq!(extract_string_value("name = \"foo\""), Some("foo".to_string()));
+        assert_eq!(
+            extract_string_value("name = \"foo\""),
+            Some("foo".to_string())
+        );
     }
 
     #[test]
     fn extract_string_single_quotes() {
-        assert_eq!(extract_string_value("name = 'bar'"), Some("bar".to_string()));
+        assert_eq!(
+            extract_string_value("name = 'bar'"),
+            Some("bar".to_string())
+        );
     }
 
     #[test]
     fn extract_string_with_spaces() {
-        assert_eq!(extract_string_value("name  =  \"spaced\""), Some("spaced".to_string()));
+        assert_eq!(
+            extract_string_value("name  =  \"spaced\""),
+            Some("spaced".to_string())
+        );
     }
 
     #[test]

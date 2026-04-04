@@ -75,14 +75,20 @@ pub fn watch_command(
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn mode_str(run_mode: bool, test_mode: bool) -> &'static str {
-    if run_mode { "run" } else if test_mode { "test" } else { "build" }
+    if run_mode {
+        "run"
+    } else if test_mode {
+        "test"
+    } else {
+        "build"
+    }
 }
 
 fn cargo_mode_cmd(mode: &str) -> &str {
     match mode {
-        "run"  => "run",
+        "run" => "run",
         "test" => "test",
-        _      => "build",
+        _ => "build",
     }
 }
 
@@ -109,7 +115,10 @@ fn run_cargo_watch(root: &Path, mode: &str) -> Result<()> {
 
 fn resolve_bazel_target(bazel_root: &Path, cwd: &Path) -> String {
     if let Ok(all) = find_bazel_crates(bazel_root) {
-        if let Some(krate) = all.into_iter().find(|c| cwd.starts_with(&c.dir) || c.dir == cwd) {
+        if let Some(krate) = all
+            .into_iter()
+            .find(|c| cwd.starts_with(&c.dir) || c.dir == cwd)
+        {
             let rel = krate.dir.strip_prefix(bazel_root).unwrap_or(Path::new(""));
             let s = rel.to_string_lossy();
             return if s.is_empty() {
@@ -131,18 +140,22 @@ fn bazel_trigger(root: &Path, target: &str, mode: &str) {
     }
     match cmd.status() {
         Ok(s) if s.success() => println!("✅ bazel {} succeeded", mode),
-        Ok(_)                => println!("❌ bazel {} failed — waiting for next change …", mode),
-        Err(e)               => println!("⚠️  Failed to run bazel: {}", e),
+        Ok(_) => println!("❌ bazel {} failed — waiting for next change …", mode),
+        Err(e) => println!("⚠️  Failed to run bazel: {}", e),
     }
 }
 
 fn cargo_trigger(root: &Path, mode: &str) {
     println!("─────────────────────────────────────────");
     let cmd_name = cargo_mode_cmd(mode);
-    match Command::new("cargo").arg(cmd_name).current_dir(root).status() {
+    match Command::new("cargo")
+        .arg(cmd_name)
+        .current_dir(root)
+        .status()
+    {
         Ok(s) if s.success() => println!("✅ cargo {} succeeded", cmd_name),
-        Ok(_)                => println!("❌ cargo {} failed — waiting for next change …", cmd_name),
-        Err(e)               => println!("⚠️  Failed to run cargo: {}", e),
+        Ok(_) => println!("❌ cargo {} failed — waiting for next change …", cmd_name),
+        Err(e) => println!("⚠️  Failed to run cargo: {}", e),
     }
 }
 
@@ -156,8 +169,8 @@ where
     trigger("(initial)");
 
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
-    let mut watcher = notify::recommended_watcher(tx)
-        .context("Failed to create filesystem watcher")?;
+    let mut watcher =
+        notify::recommended_watcher(tx).context("Failed to create filesystem watcher")?;
     watcher
         .watch(watch_dir, RecursiveMode::Recursive)
         .with_context(|| format!("Failed to watch {}", watch_dir.display()))?;
@@ -179,7 +192,12 @@ where
                 let files: Vec<_> = event
                     .paths
                     .iter()
-                    .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+                    .map(|p| {
+                        p.file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string()
+                    })
                     .collect();
                 println!("📝 Changed: {}", files.join(", "));
                 trigger(&files.join(", "));
@@ -193,7 +211,10 @@ where
 
 fn is_rust_change(event: &Event) -> bool {
     matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_))
-        && event.paths.iter().any(|p| p.extension().map_or(false, |e| e == "rs"))
+        && event
+            .paths
+            .iter()
+            .any(|p| p.extension().map_or(false, |e| e == "rs"))
 }
 
 #[cfg(test)]

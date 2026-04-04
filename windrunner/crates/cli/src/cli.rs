@@ -150,7 +150,6 @@ pub enum Commands {
 
     // ── Bazel transparent-proxy commands ──────────────────────────────────────
     // Low-level Bazel pipeline steps; most users only need init + run.
-
     /// Sync Bazel crate-universe after `cargo add`
     ///
     /// Run this after adding any external dependency with `cargo add` or after
@@ -212,7 +211,6 @@ pub enum Commands {
     },
 
     // ── Unified utility commands ───────────────────────────────────────────────
-
     /// Clean build outputs (auto-detects Cargo or Bazel)
     ///
     /// For Cargo projects runs `cargo clean`.
@@ -325,9 +323,10 @@ impl Commands {
             } => override_command(&filepath, root, command, subcommand, channel, override_args),
 
             // Bazel transparent-proxy commands
-            Commands::Sync { crate_name, skip_ide } => {
-                bazel_sync_command(crate_name.as_deref(), skip_ide)
-            }
+            Commands::Sync {
+                crate_name,
+                skip_ide,
+            } => bazel_sync_command(crate_name.as_deref(), skip_ide),
             Commands::Add {
                 crate_name,
                 features,
@@ -341,15 +340,19 @@ impl Commands {
                 crate_dir.as_deref(),
                 skip_ide,
             ),
-            Commands::BuildSync { crate_name, dry_run } => {
-                build_sync_command(crate_name.as_deref(), dry_run)
-            }
+            Commands::BuildSync {
+                crate_name,
+                dry_run,
+            } => build_sync_command(crate_name.as_deref(), dry_run),
 
             // Unified utilities
             Commands::Clean { expunge, cache } => clean_command(expunge, cache),
-            Commands::Watch { filepath, run, test, debounce } => {
-                watch_command(filepath.as_deref(), run, test, debounce)
-            }
+            Commands::Watch {
+                filepath,
+                run,
+                test,
+                debounce,
+            } => watch_command(filepath.as_deref(), run, test, debounce),
         }
     }
 }

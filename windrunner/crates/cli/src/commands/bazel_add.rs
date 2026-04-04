@@ -8,7 +8,7 @@
 //!
 //! The user does not need to know any Bazel commands.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -43,15 +43,19 @@ pub fn bazel_add_command(
     // ── Derive the crate's repo name for `bazel sync` ─────────────────────
     let cargo_content = std::fs::read_to_string(target_dir.join("Cargo.toml"))
         .context("failed to read Cargo.toml")?;
-    let crate_name = extract_crate_name(&cargo_content)
-        .unwrap_or_else(|| target_dir.file_name().unwrap().to_string_lossy().to_string());
+    let crate_name = extract_crate_name(&cargo_content).unwrap_or_else(|| {
+        target_dir
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    });
     let repo_name = crate_repo_name(&crate_name);
 
     // ── Locate MODULE.bazel root ──────────────────────────────────────────
-    let bazel_root =
-        find_module_bazel(&target_dir).with_context(|| {
-            "No MODULE.bazel found — are you inside a Bzlmod Bazel workspace?".to_string()
-        })?;
+    let bazel_root = find_module_bazel(&target_dir).with_context(|| {
+        "No MODULE.bazel found — are you inside a Bzlmod Bazel workspace?".to_string()
+    })?;
 
     // ── 1. cargo add ──────────────────────────────────────────────────────
     let mut args = vec!["add", krate];
@@ -67,7 +71,9 @@ pub fn bazel_add_command(
     println!(
         "📦 cargo add {}{}  in  {}",
         krate,
-        features.map(|f| format!(" --features {}", f)).unwrap_or_default(),
+        features
+            .map(|f| format!(" --features {}", f))
+            .unwrap_or_default(),
         target_dir.display()
     );
 
