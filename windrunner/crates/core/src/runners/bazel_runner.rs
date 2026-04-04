@@ -29,10 +29,10 @@ impl CommandRunner for BazelRunner {
         // For Bazel, we still parse Rust files the same way
         let mut detector = RunnableDetector::new()?;
         let mut runnables = detector.detect_runnables(file_path, None)?;
-        
+
         // Resolve module paths using common function
         resolve_module_paths(&mut runnables, file_path, None)?;
-        
+
         Ok(runnables)
     }
 

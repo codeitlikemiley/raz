@@ -12,11 +12,8 @@ use crate::{
 };
 
 use super::{
-    bazel_runner::BazelRunner,
-    cargo_runner::CargoRunner,
-    dioxus_runner::DioxusRunner,
-    leptos_runner::LeptosRunner,
-    traits::CommandRunner,
+    bazel_runner::BazelRunner, cargo_runner::CargoRunner, dioxus_runner::DioxusRunner,
+    leptos_runner::LeptosRunner, traits::CommandRunner,
 };
 
 /// Unified runner that manages multiple command runners
@@ -89,24 +86,28 @@ impl UnifiedRunner {
             &abs_path
         };
 
-        // Determine boundaries - DO NOT search beyond these!
-        let home_dir = std::env::var("HOME")
+        // Only honor a search boundary when the target path actually lives under it.
+        // Workspaces can live outside HOME, and stopping immediately in that case
+        // makes build-system detection fail and fall back to Cargo.
+        let project_boundary = std::env::var("PROJECT_DIR")
             .ok()
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/"));
-        
-        let project_boundary = if let Ok(project_dir) = std::env::var("PROJECT_DIR") {
-            Some(PathBuf::from(project_dir))
-        } else {
-            None
-        };
+            .filter(|boundary| abs_path.starts_with(boundary));
+
+        let home_boundary = std::env::var("HOME")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|boundary| abs_path.starts_with(boundary));
 
         let mut check_path = start_path;
         let mut depth = 0;
         const MAX_DEPTH: usize = 10; // Reasonable depth limit
-        
-        tracing::debug!("detect_build_system: starting from directory {:?}", check_path);
-        tracing::debug!("detect_build_system: home boundary: {:?}", home_dir);
+
+        tracing::debug!(
+            "detect_build_system: starting from directory {:?}",
+            check_path
+        );
+        tracing::debug!("detect_build_system: HOME boundary: {:?}", home_boundary);
         if let Some(ref boundary) = project_boundary {
             tracing::debug!("detect_build_system: PROJECT_DIR boundary: {:?}", boundary);
         }
@@ -115,7 +116,10 @@ impl UnifiedRunner {
         loop {
             // Check depth limit
             if depth >= MAX_DEPTH {
-                tracing::debug!("detect_build_system: reached max depth {}, stopping", MAX_DEPTH);
+                tracing::debug!(
+                    "detect_build_system: reached max depth {}, stopping",
+                    MAX_DEPTH
+                );
                 break;
             }
             // Check boundaries BEFORE checking for build system
@@ -125,16 +129,23 @@ impl UnifiedRunner {
                     break;
                 }
             }
-            
-            if !check_path.starts_with(&home_dir) {
+
+            if home_boundary
+                .as_ref()
+                .is_some_and(|boundary| !check_path.starts_with(boundary))
+            {
                 tracing::debug!("detect_build_system: reached HOME boundary, stopping");
                 break;
             }
-            
+
             tracing::debug!("detect_build_system: checking directory {:?}", check_path);
-            
+
             if let Some(build_system) = DefaultBuildSystemDetector::detect(check_path) {
-                tracing::info!("detect_build_system: found {:?} at {:?}", build_system, check_path);
+                tracing::info!(
+                    "detect_build_system: found {:?} at {:?}",
+                    build_system,
+                    check_path
+                );
                 return Ok(build_system);
             }
 
@@ -209,7 +220,10 @@ impl UnifiedRunner {
         );
 
         let build_system = self.detect_build_system_with_fallback(&runnable.file_path);
-        tracing::debug!("UnifiedRunner::build_command: detected build_system={:?}", build_system);
+        tracing::debug!(
+            "UnifiedRunner::build_command: detected build_system={:?}",
+            build_system
+        );
 
         // Determine file type based on build system and runnable kind
         let file_type = match &runnable.kind {
@@ -251,10 +265,17 @@ impl UnifiedRunner {
             cmd
         };
 
-        tracing::debug!("UnifiedRunner::build_command: final command={}", command.to_shell_command());
+        tracing::debug!(
+            "UnifiedRunner::build_command: final command={}",
+            command.to_shell_command()
+        );
 
         // Warn if Bazel doc test limitation is present
-        if command.env.iter().any(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION") {
+        if command
+            .env
+            .iter()
+            .any(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION")
+        {
             tracing::warn!(
                 "Bazel limitation: individual doc tests cannot be targeted. \
                  Running all doc tests in the target. \
@@ -431,21 +452,21 @@ impl UnifiedRunner {
             .and_then(|f| f.to_str())
             .map(|name| name == "lib.rs")
             .unwrap_or(false);
-            
+
         // Check if this is src/lib.rs specifically
         let is_src_lib_rs = file_path
             .to_str()
             .map(|p| p.ends_with("src/lib.rs") || p.ends_with("/src/lib.rs"))
             .unwrap_or(false);
-        
+
         if is_lib_rs || is_src_lib_rs {
             // For lib.rs files, create a generic test command without module filters
             let build_system = self.detect_build_system_with_fallback(file_path);
             let runner = self.get_runner(&build_system)?;
-            
+
             // Get package name if possible (unused for now but may be needed later)
             let _package_name = self.get_package_name_str(file_path).ok();
-            
+
             // Create a simple file-level runnable for lib.rs
             let file_runnable = Runnable {
                 scope: crate::types::Scope {
@@ -454,19 +475,20 @@ impl UnifiedRunner {
                     kind: crate::types::ScopeKind::File(crate::types::FileScope::Lib),
                     name: Some("lib.rs".to_string()),
                 },
-                kind: crate::types::RunnableKind::ModuleTests { 
-                    module_name: String::new() // Empty module name for file-level
+                kind: crate::types::RunnableKind::ModuleTests {
+                    module_name: String::new(), // Empty module name for file-level
                 },
                 module_path: String::new(),
                 file_path: file_path.to_path_buf(),
                 extended_scope: None,
                 label: "Run all tests in library".to_string(),
             };
-            
-            let command = runner.build_command(&file_runnable, &self.config, FileType::CargoProject)?;
+
+            let command =
+                runner.build_command(&file_runnable, &self.config, FileType::CargoProject)?;
             return Ok(Some(command));
         }
-        
+
         // For non-lib.rs files, use the original logic
         let runnables = self.detect_runnables(file_path)?;
 
@@ -481,7 +503,7 @@ impl UnifiedRunner {
 
         // Check if this is a benchmark file
         let is_benchmark_file = file_path.components().any(|c| c.as_os_str() == "benches");
-        
+
         // Sort runnables to prioritize based on file type
         let mut sorted_runnables = runnables;
         sorted_runnables.sort_by(|a, b| {
@@ -491,35 +513,51 @@ impl UnifiedRunner {
                 (RunnableKind::Binary { .. }, RunnableKind::Test { .. }) if is_benchmark_file => {
                     std::cmp::Ordering::Less
                 }
-                (RunnableKind::Binary { .. }, RunnableKind::ModuleTests { .. }) if is_benchmark_file => {
+                (RunnableKind::Binary { .. }, RunnableKind::ModuleTests { .. })
+                    if is_benchmark_file =>
+                {
                     std::cmp::Ordering::Less
                 }
-                (RunnableKind::Benchmark { .. }, RunnableKind::Test { .. }) if is_benchmark_file => {
+                (RunnableKind::Benchmark { .. }, RunnableKind::Test { .. })
+                    if is_benchmark_file =>
+                {
                     std::cmp::Ordering::Less
                 }
-                (RunnableKind::Benchmark { .. }, RunnableKind::ModuleTests { .. }) if is_benchmark_file => {
+                (RunnableKind::Benchmark { .. }, RunnableKind::ModuleTests { .. })
+                    if is_benchmark_file =>
+                {
                     std::cmp::Ordering::Less
                 }
                 (RunnableKind::Test { .. }, RunnableKind::Binary { .. }) if is_benchmark_file => {
                     std::cmp::Ordering::Greater
                 }
-                (RunnableKind::ModuleTests { .. }, RunnableKind::Binary { .. }) if is_benchmark_file => {
+                (RunnableKind::ModuleTests { .. }, RunnableKind::Binary { .. })
+                    if is_benchmark_file =>
+                {
                     std::cmp::Ordering::Greater
                 }
-                (RunnableKind::Test { .. }, RunnableKind::Benchmark { .. }) if is_benchmark_file => {
+                (RunnableKind::Test { .. }, RunnableKind::Benchmark { .. })
+                    if is_benchmark_file =>
+                {
                     std::cmp::Ordering::Greater
                 }
-                (RunnableKind::ModuleTests { .. }, RunnableKind::Benchmark { .. }) if is_benchmark_file => {
+                (RunnableKind::ModuleTests { .. }, RunnableKind::Benchmark { .. })
+                    if is_benchmark_file =>
+                {
                     std::cmp::Ordering::Greater
                 }
                 // Deprioritize doc tests for file-level commands
                 (RunnableKind::DocTest { .. }, _) => std::cmp::Ordering::Greater,
                 (_, RunnableKind::DocTest { .. }) => std::cmp::Ordering::Less,
                 // For non-benchmark files, prefer module tests over individual tests
-                (RunnableKind::ModuleTests { .. }, RunnableKind::Test { .. }) if !is_benchmark_file => {
+                (RunnableKind::ModuleTests { .. }, RunnableKind::Test { .. })
+                    if !is_benchmark_file =>
+                {
                     std::cmp::Ordering::Less
                 }
-                (RunnableKind::Test { .. }, RunnableKind::ModuleTests { .. }) if !is_benchmark_file => {
+                (RunnableKind::Test { .. }, RunnableKind::ModuleTests { .. })
+                    if !is_benchmark_file =>
+                {
                     std::cmp::Ordering::Greater
                 }
                 _ => std::cmp::Ordering::Equal,
@@ -718,5 +756,52 @@ impl UnifiedRunner {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn detect_build_system_finds_cargo_outside_home_boundary() {
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "outside-home"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        fs::write(src_dir.join("main.rs"), "fn main() {}\n").unwrap();
+
+        let runner = UnifiedRunner::new().unwrap();
+        let build_system = runner
+            .detect_build_system(&src_dir.join("main.rs"))
+            .unwrap();
+
+        assert_eq!(build_system, BuildSystem::Cargo);
+    }
+
+    #[test]
+    fn detect_build_system_finds_bazel_outside_home_boundary() {
+        let temp_dir = TempDir::new().unwrap();
+        let app_dir = temp_dir.path().join("app");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::write(app_dir.join("BUILD.bazel"), "rust_binary(name = \"app\")\n").unwrap();
+        fs::write(app_dir.join("main.rs"), "fn main() {}\n").unwrap();
+
+        let runner = UnifiedRunner::new().unwrap();
+        let build_system = runner
+            .detect_build_system(&app_dir.join("main.rs"))
+            .unwrap();
+
+        assert_eq!(build_system, BuildSystem::Bazel);
     }
 }

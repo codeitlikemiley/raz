@@ -88,7 +88,7 @@ impl RunnableWithScore {
         } else {
             runnable.scope.end.line - runnable.scope.start.line
         };
-        
+
         let is_module_test = matches!(runnable.kind, RunnableKind::ModuleTests { .. });
         Self {
             runnable,
@@ -96,7 +96,7 @@ impl RunnableWithScore {
             is_module_test,
         }
     }
-    
+
     /// Get priority score for the runnable (lower is better)
     fn get_priority(&self) -> u32 {
         match &self.runnable.kind {
@@ -104,9 +104,14 @@ impl RunnableWithScore {
             RunnableKind::Test { .. } => 0,
             RunnableKind::Benchmark { .. } => 0,
             // Method doc tests have higher priority than type doc tests
-            RunnableKind::DocTest { method_name: Some(_), .. } => 1,
+            RunnableKind::DocTest {
+                method_name: Some(_),
+                ..
+            } => 1,
             // Type/impl doc tests
-            RunnableKind::DocTest { method_name: None, .. } => 2,
+            RunnableKind::DocTest {
+                method_name: None, ..
+            } => 2,
             // Binary
             RunnableKind::Binary { .. } => 3,
             // Module tests have lowest priority

@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::{
-    common::{get_cargo_package_name, resolve_module_paths, resolve_module_path_single},
+    common::{get_cargo_package_name, resolve_module_path_single, resolve_module_paths},
     traits::{CommandRunner, RunnerCommand},
 };
 

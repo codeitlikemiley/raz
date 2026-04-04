@@ -170,8 +170,12 @@ impl RustcCommandBuilder {
         let output_name = self.to_snake_case(original_name);
 
         // Build phase
-        let mut build_args =
-            self.create_binary_build_args(&framework, &runnable.file_path, &crate_name, &output_name);
+        let mut build_args = self.create_binary_build_args(
+            &framework,
+            &runnable.file_path,
+            &crate_name,
+            &output_name,
+        );
 
         // Apply configuration
         self.apply_build_config(&mut build_args, runnable, config, file_type, &framework);

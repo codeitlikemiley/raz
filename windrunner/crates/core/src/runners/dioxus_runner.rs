@@ -194,8 +194,14 @@ mod tests {
             file_path: tmp.path().join("src/main.rs"),
             module_path: String::new(),
             scope: Scope {
-                start: Position { line: 0, character: 0 },
-                end: Position { line: 10, character: 0 },
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 10,
+                    character: 0,
+                },
                 kind: ScopeKind::Function,
                 name: Some("main".to_string()),
             },
