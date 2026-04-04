@@ -376,6 +376,19 @@ When the input is not an existing file, `cargo runner` scans the current
 workspace members, matches the runnable `module_path`, and resolves the owning
 file before building the final command or context.
 
+### Waz integration
+
+If you use `waz`, the same lookup model is available there too:
+
+```bash
+waz run src/main.rs:25
+waz run runners::unified_runner::tests
+```
+
+`waz run` is the non-interactive path; it reuses the same project and
+module-path resolution so you can skip the TUI when you already know what you
+want to run.
+
 ### Single-file scripts
 
 `cargo runner run` also recognizes single-file Rust scripts when the file has a
