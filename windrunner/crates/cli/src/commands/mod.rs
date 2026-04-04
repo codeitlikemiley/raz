@@ -9,8 +9,9 @@ pub mod override_cmd;
 pub mod run;
 pub mod unset;
 pub mod watch;
+pub mod workspace;
 
-pub use analyze::analyze_command;
+pub use analyze::{analyze_command, runnables_command};
 pub use bazel_add::bazel_add_command;
 pub use bazel_sync::bazel_sync_command;
 pub use build_sync::build_sync_command;

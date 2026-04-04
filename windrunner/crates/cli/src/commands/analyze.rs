@@ -4,9 +4,29 @@ use tracing::debug;
 
 use crate::display::command_breakdown::print_command_breakdown;
 use crate::display::formatter::{determine_file_type, print_runnable_type};
+use crate::config::bazel_workspace::find_cargo_workspace_root;
+use crate::commands::workspace::{
+    find_files_for_module_path, workspace_rs_files, workspace_scan_roots,
+};
 use crate::utils::parser::parse_filepath_with_line;
 
+pub fn runnables_command(
+    filepath_arg: Option<&str>,
+    verbose: bool,
+    show_config: bool,
+) -> Result<()> {
+    if let Some(filepath_arg) = filepath_arg {
+        return analyze_file_command(filepath_arg, verbose, show_config);
+    }
+
+    analyze_workspace_command(verbose, show_config)
+}
+
 pub fn analyze_command(filepath_arg: &str, verbose: bool, show_config: bool) -> Result<()> {
+    runnables_command(Some(filepath_arg), verbose, show_config)
+}
+
+fn analyze_file_command(filepath_arg: &str, verbose: bool, show_config: bool) -> Result<()> {
     debug!("Analyzing file: {}", filepath_arg);
 
     // Parse filepath and line number first
@@ -21,6 +41,9 @@ pub fn analyze_command(filepath_arg: &str, verbose: bool, show_config: bool) -> 
     };
 
     if !absolute_path.exists() {
+        if filepath.contains("::") {
+            return analyze_module_path_command(&filepath, verbose, show_config);
+        }
         return Err(anyhow::anyhow!(
             "File not found: {}",
             absolute_path.display()
@@ -44,6 +67,116 @@ pub fn analyze_command(filepath_arg: &str, verbose: bool, show_config: bool) -> 
     }
 
     Ok(())
+}
+
+fn analyze_module_path_command(
+    module_path: &str,
+    verbose: bool,
+    show_config: bool,
+) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let mut runner = cargo_runner_core::UnifiedRunner::new()?;
+    let matches = find_files_for_module_path(&runner, module_path, &cwd)?;
+
+    match matches.len() {
+        0 => Err(anyhow::anyhow!(
+            "No file found for module path: {}",
+            module_path
+        )),
+        1 => {
+            let path = matches.into_iter().next().unwrap();
+            print_formatted_analysis(&mut runner, path.to_str().unwrap_or_default(), None, show_config)?;
+            if verbose {
+                println!();
+            }
+            Ok(())
+        }
+        _ => {
+            let paths = matches
+                .into_iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(anyhow::anyhow!(
+                "Module path is ambiguous: {}. Matches: {}",
+                module_path,
+                paths
+            ))
+        }
+    }
+}
+
+fn analyze_workspace_command(verbose: bool, show_config: bool) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let workspace_root = find_cargo_workspace_root(&cwd).unwrap_or(cwd.clone());
+    let scan_roots = workspace_scan_roots(&workspace_root)?;
+
+    println!("🔍 Scanning workspace: {}", workspace_root.display());
+    println!("{}", "=".repeat(80));
+
+    let runner = cargo_runner_core::UnifiedRunner::new()?;
+    let mut files = workspace_rs_files(&scan_roots);
+    files.sort();
+
+    if files.is_empty() {
+        println!("No Rust files found under {}", workspace_root.display());
+        return Ok(());
+    }
+
+    let mut found_any = false;
+    for path in files {
+        let runnables = match runner.detect_runnables(&path) {
+            Ok(runnables) if !runnables.is_empty() => runnables,
+            _ => continue,
+        };
+
+        found_any = true;
+        println!();
+        println!("📄 {}", path.display());
+        println!("✅ Found {} runnable(s):\n", runnables.len());
+
+        for (i, runnable) in runnables.iter().enumerate() {
+            println!("{}. {}", i + 1, runnable.label);
+            if verbose {
+                println!(
+                    "   📏 Scope: lines {}-{}",
+                    runnable.scope.start.line + 1,
+                    runnable.scope.end.line + 1
+                );
+            }
+            if !runnable.module_path.is_empty() {
+                println!("   📍 Module path: {}", runnable.module_path);
+            }
+            if show_config {
+                println!("   📦 Type: {}", describe_runnable_kind(&runnable.kind));
+            }
+            if i < runnables.len() - 1 {
+                println!();
+            }
+        }
+
+        if verbose || show_config {
+            println!();
+        }
+    }
+
+    if !found_any {
+        println!("No runnable items found in {}", workspace_root.display());
+    }
+
+    Ok(())
+}
+
+fn describe_runnable_kind(kind: &cargo_runner_core::RunnableKind) -> &'static str {
+    match kind {
+        cargo_runner_core::RunnableKind::Test { .. } => "test",
+        cargo_runner_core::RunnableKind::DocTest { .. } => "doc test",
+        cargo_runner_core::RunnableKind::Benchmark { .. } => "benchmark",
+        cargo_runner_core::RunnableKind::Binary { .. } => "binary",
+        cargo_runner_core::RunnableKind::ModuleTests { .. } => "module tests",
+        cargo_runner_core::RunnableKind::Standalone { .. } => "standalone",
+        cargo_runner_core::RunnableKind::SingleFileScript { .. } => "single-file script",
+    }
 }
 
 pub fn print_formatted_analysis(

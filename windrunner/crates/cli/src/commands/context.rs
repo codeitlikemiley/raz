@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
+use crate::commands::workspace::resolve_module_path_to_file;
 use crate::utils::parser::parse_filepath_with_line;
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,7 +45,10 @@ fn build_context(cwd: &Path, filepath_arg: Option<&str>) -> Result<RunnerContext
 
     let (file_path, line) = if let Some(filepath_arg) = filepath_arg {
         let (path, line) = parse_filepath_with_line(filepath_arg);
-        (Some(resolve_path(cwd, &path)?), line.map(|line| line + 1))
+        (
+            Some(resolve_input_path(cwd, &path, &runner)?),
+            line.map(|line| line + 1),
+        )
     } else {
         (None, None)
     };
@@ -133,6 +137,30 @@ fn build_context(cwd: &Path, filepath_arg: Option<&str>) -> Result<RunnerContext
     })
 }
 
+fn resolve_input_path(
+    cwd: &Path,
+    path: &str,
+    runner: &cargo_runner_core::UnifiedRunner,
+) -> Result<PathBuf> {
+    let candidate = Path::new(path);
+    let resolved = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        cwd.join(candidate)
+    };
+
+    if resolved.exists() {
+        return Ok(resolved.canonicalize().unwrap_or(resolved));
+    }
+
+    if path.contains("::") {
+        let module_path = resolve_module_path_to_file(runner, path, cwd)?;
+        return Ok(module_path.canonicalize().unwrap_or(module_path));
+    }
+
+    Err(anyhow::anyhow!("File not found: {}", resolved.display()))
+}
+
 fn print_human_context(context: &RunnerContext) {
     println!("cwd: {}", context.cwd);
     println!("build system: {}", context.build_system);
@@ -157,21 +185,6 @@ fn print_human_context(context: &RunnerContext) {
     }
     if let Some(ref engine) = context.script_engine {
         println!("script engine: {}", engine);
-    }
-}
-
-fn resolve_path(cwd: &Path, path: &str) -> Result<PathBuf> {
-    let candidate = Path::new(path);
-    let resolved = if candidate.is_absolute() {
-        candidate.to_path_buf()
-    } else {
-        cwd.join(candidate)
-    };
-
-    if resolved.exists() {
-        Ok(resolved.canonicalize().unwrap_or(resolved))
-    } else {
-        Err(anyhow::anyhow!("File not found: {}", resolved.display()))
     }
 }
 

@@ -95,6 +95,58 @@ edition = "2021"
     .unwrap();
 }
 
+/// Scaffold a workspace member that exposes a nested module with tests.
+fn scaffold_workspace_member_module_tests(
+    dir: &std::path::Path,
+    member_dir: &str,
+    package_name: &str,
+) {
+    let member_path = dir.join(member_dir);
+    fs::create_dir_all(member_path.join("src/runners")).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        format!(
+            r#"[workspace]
+members = ["{member_dir}"]
+resolver = "2"
+"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        member_path.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "{package_name}"
+version = "0.1.0"
+edition = "2021"
+"#
+        ),
+    )
+    .unwrap();
+    fs::create_dir_all(member_path.join("src/runners")).unwrap();
+    fs::write(member_path.join("src/lib.rs"), "pub mod runners;\n").unwrap();
+    fs::write(
+        member_path.join("src/runners/mod.rs"),
+        "pub mod unified_runner;\n",
+    )
+    .unwrap();
+    fs::write(
+        member_path.join("src/runners/unified_runner.rs"),
+        r#"pub fn helper() {}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_helper() {
+        assert_eq!(2 + 2, 4);
+    }
+}
+"#,
+    )
+    .unwrap();
+}
+
 /// Scaffold a minimal Bazel workspace with a binary package.
 fn scaffold_bazel_binary_workspace(dir: &std::path::Path, package_dir: &str, target_name: &str) {
     let package_path = dir.join(package_dir);
@@ -584,6 +636,26 @@ fn context_json_for_cargo_script() {
 }
 
 #[test]
+fn context_json_for_module_path() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_workspace_member_module_tests(tmp.path(), "crates/app", "workspace-app");
+
+    cargo_runner()
+        .args(["runner", "context", "runners::unified_runner::tests", "--json"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            r#""file_path": "#,
+        ))
+        .stdout(predicate::str::contains("src/runners/unified_runner.rs"))
+        .stdout(predicate::str::contains(r#""runnable_kind": "module_tests""#))
+        .stdout(predicate::str::contains(r#""build_system": "cargo""#));
+}
+
+#[test]
 fn run_dry_run_binary() {
     let tmp = TempDir::new().unwrap();
     scaffold_cargo_project(tmp.path(), "test-dryrun");
@@ -674,6 +746,21 @@ fn run_dry_run_test() {
     cargo_runner()
         .args(["run", "src/lib.rs:11", "--dry-run"])
         .env("PROJECT_ROOT", &root)
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cargo").and(predicate::str::contains("test")));
+}
+
+#[test]
+fn run_dry_run_module_path() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_workspace_member_module_tests(tmp.path(), "crates/app", "workspace-app");
+
+    cargo_runner()
+        .args(["run", "runners::unified_runner::tests", "--dry-run"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
         .current_dir(tmp.path())
         .assert()
         .success()
@@ -1013,9 +1100,9 @@ fn help_shows_all_commands() {
         .args(["--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("runnables"))
         .stdout(predicate::str::contains("init"))
         .stdout(predicate::str::contains("run"))
-        .stdout(predicate::str::contains("analyze"))
         .stdout(predicate::str::contains("override"))
         .stdout(predicate::str::contains("clean"))
         .stdout(predicate::str::contains("watch"));

@@ -18,8 +18,8 @@ pub struct BazelCrate {
     /// True if this crate's `Cargo.toml` contains a `[workspace]` section —
     /// i.e. it is a workspace root rather than a plain member.
     pub is_workspace_root: bool,
-    /// The name of the crate-universe repo used by Bazel, e.g. `server_crates`.
-    /// Derived from the crate name using [`crate_repo_name`].
+    /// The name of the crate-universe repo used by Bazel, e.g. `server` or
+    /// `complex_bazel_setup`.
     pub repo_name: String,
 }
 
@@ -51,7 +51,8 @@ pub fn find_bazel_crates(root: &Path) -> Result<Vec<BazelCrate>> {
                 .unwrap_or_else(|| dir_basename(dir).to_string());
 
             let is_workspace_root = cargo_content.contains("[workspace]");
-            let repo_name = crate_repo_name(&name);
+            let repo_name =
+                cargo_workspace_repo_name_for_path(dir).unwrap_or_else(|| crate_repo_name(&name));
 
             crates.push(BazelCrate {
                 dir: dir.to_path_buf(),
@@ -63,6 +64,14 @@ pub fn find_bazel_crates(root: &Path) -> Result<Vec<BazelCrate>> {
     }
 
     Ok(crates)
+}
+
+/// Derive the Bazel crate-universe repo name from the Cargo workspace root
+/// that contains `start`.
+pub fn cargo_workspace_repo_name_for_path(start: &Path) -> Option<String> {
+    let workspace_root = find_cargo_workspace_root(start)?;
+    let root_name = workspace_root.file_name()?.to_str()?;
+    Some(crate_repo_name(root_name))
 }
 
 /// Walk upward from `start` to find the directory containing `MODULE.bazel`.
@@ -149,6 +158,8 @@ fn dir_basename(path: &Path) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_crate_repo_name() {
@@ -173,5 +184,29 @@ version = "0.1.0"
     fn test_extract_package_name_none() {
         let toml = "[workspace]\nresolver = \"2\"\n";
         assert_eq!(extract_package_name(toml), None);
+    }
+
+    #[test]
+    fn test_cargo_workspace_repo_name_for_path() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        let server = root.join("server");
+        fs::create_dir(&server).unwrap();
+        fs::write(
+            server.join("Cargo.toml"),
+            r#"[package]
+name = "server"
+version = "0.1.0"
+
+[workspace]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cargo_workspace_repo_name_for_path(&server.join("Cargo.toml")),
+            Some("server_crates".to_string())
+        );
     }
 }

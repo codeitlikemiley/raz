@@ -20,6 +20,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use crate::config::bazel_workspace::find_bazel_crates;
+use crate::config::{local_dependency_labels, rust_crate_name};
 
 const MANAGED_BEGIN: &str = "# BEGIN raz-managed";
 const MANAGED_END: &str = "# END raz-managed";
@@ -102,23 +103,39 @@ pub(crate) fn process_crate(
         String::new()
     };
 
+    let has_build_script = dir.join("build.rs").exists();
+    let normalized_content = normalize_repo_header(&existing_content, repo_name, has_build_script);
+
     // Collect names already defined *outside* the managed block
-    let existing_names = names_outside_managed_block(&existing_content);
+    let existing_names = names_outside_managed_block(&normalized_content);
 
     let (targets, skipped) = infer_targets(
         dir,
         crate_name,
         repo_name,
         &existing_names,
-        &existing_content,
+        &normalized_content,
     );
 
     for name in &skipped {
         println!("   ~ skipping '{name}' (already defined)");
     }
 
+    let header_changed = normalized_content != existing_content;
+
     if targets.is_empty() {
-        println!("   ✓ No new targets to add.");
+        if header_changed {
+            if dry_run {
+                println!("   Would update stale BUILD.bazel header:");
+                println!("   load(\"@{}//:defs.bzl\", \"all_crate_deps\")", repo_name);
+            } else {
+                std::fs::write(&build_path, normalized_content)
+                    .with_context(|| format!("writing {}", build_path.display()))?;
+                println!("   ✓ Updated stale BUILD.bazel header.");
+            }
+        } else {
+            println!("   ✓ No new targets to add.");
+        }
         return Ok(());
     }
 
@@ -130,13 +147,17 @@ pub(crate) fn process_crate(
         return Ok(());
     }
 
-    if !existing_content.is_empty() {
-        let updated = splice_managed_block(&existing_content, &generated);
+    if !normalized_content.is_empty() {
+        let updated = splice_managed_block(&normalized_content, &generated);
         std::fs::write(&build_path, updated)
             .with_context(|| format!("writing {}", build_path.display()))?;
     } else {
         // New file — write header + managed block
-        let header = build_file_header(repo_name);
+        let header = if has_build_script {
+            build_file_header_with_build_script(repo_name)
+        } else {
+            build_file_header(repo_name)
+        };
         std::fs::write(&build_path, format!("{}\n{}", header, generated))
             .with_context(|| format!("creating {}", build_path.display()))?;
     }
@@ -156,25 +177,34 @@ pub(crate) enum BazelTarget {
     Library {
         name: String,
         repo_name: String,
+        local_deps: Vec<String>,
     },
     Binary {
         name: String,
         src: String,
         repo_name: String,
+        crate_name: String,
+        has_local_lib: bool,
     },
     TestSuite {
         name: String,
         repo_name: String,
+        crate_name: String,
+        has_local_lib: bool,
     },
     Example {
         name: String,
         src: String,
         repo_name: String,
+        crate_name: String,
+        has_local_lib: bool,
     },
     Bench {
         name: String,
         src: String,
         repo_name: String,
+        crate_name: String,
+        has_local_lib: bool,
     },
     DocTest {
         crate_name: String,
@@ -210,13 +240,17 @@ impl BazelTarget {
 
     pub(crate) fn render(&self) -> String {
         match self {
-            Self::Library { name, repo_name: _ } => format!(
+            Self::Library {
+                name,
+                repo_name: _,
+                local_deps,
+            } => format!(
                 r#"rust_library(
     name = "{name}_lib",
     srcs = glob(["src/**/*.rs"]),
-    deps = all_crate_deps(),
+    deps = {local_deps_expr}all_crate_deps(),
     visibility = ["//visibility:public"],
-    crate_name = "{name}",
+    crate_name = "{crate_name}",
 )
 
 rust_test(
@@ -225,56 +259,90 @@ rust_test(
     deps = all_crate_deps(normal_dev = True),
 )
 "#,
+                crate_name = rust_crate_name(name),
+                local_deps_expr = deps_expr(local_deps),
             ),
             Self::Binary {
                 name,
                 src,
                 repo_name: _,
+                crate_name,
+                has_local_lib,
             } => format!(
                 r#"rust_binary(
     name = "{name}",
     srcs = ["{src}"],
     crate_root = "{src}",
-    deps = all_crate_deps(normal = True),
+{deps}
 )
 "#,
+                deps = if *has_local_lib {
+                    format!(r#"    deps = [":{crate_name}_lib"] + all_crate_deps(normal = True),"#)
+                } else {
+                    r#"    deps = all_crate_deps(normal = True),"#.to_string()
+                },
             ),
             Self::TestSuite {
                 name: _,
                 repo_name: _,
+                crate_name,
+                has_local_lib,
             } => format!(
                 r#"rust_test_suite(
     name = "integration_tests",
     srcs = glob(["tests/**/*.rs"]),
-    deps = all_crate_deps(normal_dev = True),
+{deps}
 )
 "#,
+                deps = if *has_local_lib {
+                    format!(
+                        r#"    deps = [":{crate_name}_lib"] + all_crate_deps(normal_dev = True),"#
+                    )
+                } else {
+                    r#"    deps = all_crate_deps(normal_dev = True),"#.to_string()
+                },
             ),
             Self::Example {
                 name,
                 src,
                 repo_name: _,
+                crate_name,
+                has_local_lib,
             } => format!(
                 r#"rust_binary(
     name = "example_{name}",
     srcs = ["{src}"],
     crate_root = "{src}",
-    deps = all_crate_deps(normal = True),
+{deps}
 )
 "#,
+                deps = if *has_local_lib {
+                    format!(r#"    deps = [":{crate_name}_lib"] + all_crate_deps(normal = True),"#)
+                } else {
+                    r#"    deps = all_crate_deps(normal = True),"#.to_string()
+                },
             ),
             Self::Bench {
                 name,
                 src,
                 repo_name: _,
+                crate_name,
+                has_local_lib,
             } => format!(
                 r#"rust_binary(
     name = "bench_{name}",
     srcs = ["{src}"],
     crate_root = "{src}",
-    deps = all_crate_deps(normal_dev = True),
+{deps}
 )
 "#,
+                deps = if *has_local_lib {
+                    format!(
+                        r#"    deps = [":{crate_name}_lib"] + all_crate_deps(normal_dev = True),"#
+                    )
+                } else {
+                    r#"    deps = all_crate_deps(normal_dev = True),"#.to_string()
+                },
             ),
             Self::DocTest { crate_name } => format!(
                 r#"rust_doc_test(
@@ -290,6 +358,21 @@ rust_test(
 "#
             .to_string(),
         }
+    }
+}
+
+fn deps_expr(local_deps: &[String]) -> String {
+    if local_deps.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "[{}] + ",
+            local_deps
+                .iter()
+                .map(|d| format!("\"{d}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }
 
@@ -325,6 +408,7 @@ pub(crate) fn infer_targets(
     existing_content: &str,
 ) -> (Vec<BazelTarget>, Vec<String>) {
     let mut candidates: Vec<BazelTarget> = Vec::new();
+    let local_deps = local_dependency_labels(dir).unwrap_or_default();
 
     // Parse Cargo.toml for explicit target definitions
     let cargo_toml = dir.join("Cargo.toml");
@@ -339,6 +423,7 @@ pub(crate) fn infer_targets(
         candidates.push(BazelTarget::Library {
             name: crate_name.to_string(),
             repo_name: repo_name.to_string(),
+            local_deps: local_deps.clone(),
         });
         candidates.push(BazelTarget::DocTest {
             crate_name: crate_name.to_string(),
@@ -361,6 +446,8 @@ pub(crate) fn infer_targets(
                     name: target.name.clone(),
                     src: path.to_string(),
                     repo_name: repo_name.to_string(),
+                    crate_name: crate_name.to_string(),
+                    has_local_lib: dir.join("src/lib.rs").exists(),
                 });
             }
         }
@@ -371,6 +458,8 @@ pub(crate) fn infer_targets(
                 name: format!("{}_bin", crate_name),
                 src: "src/main.rs".to_string(),
                 repo_name: repo_name.to_string(),
+                crate_name: crate_name.to_string(),
+                has_local_lib: dir.join("src/lib.rs").exists(),
             });
         }
 
@@ -380,6 +469,8 @@ pub(crate) fn infer_targets(
                 name: stem,
                 src,
                 repo_name: repo_name.to_string(),
+                crate_name: crate_name.to_string(),
+                has_local_lib: dir.join("src/lib.rs").exists(),
             }
         });
 
@@ -393,6 +484,8 @@ pub(crate) fn infer_targets(
                         name: stem.clone(),
                         src: format!("src/bin/{}/main.rs", stem),
                         repo_name: repo_name.to_string(),
+                        crate_name: crate_name.to_string(),
+                        has_local_lib: dir.join("src/lib.rs").exists(),
                     });
                 }
             }
@@ -406,6 +499,8 @@ pub(crate) fn infer_targets(
         candidates.push(BazelTarget::TestSuite {
             name: "integration_tests".to_string(),
             repo_name: repo_name.to_string(),
+            crate_name: crate_name.to_string(),
+            has_local_lib: dir.join("src/lib.rs").exists(),
         });
     } else if dir.join("tests").exists() {
         // Convention: tests/ directory exists → rust_test_suite
@@ -422,6 +517,8 @@ pub(crate) fn infer_targets(
             candidates.push(BazelTarget::TestSuite {
                 name: "integration_tests".to_string(),
                 repo_name: repo_name.to_string(),
+                crate_name: crate_name.to_string(),
+                has_local_lib: dir.join("src/lib.rs").exists(),
             });
         }
     }
@@ -436,6 +533,8 @@ pub(crate) fn infer_targets(
                 name: target.name.clone(),
                 src: path.to_string(),
                 repo_name: repo_name.to_string(),
+                crate_name: crate_name.to_string(),
+                has_local_lib: dir.join("src/lib.rs").exists(),
             });
         }
     } else {
@@ -445,6 +544,8 @@ pub(crate) fn infer_targets(
                 name: stem,
                 src,
                 repo_name: repo_name.to_string(),
+                crate_name: crate_name.to_string(),
+                has_local_lib: dir.join("src/lib.rs").exists(),
             }
         });
 
@@ -458,6 +559,8 @@ pub(crate) fn infer_targets(
                         name: stem.clone(),
                         src: format!("examples/{}/main.rs", stem),
                         repo_name: repo_name.to_string(),
+                        crate_name: crate_name.to_string(),
+                        has_local_lib: dir.join("src/lib.rs").exists(),
                     });
                 }
             }
@@ -474,6 +577,8 @@ pub(crate) fn infer_targets(
                 name: target.name.clone(),
                 src: path.to_string(),
                 repo_name: repo_name.to_string(),
+                crate_name: crate_name.to_string(),
+                has_local_lib: dir.join("src/lib.rs").exists(),
             });
         }
     } else {
@@ -483,6 +588,8 @@ pub(crate) fn infer_targets(
                 name: stem,
                 src,
                 repo_name: repo_name.to_string(),
+                crate_name: crate_name.to_string(),
+                has_local_lib: dir.join("src/lib.rs").exists(),
             }
         });
     }
@@ -714,6 +821,51 @@ fn splice_managed_block(existing: &str, new_block: &str) -> String {
     }
 }
 
+/// Replace a stale generated repo header with the current workspace repo name.
+///
+/// Existing BUILD.bazel files may have been generated before the workspace-wide
+/// repo naming fix, so `sync` needs to normalize the header before it splices
+/// the managed block. This preserves any hand-authored content outside the
+/// managed section while fixing the `load("@*_crates//:defs.bzl", ...)` line.
+fn normalize_repo_header(existing: &str, repo_name: &str, has_build_script: bool) -> String {
+    let desired = if has_build_script {
+        build_file_header_with_build_script(repo_name)
+    } else {
+        build_file_header(repo_name)
+    };
+
+    let expected_first_line = "load(\"@";
+    let Some(start) = existing.find(expected_first_line) else {
+        return existing.to_string();
+    };
+
+    let lines: Vec<&str> = existing[start..].lines().collect();
+    if lines.is_empty() {
+        return existing.to_string();
+    }
+
+    let mut end = start;
+    let mut seen_header_line = false;
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with("load(\"@") {
+            seen_header_line = true;
+            end += line.len() + 1;
+            continue;
+        }
+        if seen_header_line {
+            break;
+        }
+        return existing.to_string();
+    }
+
+    let mut result = String::with_capacity(existing.len() + desired.len());
+    result.push_str(&existing[..start]);
+    result.push_str(&desired);
+    result.push_str(&existing[end..]);
+    result
+}
+
 fn find_workspace_root(start: &Path) -> Option<PathBuf> {
     let mut current = start.to_path_buf();
     loop {
@@ -730,6 +882,8 @@ fn find_workspace_root(start: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     // ── extract_string_value ──────────────────────────────────────
 
@@ -831,6 +985,66 @@ mod tests {
         let result = splice_managed_block(existing, new_block);
         assert!(result.contains("hand authored"));
         assert!(result.contains("new stuff"));
+    }
+
+    #[test]
+    fn normalize_repo_header_updates_stale_repo_name() {
+        let existing = r#"load("@server_crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_doc_test", "rust_library", "rust_test", "rust_test_suite")
+
+# BEGIN raz-managed
+rust_binary(
+    name = "server_bin",
+    srcs = ["src/main.rs"],
+    crate_root = "src/main.rs",
+    deps = all_crate_deps(normal = True),
+)
+# END raz-managed
+"#;
+
+        let result = normalize_repo_header(existing, "complex_bazel_setup", false);
+        assert!(result.contains("@complex_bazel_setup//:defs.bzl"));
+        assert!(!result.contains("@server_crates//:defs.bzl"));
+        assert!(result.contains("server_bin"));
+    }
+
+    #[test]
+    fn process_crate_updates_header_even_without_new_targets() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let server = root.join("server");
+        fs::create_dir(&server).unwrap();
+
+        fs::write(
+            server.join("Cargo.toml"),
+            r#"[package]
+name = "server"
+version = "0.1.0"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            server.join("BUILD.bazel"),
+            r#"load("@server_crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+# BEGIN raz-managed
+rust_binary(
+    name = "server_bin",
+    srcs = ["src/main.rs"],
+    crate_root = "src/main.rs",
+    deps = all_crate_deps(normal = True),
+)
+# END raz-managed
+"#,
+        )
+        .unwrap();
+
+        process_crate(&server, "server", "complex_bazel_setup", false).unwrap();
+
+        let build = fs::read_to_string(server.join("BUILD.bazel")).unwrap();
+        assert!(build.contains("@complex_bazel_setup//:defs.bzl"));
+        assert!(!build.contains("@server_crates//:defs.bzl"));
     }
 
     // ── names_outside_managed_block ───────────────────────────────

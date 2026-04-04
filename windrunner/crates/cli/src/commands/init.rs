@@ -5,10 +5,12 @@ use tracing::info;
 use walkdir::WalkDir;
 
 use crate::commands::build_sync::{
-    BazelTarget, build_file_header, build_file_header_with_build_script, infer_targets,
-    render_managed_block,
+    build_file_header, build_file_header_with_build_script, infer_targets, render_managed_block,
+    BazelTarget,
 };
-use crate::config::bazel_workspace::crate_repo_name;
+use crate::config::bazel_workspace::{
+    cargo_workspace_repo_name_for_path, crate_repo_name, find_cargo_workspace_root,
+};
 use crate::config::generators::{
     create_default_config, create_root_config, create_workspace_config,
 };
@@ -16,7 +18,9 @@ use crate::config::templates::{
     create_bazel_config, create_combined_config, create_rustc_config,
     create_single_file_script_config,
 };
-use crate::config::workspace::{get_package_name, is_workspace_only};
+use crate::config::workspace::{
+    get_package_name, is_workspace_only, local_dependency_labels, rust_crate_name,
+};
 
 pub fn init_command(
     cwd: Option<&str>,
@@ -151,12 +155,12 @@ pub fn init_command(
             continue;
         }
 
-        let config = if is_workspace_only(cargo_toml)? {
-            create_workspace_config()
-        } else {
-            let package_name = get_package_name(cargo_toml)?;
-            create_default_config(&package_name)
-        };
+            let config = if is_workspace_only(cargo_toml)? {
+                create_workspace_config()
+            } else {
+                let package_name = get_package_name(cargo_toml)?;
+                create_default_config(&package_name)
+            };
 
         fs::write(&config_path, config)
             .with_context(|| format!("Failed to write config to {}", config_path.display()))?;
@@ -259,16 +263,16 @@ fn handle_bazel_init(
     println!("   Directory: {}", project_root.display());
     println!();
 
-    // Derive repo name for the workspace
-    let repo_name = ws_name.replace('-', "_");
+    let cargo_tomls = discover_cargo_tomls(project_root);
+    let cargo_workspace_blocks = collect_cargo_workspace_blocks(&project_root, &cargo_tomls);
 
     // ── Generate MODULE.bazel ─────────────────────────────────────────────
-    // For workspaces: crate.from_cargo() reads the root Cargo.toml which
-    // references all members. One repo covers all crates.
+    // For mixed Bazel/Cargo trees: group Cargo manifests by their Cargo
+    // workspace root so crate_universe sees one workspace per `from_cargo`.
     write_file_if(
         project_root,
         "MODULE.bazel",
-        &module_bazel_content(&ws_name, &repo_name),
+        &module_bazel_content(&ws_name, &cargo_workspace_blocks),
         force,
     )?;
     write_file_if(project_root, ".bazelversion", BAZEL_VERSION, force)?;
@@ -293,7 +297,8 @@ fn handle_bazel_init(
                     .to_string_lossy()
                     .to_string()
             });
-            let member_repo = crate_repo_name(&repo_name);
+            let member_repo = cargo_workspace_repo_name_for_path(&member_dir)
+                .unwrap_or_else(|| crate_repo_name(&member_name));
 
             println!("\n📁 {}/", member_rel);
 
@@ -309,13 +314,15 @@ fn handle_bazel_init(
                 if targets.is_empty() {
                     println!("   ⚠️  no targets inferred for {}", member_name);
                 } else {
+                    let _local_deps =
+                        local_dependency_labels(&member_dir).unwrap_or_default();
                     let has_build_script = targets
                         .iter()
                         .any(|t| matches!(t, BazelTarget::BuildScript));
                     let header = if has_build_script {
-                        build_file_header_with_build_script(&repo_name)
+                        build_file_header_with_build_script(&member_repo)
                     } else {
-                        build_file_header(&repo_name)
+                        build_file_header(&member_repo)
                     };
                     let managed = render_managed_block(&targets);
                     let content = format!("{}\n{}", header, managed);
@@ -342,25 +349,57 @@ fn handle_bazel_init(
         let has_main = project_root.join("src/main.rs").exists();
         let has_lib = project_root.join("src/lib.rs").exists();
         let pkg_name = read_cargo_package_name(project_root).unwrap_or_else(|| ws_name.clone());
+        let repo_name = crate_repo_name(&pkg_name);
+        let local_deps = local_dependency_labels(project_root).unwrap_or_default();
         write_file_if(
             project_root,
             "BUILD.bazel",
-            &crate_build_content(&pkg_name, &repo_name, has_lib && !has_main),
+            &crate_build_content(
+                &pkg_name,
+                &repo_name,
+                has_lib && !has_main,
+                &local_deps,
+            ),
             force,
         )?;
     }
 
-    // ── Ensure Cargo.lock exists ──────────────────────────────────────────
-    let lockfile = project_root.join("Cargo.lock");
-    if !lockfile.exists() {
-        println!("\n📦 Generating Cargo.lock ...");
-        let status = std::process::Command::new("cargo")
-            .arg("generate-lockfile")
-            .current_dir(project_root)
-            .status()
-            .context("Failed to run `cargo generate-lockfile`")?;
-        if !status.success() {
-            anyhow::bail!("`cargo generate-lockfile` failed");
+    // ── Ensure Cargo.lock exists for each Cargo workspace root ───────────
+    if is_workspace {
+        for block in &cargo_workspace_blocks {
+            let lockfile = block.workspace_root.join("Cargo.lock");
+            if !lockfile.exists() {
+                println!("\n📦 Generating Cargo.lock for {} ...", block.repo_name);
+                let status = std::process::Command::new("cargo")
+                    .arg("generate-lockfile")
+                    .current_dir(&block.workspace_root)
+                    .status()
+                    .with_context(|| {
+                        format!(
+                            "Failed to run `cargo generate-lockfile` in {}",
+                            block.workspace_root.display()
+                        )
+                    })?;
+                if !status.success() {
+                    anyhow::bail!(
+                        "`cargo generate-lockfile` failed in {}",
+                        block.workspace_root.display()
+                    );
+                }
+            }
+        }
+    } else {
+        let lockfile = project_root.join("Cargo.lock");
+        if !lockfile.exists() {
+            println!("\n📦 Generating Cargo.lock ...");
+            let status = std::process::Command::new("cargo")
+                .arg("generate-lockfile")
+                .current_dir(project_root)
+                .status()
+                .context("Failed to run `cargo generate-lockfile`")?;
+            if !status.success() {
+                anyhow::bail!("`cargo generate-lockfile` failed");
+            }
         }
     }
 
@@ -613,7 +652,132 @@ fn parse_workspace_members(cargo_toml_path: &std::path::Path) -> Result<Vec<Stri
     Ok(expanded)
 }
 
-fn module_bazel_content(ws_name: &str, repo: &str) -> String {
+fn cargo_manifest_labels(project_root: &PathBuf, cargo_tomls: &[PathBuf]) -> Vec<String> {
+    let mut labels = Vec::new();
+    for cargo_toml in cargo_tomls {
+        if let Ok(rel) = cargo_toml.strip_prefix(project_root) {
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            if rel == "Cargo.toml" {
+                labels.push("//:Cargo.toml".to_string());
+            } else if let Some(parent) = cargo_toml
+                .parent()
+                .and_then(|p| p.strip_prefix(project_root).ok())
+            {
+                let parent = parent.to_string_lossy().replace('\\', "/");
+                labels.push(format!("//{}:Cargo.toml", parent));
+            } else {
+                labels.push("//:Cargo.toml".to_string());
+            }
+        }
+    }
+
+    if labels.is_empty() {
+        labels.push("//:Cargo.toml".to_string());
+    }
+
+    labels.sort();
+    labels.dedup();
+    labels
+}
+
+#[derive(Debug, Clone)]
+struct CargoWorkspaceBlock {
+    workspace_root: PathBuf,
+    repo_name: String,
+    manifests: Vec<String>,
+    lockfile_label: String,
+}
+
+fn collect_cargo_workspace_blocks(
+    project_root: &PathBuf,
+    cargo_tomls: &[PathBuf],
+) -> Vec<CargoWorkspaceBlock> {
+    let mut groups: std::collections::BTreeMap<PathBuf, Vec<PathBuf>> =
+        std::collections::BTreeMap::new();
+
+    for cargo_toml in cargo_tomls {
+        let workspace_root = find_cargo_workspace_root(
+            cargo_toml
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(project_root)),
+        )
+        .unwrap_or_else(|| cargo_toml.parent().unwrap_or(project_root).to_path_buf());
+        groups
+            .entry(workspace_root)
+            .or_default()
+            .push(cargo_toml.clone());
+    }
+
+    let mut blocks = Vec::new();
+    for (workspace_root, mut manifests) in groups {
+        manifests.sort();
+        manifests.dedup();
+
+        let root_name = workspace_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace");
+        let repo_name = crate_repo_name(root_name);
+        let manifests = cargo_manifest_labels(project_root, &manifests);
+
+        let lockfile_label = workspace_root_label(project_root, &workspace_root);
+        blocks.push(CargoWorkspaceBlock {
+            workspace_root,
+            repo_name,
+            manifests,
+            lockfile_label,
+        });
+    }
+
+    blocks
+}
+
+fn discover_cargo_tomls(project_root: &PathBuf) -> Vec<PathBuf> {
+    WalkDir::new(project_root)
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(|e| {
+            if let Some(name) = e.file_name().to_str() {
+                if name.starts_with("bazel-") {
+                    return false;
+                }
+            }
+            true
+        })
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name() == "Cargo.toml")
+        .map(|e| e.path().to_path_buf())
+        .collect()
+}
+
+fn module_bazel_content(ws_name: &str, blocks: &[CargoWorkspaceBlock]) -> String {
+    let blocks = blocks
+        .iter()
+        .map(|block| {
+            let manifests_block = block
+                .manifests
+                .iter()
+                .map(|m| format!(r#"    "{}","#, m))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                r#"crate.from_cargo(
+    name = "{repo}",
+    manifests = [
+{manifests_block}
+    ],
+    cargo_lockfile = "{lockfile}",
+)
+
+use_repo(crate, "{repo}")
+"#,
+                repo = block.repo_name,
+                manifests_block = manifests_block,
+                lockfile = block.lockfile_label,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     format!(
         r#"# MODULE.bazel — generated by `cargo runner init --bazel`
 module(name = "{ws_name}")
@@ -625,18 +789,28 @@ crate = use_extension(
     "crate",
 )
 
-crate.from_cargo(
-    name = "{repo}",
-    manifests = ["//:Cargo.toml"],
-    cargo_lockfile = "//:Cargo.lock",
-)
-
-use_repo(crate, "{repo}")
+{blocks}
 "#
     )
 }
 
-fn crate_build_content(pkg_name: &str, repo: &str, is_lib: bool) -> String {
+fn workspace_root_label(project_root: &PathBuf, workspace_root: &PathBuf) -> String {
+    if workspace_root == project_root {
+        "//:Cargo.lock".to_string()
+    } else if let Ok(rel) = workspace_root.strip_prefix(project_root) {
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        format!("//{}:Cargo.lock", rel)
+    } else {
+        "//:Cargo.lock".to_string()
+    }
+}
+
+fn crate_build_content(pkg_name: &str, repo: &str, is_lib: bool, local_deps: &[String]) -> String {
+    let local_deps_expr = if local_deps.is_empty() {
+        String::new()
+    } else {
+        format!("[{}] + ", local_deps.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(", "))
+    };
     if is_lib {
         format!(
             r#"load("@{repo}//:defs.bzl", "all_crate_deps")
@@ -645,21 +819,24 @@ load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library", "rust_test")
 rust_library(
     name = "{pkg_name}",
     srcs = glob(["src/**/*.rs"]),
-    deps = all_crate_deps(normal = True),
+    deps = {local_deps_expr}all_crate_deps(normal = True),
     visibility = ["//visibility:public"],
+    crate_name = "{crate_name}",
 )
 
 rust_test(
     name = "{pkg_name}_test",
     crate = ":{pkg_name}",
-    deps = all_crate_deps(normal = True, normal_dev = True),
+    deps = {local_deps_expr}all_crate_deps(normal = True, normal_dev = True),
 )
 
 rust_doc_test(
     name = "doc_tests",
     crate = ":{pkg_name}",
 )
-"#
+"#,
+            crate_name = rust_crate_name(pkg_name),
+            local_deps_expr = local_deps_expr,
         )
     } else {
         format!(
@@ -669,10 +846,11 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 rust_binary(
     name = "{pkg_name}",
     srcs = glob(["src/**/*.rs"]),
-    deps = all_crate_deps(normal = True),
+    deps = {local_deps_expr}all_crate_deps(normal = True),
     visibility = ["//visibility:public"],
 )
-"#
+"#,
+            local_deps_expr = local_deps_expr,
         )
     }
 }
@@ -714,33 +892,83 @@ build --@rules_rust//:extra_rustc_flags=-Dwarnings
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     // ── module_bazel_content ──────────────────────────────────────
 
     #[test]
     fn module_bazel_has_workspace_name() {
-        let content = module_bazel_content("my_workspace", "my_repo");
+        let blocks = vec![CargoWorkspaceBlock {
+            workspace_root: PathBuf::from("/tmp/project/server"),
+            repo_name: "my_repo".to_string(),
+            manifests: vec!["//server:Cargo.toml".to_string()],
+            lockfile_label: "//server:Cargo.lock".to_string(),
+        }];
+        let content = module_bazel_content("my_workspace", &blocks);
         assert!(content.contains("module(name = \"my_workspace\")"));
     }
 
     #[test]
     fn module_bazel_has_repo_refs() {
-        let content = module_bazel_content("ws", "my_deps");
+        let blocks = vec![CargoWorkspaceBlock {
+            workspace_root: PathBuf::from("/tmp/project/server"),
+            repo_name: "my_deps".to_string(),
+            manifests: vec!["//:Cargo.toml".to_string()],
+            lockfile_label: "//server:Cargo.lock".to_string(),
+        }];
+        let content = module_bazel_content("ws", &blocks);
         assert!(content.contains("name = \"my_deps\""));
         assert!(content.contains("use_repo(crate, \"my_deps\")"));
+        assert!(content.contains("cargo_lockfile = \"//server:Cargo.lock\""));
     }
 
     #[test]
     fn module_bazel_has_rules_rust_version() {
-        let content = module_bazel_content("ws", "repo");
+        let blocks = vec![CargoWorkspaceBlock {
+            workspace_root: PathBuf::from("/tmp/project/server"),
+            repo_name: "repo".to_string(),
+            manifests: vec!["//:Cargo.toml".to_string()],
+            lockfile_label: "//:Cargo.lock".to_string(),
+        }];
+        let content = module_bazel_content("ws", &blocks);
         assert!(content.contains(RULES_RUST_VERSION));
+    }
+
+    #[test]
+    fn cargo_manifest_labels_use_workspace_members() {
+        let root = PathBuf::from("/tmp/project");
+        let labels = cargo_manifest_labels(
+            &root,
+            &[
+                root.join("server/Cargo.toml"),
+                root.join("corex/Cargo.toml"),
+            ],
+        );
+        assert_eq!(
+            labels,
+            vec![
+                "//corex:Cargo.toml".to_string(),
+                "//server:Cargo.toml".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn workspace_root_label_uses_member_lockfile() {
+        let project_root = PathBuf::from("/tmp/project");
+        let workspace_root = PathBuf::from("/tmp/project/combos");
+        assert_eq!(
+            workspace_root_label(&project_root, &workspace_root),
+            "//combos:Cargo.lock"
+        );
     }
 
     // ── crate_build_content ───────────────────────────────────────
 
     #[test]
     fn build_content_library_has_lib_targets() {
-        let content = crate_build_content("mylib", "repo", true);
+        let content = crate_build_content("mylib", "repo", true, &[]);
         assert!(content.contains("rust_library"));
         assert!(content.contains("rust_test"));
         assert!(content.contains("rust_doc_test"));
@@ -749,7 +977,7 @@ mod tests {
 
     #[test]
     fn build_content_binary_has_bin_target() {
-        let content = crate_build_content("mycli", "repo", false);
+        let content = crate_build_content("mycli", "repo", false, &[]);
         assert!(content.contains("rust_binary"));
         assert!(!content.contains("rust_library"));
         assert!(!content.contains("rust_doc_test"));
@@ -758,8 +986,39 @@ mod tests {
 
     #[test]
     fn build_content_uses_repo_for_deps() {
-        let content = crate_build_content("pkg", "custom_repo", true);
+        let content = crate_build_content("pkg", "custom_repo", true, &[]);
         assert!(content.contains("@custom_repo"));
         assert!(content.contains("all_crate_deps"));
+    }
+
+    #[test]
+    fn bazel_workspace_member_build_uses_module_repo_name() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("windrunner");
+        fs::create_dir(&root).unwrap();
+
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/cli\"]\n",
+        )
+        .unwrap();
+
+        let cli = root.join("crates/cli");
+        fs::create_dir_all(cli.join("src")).unwrap();
+        fs::write(
+            cli.join("Cargo.toml"),
+            r#"[package]
+name = "cargo-runner"
+version = "0.1.0"
+"#,
+        )
+        .unwrap();
+        fs::write(cli.join("src/main.rs"), "fn main() {}\n").unwrap();
+
+        handle_bazel_init(&root.to_path_buf(), true, Some("windrunner"), true).unwrap();
+
+        let build = fs::read_to_string(cli.join("BUILD.bazel")).unwrap();
+        assert!(build.contains("load(\"@windrunner_crates//:defs.bzl\""));
+        assert!(!build.contains("load(\"@cargo_runner_crates//:defs.bzl\""));
     }
 }

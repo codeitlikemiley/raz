@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    analyze_command, bazel_add_command, bazel_sync_command, build_sync_command, clean_command,
-    context_command, init_command, override_command, run_command, unset_command, watch_command,
+    bazel_add_command, bazel_sync_command, build_sync_command, clean_command, context_command,
+    init_command, override_command, run_command, runnables_command, unset_command, watch_command,
 };
 
 #[derive(Parser)]
@@ -31,11 +31,11 @@ pub struct Runner {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Analyze a Rust file and list all runnable items
-    #[command(visible_alias = "a")]
-    Analyze {
+    /// List runnable items in a Rust file or entire workspace.
+    #[command(name = "runnables", alias = "analyze", visible_alias = "a")]
+    Runnables {
         /// Path to the Rust file with optional line number (e.g., src/main.rs:10).
-        /// Defaults to the cwd entry point (src/main.rs, src/lib.rs, or first .rs found).
+        /// If omitted, scans the current Cargo workspace members from the cwd upward.
         filepath: Option<String>,
 
         /// Show verbose output with command details
@@ -282,13 +282,16 @@ impl Commands {
         }
 
         match self {
-            Commands::Analyze {
+            Commands::Runnables {
                 filepath,
                 verbose,
                 config,
             } => {
-                let fp = resolve_filepath_arg(filepath)?;
-                analyze_command(&fp, verbose, config)
+                if let Some(fp) = filepath {
+                    runnables_command(Some(&fp), verbose, config)
+                } else {
+                    runnables_command(None, verbose, config)
+                }
             }
             Commands::Context { filepath, json } => context_command(filepath.as_deref(), json),
             Commands::Run { filepath, dry_run } => {

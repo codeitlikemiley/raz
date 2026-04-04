@@ -339,8 +339,9 @@ Deduplication is name-aware and content-aware:
 | `cargo runner build-sync [--crate <name>] [--dry-run]` | Update `BUILD.bazel` targets (also runs as part of `init --bazel`) |
 | `cargo runner clean` | Context-aware clean: `bazel clean` (Bazel) or `cargo clean` (Cargo) |
 | `cargo runner watch` | Context-aware file watcher: `ibazel` (Bazel) or `cargo watch` (Cargo) |
-| `cargo runner run <file>:<line>` | Scope-based execution: detects build system and runs the target at the given line |
-| `cargo runner context [file[:line]] --json` | Emit machine-readable project/file context for TMP and other tooling |
+| `cargo runner run <file\|module::path>[:<line>]` | Scope-based execution: detects build system and runs the target at the given line or module path |
+| `cargo runner runnables [file\|module::path[:line]]` | List runnable items for a file, module path, or entire workspace |
+| `cargo runner context [file\|module::path[:line]] --json` | Emit machine-readable project/file context for TMP and other tooling |
 
 ---
 
@@ -361,6 +362,19 @@ Deduplication is name-aware and content-aware:
 | `/// ``` doctest` | `cargo test --doc add` | `bazel test //:doc_tests` |
 | `fn main()` binary | `cargo run --bin name` | `bazel run //:name` |
 | Benchmark function | `cargo bench name` | `bazel run //:bench_name -c opt` |
+
+The same resolver also accepts a module path when you already know the Rust
+module name instead of the file path:
+
+```bash
+cargo runner run runners::unified_runner::tests
+cargo runner runnables runners::unified_runner::tests
+cargo runner context runners::unified_runner::tests --json
+```
+
+When the input is not an existing file, `cargo runner` scans the current
+workspace members, matches the runnable `module_path`, and resolves the owning
+file before building the final command or context.
 
 ### Single-file scripts
 

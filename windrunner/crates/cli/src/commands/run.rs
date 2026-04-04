@@ -1,40 +1,52 @@
 use anyhow::{Context, Result};
 use tracing::{debug, info};
 
+use crate::commands::workspace::resolve_module_path_to_file;
 use crate::utils::parse_filepath_with_line;
 
 pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
     // Parse filepath and line number first
     let (filepath, line) = parse_filepath_with_line(filepath_arg);
+    let cwd = std::env::current_dir()?;
 
     // Check if file exists - resolve to absolute path
     let filepath_path = std::path::Path::new(&filepath);
     let absolute_path = if filepath_path.is_absolute() {
         filepath_path.to_path_buf()
     } else {
-        std::env::current_dir()?.join(filepath_path)
+        cwd.join(filepath_path)
     };
 
-    if !absolute_path.exists() {
+    let resolved_path = if absolute_path.exists() {
+        absolute_path
+    } else if filepath.contains("::") {
+        let runner = cargo_runner_core::UnifiedRunner::new()?;
+        let module_path = resolve_module_path_to_file(&runner, &filepath, &cwd)?;
+        debug!(
+            "Resolved module path '{}' to file '{}'",
+            filepath,
+            module_path.display()
+        );
+        module_path
+    } else {
         return Err(anyhow::anyhow!(
             "File not found: {}",
             absolute_path.display()
         ));
-    }
+    };
 
-    debug!("Running file: {} at line: {:?}", filepath, line);
+    debug!("Running file: {} at line: {:?}", resolved_path.display(), line);
 
     let mut runner = cargo_runner_core::UnifiedRunner::new()?;
-    let filepath_path = std::path::Path::new(&filepath);
     let command = if line.is_none() {
         // For file-level commands (no line specified), use get_file_command
         // which has special logic to prefer test commands over doc tests
         runner
-            .get_file_command(filepath_path)?
+            .get_file_command(&resolved_path)?
             .ok_or_else(|| anyhow::anyhow!("No runnable found in file"))?
     } else {
         // For line-specific commands, use the regular method
-        runner.get_command_at_position_with_dir(filepath_path, line.map(|l| l as u32))?
+        runner.get_command_at_position_with_dir(&resolved_path, line.map(|l| l as u32))?
     };
 
     if dry_run {
