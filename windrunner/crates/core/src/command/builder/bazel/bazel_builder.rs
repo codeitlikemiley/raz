@@ -72,9 +72,21 @@ impl BazelCommandBuilder {
         tracing::debug!("build_test_command called for test: {}", test_name);
 
         // Get the test framework or use defaults
-        let framework = bazel_config
+        let mut framework = bazel_config
             .and_then(|bc| bc.test_framework.clone())
             .unwrap_or_else(|| BazelConfig::default_test_framework());
+
+        if !framework
+            .test_args
+            .as_ref()
+            .map(|args| args.iter().any(|arg| arg == "--exact"))
+            .unwrap_or(false)
+        {
+            framework
+                .test_args
+                .get_or_insert_with(Vec::new)
+                .push("--exact".to_string());
+        }
 
         // Determine the target
         let target = self.determine_target(runnable, bazel_config, config, true);
@@ -123,9 +135,16 @@ impl BazelCommandBuilder {
         }
 
         // Get the test framework or use defaults
-        let framework = bazel_config
+        let mut framework = bazel_config
             .and_then(|bc| bc.test_framework.clone())
             .unwrap_or_else(|| BazelConfig::default_test_framework());
+
+        // Module-level test selection should be broad enough to match the whole
+        // module. `--exact` would require the filter to equal a single test name,
+        // which filters everything out for module runs like `foo::tests`.
+        if let Some(test_args) = &mut framework.test_args {
+            test_args.retain(|arg| arg != "--exact");
+        }
 
         // Determine the target
         let target = self.determine_target(runnable, bazel_config, config, true);

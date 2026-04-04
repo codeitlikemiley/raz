@@ -1,32 +1,77 @@
 use anyhow::Result;
+use cargo_runner_core::{Runnable, RunnableKind};
 use std::path::Path;
 use tracing::debug;
 
-use crate::display::command_breakdown::print_command_breakdown;
-use crate::display::formatter::{determine_file_type, print_runnable_type};
-use crate::config::bazel_workspace::find_cargo_workspace_root;
+use crate::commands::matching::{normalize_query, runnable_matches_query, runnable_symbol_name};
 use crate::commands::workspace::{
     find_files_for_module_path, workspace_rs_files, workspace_scan_roots,
 };
+use crate::config::bazel_workspace::find_cargo_workspace_root;
+use crate::display::command_breakdown::print_command_breakdown;
+use crate::display::formatter::{determine_file_type, print_runnable_type};
 use crate::utils::parser::parse_filepath_with_line;
 
 pub fn runnables_command(
     filepath_arg: Option<&str>,
+    filters: RunnableFilters,
     verbose: bool,
     show_config: bool,
 ) -> Result<()> {
     if let Some(filepath_arg) = filepath_arg {
-        return analyze_file_command(filepath_arg, verbose, show_config);
+        return analyze_file_command(filepath_arg, filters, verbose, show_config);
     }
 
-    analyze_workspace_command(verbose, show_config)
+    analyze_workspace_command(filters, verbose, show_config)
 }
 
 pub fn analyze_command(filepath_arg: &str, verbose: bool, show_config: bool) -> Result<()> {
-    runnables_command(Some(filepath_arg), verbose, show_config)
+    runnables_command(
+        Some(filepath_arg),
+        RunnableFilters::default(),
+        verbose,
+        show_config,
+    )
 }
 
-fn analyze_file_command(filepath_arg: &str, verbose: bool, show_config: bool) -> Result<()> {
+#[derive(Debug, Clone, Default)]
+pub struct RunnableFilters {
+    pub bin: bool,
+    pub test: bool,
+    pub bench: bool,
+    pub doc: bool,
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub exact: bool,
+}
+
+impl RunnableFilters {
+    fn active(&self) -> bool {
+        self.bin
+            || self.test
+            || self.bench
+            || self.doc
+            || self.name.is_some()
+            || self.symbol.is_some()
+            || self.exact
+    }
+
+    fn matches(&self, runnable: &Runnable) -> bool {
+        let kind_matches = !self.bin && !self.test && !self.bench && !self.doc
+            || matches_runnable_kind(&runnable.kind, self.bin, self.test, self.bench, self.doc);
+
+        kind_matches
+            && runnable_matches_query(runnable, self.name.as_deref(), self.exact)
+            && matches_symbol_filter(runnable, self.symbol.as_deref(), self.exact)
+    }
+}
+
+fn analyze_file_command(
+    filepath_arg: &str,
+    filters: RunnableFilters,
+    verbose: bool,
+    show_config: bool,
+) -> Result<()> {
     debug!("Analyzing file: {}", filepath_arg);
 
     // Parse filepath and line number first
@@ -42,7 +87,7 @@ fn analyze_file_command(filepath_arg: &str, verbose: bool, show_config: bool) ->
 
     if !absolute_path.exists() {
         if filepath.contains("::") {
-            return analyze_module_path_command(&filepath, verbose, show_config);
+            return analyze_module_path_command(&filepath, filters, verbose, show_config);
         }
         return Err(anyhow::anyhow!(
             "File not found: {}",
@@ -54,16 +99,16 @@ fn analyze_file_command(filepath_arg: &str, verbose: bool, show_config: bool) ->
 
     if verbose {
         // Show JSON output for verbose mode
-        if let Some(line_num) = line {
-            let runnables = runner.analyze_at_line(&filepath, line_num)?;
-            println!("{runnables}");
+        let mut runnables = if let Some(line_num) = line {
+            runner.detect_runnables_at_line(&absolute_path, line_num as u32)?
         } else {
-            let runnables = runner.analyze(&filepath)?;
-            println!("{runnables}");
-        }
+            runner.detect_all_runnables(&absolute_path)?
+        };
+        runnables.retain(|r| filters.matches(r));
+        println!("{}", serde_json::to_string_pretty(&runnables)?);
     } else {
         // Show formatted output
-        print_formatted_analysis(&mut runner, &filepath, line, show_config)?;
+        print_formatted_analysis(&mut runner, &filepath, line, filters, show_config)?;
     }
 
     Ok(())
@@ -71,6 +116,7 @@ fn analyze_file_command(filepath_arg: &str, verbose: bool, show_config: bool) ->
 
 fn analyze_module_path_command(
     module_path: &str,
+    filters: RunnableFilters,
     verbose: bool,
     show_config: bool,
 ) -> Result<()> {
@@ -85,7 +131,13 @@ fn analyze_module_path_command(
         )),
         1 => {
             let path = matches.into_iter().next().unwrap();
-            print_formatted_analysis(&mut runner, path.to_str().unwrap_or_default(), None, show_config)?;
+            print_formatted_analysis(
+                &mut runner,
+                path.to_str().unwrap_or_default(),
+                None,
+                filters,
+                show_config,
+            )?;
             if verbose {
                 println!();
             }
@@ -106,7 +158,11 @@ fn analyze_module_path_command(
     }
 }
 
-fn analyze_workspace_command(verbose: bool, show_config: bool) -> Result<()> {
+fn analyze_workspace_command(
+    filters: RunnableFilters,
+    verbose: bool,
+    show_config: bool,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let workspace_root = find_cargo_workspace_root(&cwd).unwrap_or(cwd.clone());
     let scan_roots = workspace_scan_roots(&workspace_root)?;
@@ -125,10 +181,15 @@ fn analyze_workspace_command(verbose: bool, show_config: bool) -> Result<()> {
 
     let mut found_any = false;
     for path in files {
-        let runnables = match runner.detect_runnables(&path) {
+        let mut runnables = match runner.detect_runnables(&path) {
             Ok(runnables) if !runnables.is_empty() => runnables,
             _ => continue,
         };
+
+        runnables.retain(|r| filters.matches(r));
+        if runnables.is_empty() {
+            continue;
+        }
 
         found_any = true;
         println!();
@@ -161,10 +222,52 @@ fn analyze_workspace_command(verbose: bool, show_config: bool) -> Result<()> {
     }
 
     if !found_any {
-        println!("No runnable items found in {}", workspace_root.display());
+        if filters.active() {
+            println!(
+                "No runnable items matched the filters in {}",
+                workspace_root.display()
+            );
+        } else {
+            println!("No runnable items found in {}", workspace_root.display());
+        }
     }
 
     Ok(())
+}
+
+fn matches_runnable_kind(
+    kind: &RunnableKind,
+    bin: bool,
+    test: bool,
+    bench: bool,
+    doc: bool,
+) -> bool {
+    match kind {
+        RunnableKind::Binary { .. } => bin,
+        RunnableKind::Test { .. } | RunnableKind::ModuleTests { .. } => test,
+        RunnableKind::Benchmark { .. } => bench,
+        RunnableKind::DocTest { .. } => doc,
+        _ => false,
+    }
+}
+
+fn matches_symbol_filter(runnable: &Runnable, query: Option<&str>, exact: bool) -> bool {
+    if query.is_none() {
+        return true;
+    }
+
+    let symbol_name = runnable_symbol_name(runnable);
+    let Some(symbol_name) = symbol_name else {
+        return false;
+    };
+
+    let query = normalize_query(query.unwrap());
+    let candidate = normalize_query(&symbol_name);
+    if exact {
+        candidate == query
+    } else {
+        candidate.contains(&query)
+    }
 }
 
 fn describe_runnable_kind(kind: &cargo_runner_core::RunnableKind) -> &'static str {
@@ -179,10 +282,154 @@ fn describe_runnable_kind(kind: &cargo_runner_core::RunnableKind) -> &'static st
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cargo_runner_core::types::{Position, Scope, ScopeKind};
+    use std::path::PathBuf;
+
+    fn sample_runnable(
+        kind: RunnableKind,
+        label: &str,
+        module_path: &str,
+        scope_name: Option<&str>,
+    ) -> Runnable {
+        Runnable {
+            label: label.to_string(),
+            scope: Scope {
+                start: Position::new(0, 0),
+                end: Position::new(1, 0),
+                kind: ScopeKind::Function,
+                name: scope_name.map(str::to_string),
+            },
+            kind,
+            module_path: module_path.to_string(),
+            file_path: PathBuf::from("src/lib.rs"),
+            extended_scope: None,
+        }
+    }
+
+    #[test]
+    fn name_filter_is_case_and_separator_insensitive() {
+        let filters = RunnableFilters {
+            name: Some("My Function".to_string()),
+            ..Default::default()
+        };
+        let runnable = sample_runnable(
+            RunnableKind::Test {
+                test_name: "my_function".to_string(),
+                is_async: false,
+            },
+            "Run test 'my_function'",
+            "crate::tests",
+            Some("my_function"),
+        );
+
+        assert!(filters.matches(&runnable));
+    }
+
+    #[test]
+    fn exact_name_filter_requires_full_normalized_match() {
+        let fuzzy = RunnableFilters {
+            name: Some("my".to_string()),
+            exact: true,
+            ..Default::default()
+        };
+        let exact = RunnableFilters {
+            name: Some("my function".to_string()),
+            exact: true,
+            ..Default::default()
+        };
+        let runnable = sample_runnable(
+            RunnableKind::Test {
+                test_name: "my_function".to_string(),
+                is_async: false,
+            },
+            "Run test 'my_function'",
+            "crate::tests",
+            Some("my_function"),
+        );
+
+        assert!(!fuzzy.matches(&runnable));
+        assert!(exact.matches(&runnable));
+    }
+
+    #[test]
+    fn symbol_filter_targets_doc_test_symbols_only() {
+        let filters = RunnableFilters {
+            symbol: Some("Users".to_string()),
+            ..Default::default()
+        };
+        let doc_symbol = sample_runnable(
+            RunnableKind::DocTest {
+                struct_or_module_name: "Users".to_string(),
+                method_name: None,
+            },
+            "Run doc test for 'Users'",
+            "crate::models",
+            Some("Users"),
+        );
+        let doc_method = sample_runnable(
+            RunnableKind::DocTest {
+                struct_or_module_name: "Users".to_string(),
+                method_name: Some("new".to_string()),
+            },
+            "Run doc test for 'Users::new'",
+            "crate::models",
+            Some("Users"),
+        );
+
+        assert!(filters.matches(&doc_symbol));
+        assert!(!filters.matches(&doc_method));
+    }
+
+    #[test]
+    fn kind_filters_can_be_combined_with_name_and_symbol_filters() {
+        let filters = RunnableFilters {
+            bin: true,
+            test: true,
+            name: Some("app".to_string()),
+            symbol: Some("Users".to_string()),
+            ..Default::default()
+        };
+        let test_runnable = sample_runnable(
+            RunnableKind::Test {
+                test_name: "test_add".to_string(),
+                is_async: false,
+            },
+            "Run test 'test_add'",
+            "crate::tests",
+            Some("test_add"),
+        );
+        let binary_runnable = sample_runnable(
+            RunnableKind::Binary {
+                bin_name: Some("app".to_string()),
+            },
+            "Run binary 'app'",
+            "crate::main",
+            Some("app"),
+        );
+        let symbol_runnable = sample_runnable(
+            RunnableKind::DocTest {
+                struct_or_module_name: "Users".to_string(),
+                method_name: None,
+            },
+            "Run doc test for 'Users'",
+            "crate::models",
+            Some("Users"),
+        );
+
+        assert!(!filters.matches(&test_runnable));
+        assert!(!filters.matches(&binary_runnable));
+        assert!(!filters.matches(&symbol_runnable));
+    }
+}
+
 pub fn print_formatted_analysis(
     runner: &mut cargo_runner_core::UnifiedRunner,
     filepath: &str,
     line: Option<usize>,
+    filters: RunnableFilters,
     show_config: bool,
 ) -> Result<()> {
     println!(
@@ -237,6 +484,8 @@ pub fn print_formatted_analysis(
         runner.detect_all_runnables(path)?
     };
 
+    runnables.retain(|r| filters.matches(r));
+
     // When analyzing a specific line, filter to the most specific runnable
     if line.is_some() && runnables.len() > 1 {
         // For doc tests, prefer more specific ones (e.g., User::new over User)
@@ -274,12 +523,12 @@ pub fn print_formatted_analysis(
     if runnables.is_empty() {
         if let Some(line_num) = line {
             println!(
-                "\n❌ No specific runnables found at line {} (but file-level command above can be used).",
+                "\n❌ No runnable items matched the filters at line {} (but file-level command above can be used).",
                 line_num + 1
             );
         } else {
             println!(
-                "\n❌ No specific runnables found in this file (but file-level command above can be used)."
+                "\n❌ No runnable items matched the filters in this file (but file-level command above can be used)."
             );
         }
     } else {

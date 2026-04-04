@@ -5,8 +5,8 @@ use tracing::info;
 use walkdir::WalkDir;
 
 use crate::commands::build_sync::{
-    build_file_header, build_file_header_with_build_script, infer_targets, render_managed_block,
-    BazelTarget,
+    BazelTarget, build_file_header, build_file_header_with_build_script, infer_targets,
+    render_managed_block,
 };
 use crate::config::bazel_workspace::{
     cargo_workspace_repo_name_for_path, crate_repo_name, find_cargo_workspace_root,
@@ -155,12 +155,12 @@ pub fn init_command(
             continue;
         }
 
-            let config = if is_workspace_only(cargo_toml)? {
-                create_workspace_config()
-            } else {
-                let package_name = get_package_name(cargo_toml)?;
-                create_default_config(&package_name)
-            };
+        let config = if is_workspace_only(cargo_toml)? {
+            create_workspace_config()
+        } else {
+            let package_name = get_package_name(cargo_toml)?;
+            create_default_config(&package_name)
+        };
 
         fs::write(&config_path, config)
             .with_context(|| format!("Failed to write config to {}", config_path.display()))?;
@@ -314,8 +314,7 @@ fn handle_bazel_init(
                 if targets.is_empty() {
                     println!("   ⚠️  no targets inferred for {}", member_name);
                 } else {
-                    let _local_deps =
-                        local_dependency_labels(&member_dir).unwrap_or_default();
+                    let _local_deps = local_dependency_labels(&member_dir).unwrap_or_default();
                     let has_build_script = targets
                         .iter()
                         .any(|t| matches!(t, BazelTarget::BuildScript));
@@ -354,12 +353,7 @@ fn handle_bazel_init(
         write_file_if(
             project_root,
             "BUILD.bazel",
-            &crate_build_content(
-                &pkg_name,
-                &repo_name,
-                has_lib && !has_main,
-                &local_deps,
-            ),
+            &crate_build_content(&pkg_name, &repo_name, has_lib && !has_main, &local_deps),
             force,
         )?;
     }
@@ -809,7 +803,14 @@ fn crate_build_content(pkg_name: &str, repo: &str, is_lib: bool, local_deps: &[S
     let local_deps_expr = if local_deps.is_empty() {
         String::new()
     } else {
-        format!("[{}] + ", local_deps.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(", "))
+        format!(
+            "[{}] + ",
+            local_deps
+                .iter()
+                .map(|d| format!("\"{d}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     };
     if is_lib {
         format!(

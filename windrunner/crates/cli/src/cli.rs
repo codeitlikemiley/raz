@@ -1,10 +1,14 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::{Path, PathBuf};
 
+use crate::commands::workspace::workspace_scan_roots;
 use crate::commands::{
     bazel_add_command, bazel_sync_command, build_sync_command, clean_command, context_command,
     init_command, override_command, run_command, runnables_command, unset_command, watch_command,
 };
+use crate::config::bazel_workspace::find_cargo_workspace_root;
+use crate::config::workspace::{find_cargo_package_root, resolve_default_run_for_package};
 
 #[derive(Parser)]
 #[command(bin_name = "cargo")]
@@ -38,6 +42,36 @@ pub enum Commands {
         /// If omitted, scans the current Cargo workspace members from the cwd upward.
         filepath: Option<String>,
 
+        /// Show only binaries.
+        #[arg(long)]
+        bin: bool,
+
+        /// Show only tests.
+        #[arg(long)]
+        test: bool,
+
+        /// Show only benchmarks.
+        #[arg(long)]
+        bench: bool,
+
+        /// Show only doc tests.
+        #[arg(long = "doc", alias = "docs")]
+        doc: bool,
+
+        /// Filter by name, module path, or label using a case-insensitive
+        /// punctuation-insensitive substring match.
+        #[arg(long, value_name = "QUERY")]
+        name: Option<String>,
+
+        /// Filter by symbol name, such as a struct, enum, union, or module
+        /// doc-test symbol.
+        #[arg(long, value_name = "SYMBOL")]
+        symbol: Option<String>,
+
+        /// Require an exact normalized name match instead of substring matching.
+        #[arg(long)]
+        exact: bool,
+
         /// Show verbose output with command details
         #[arg(short, long)]
         verbose: bool,
@@ -61,11 +95,13 @@ pub enum Commands {
     ///
     /// Intelligently dispatches to `cargo run`, `cargo test`, `cargo bench`,
     /// or the Bazel equivalent based on the file and project configuration.
-    /// Defaults to cwd entry point when no file is provided.
+    /// Defaults to the best entry point in the cwd, honoring Cargo
+    /// `default-run` when present.
     #[command(visible_alias = "r")]
     Run {
         /// Path to the Rust file with optional line number (e.g., src/main.rs:10).
-        /// Defaults to the cwd entry point (src/main.rs, src/lib.rs, or first .rs found).
+        /// Defaults to the cwd entry point, honoring Cargo `default-run`
+        /// before falling back to src/main.rs, src/lib.rs, or first .rs found.
         filepath: Option<String>,
 
         /// Print the command without executing it
@@ -284,13 +320,29 @@ impl Commands {
         match self {
             Commands::Runnables {
                 filepath,
+                bin,
+                test,
+                bench,
+                doc,
+                name,
+                symbol,
+                exact,
                 verbose,
                 config,
             } => {
+                let filters = crate::commands::analyze::RunnableFilters {
+                    bin,
+                    test,
+                    bench,
+                    doc,
+                    name,
+                    symbol,
+                    exact,
+                };
                 if let Some(fp) = filepath {
-                    runnables_command(Some(&fp), verbose, config)
+                    runnables_command(Some(&fp), filters, verbose, config)
                 } else {
-                    runnables_command(None, verbose, config)
+                    runnables_command(None, filters, verbose, config)
                 }
             }
             Commands::Context { filepath, json } => context_command(filepath.as_deref(), json),
@@ -376,15 +428,20 @@ impl Commands {
 /// If `arg` is `None`, auto-detect the best Rust entry point from cwd:
 ///   1. `src/main.rs`          — standard binary crate
 ///   2. `src/bin/<first>.rs`   — named binary (no main.rs)
-///   3. `src/lib.rs`           — library-only crate (maps to `cargo test`)
-///   4. First `*.rs` in `src/` — fallback for non-standard layouts
-///   5. First `*.rs` in cwd    — last resort
+///   3. Workspace member `src/main.rs` when standing at a workspace root
+///   4. `src/lib.rs`           — library-only crate (maps to `cargo test`)
+///   5. First `*.rs` in `src/` — fallback for non-standard layouts
+///   6. First `*.rs` in cwd    — last resort outside workspace roots
 fn resolve_filepath_arg(arg: Option<String>) -> anyhow::Result<String> {
     if let Some(path) = arg {
         return Ok(path);
     }
 
     let cwd = std::env::current_dir()?;
+
+    if let Some(entrypoint) = resolve_default_run_entrypoint(&cwd)? {
+        return Ok(entrypoint.to_string_lossy().into_owned());
+    }
 
     // 1. src/main.rs
     let main_rs = cwd.join("src/main.rs");
@@ -403,6 +460,17 @@ fn resolve_filepath_arg(arg: Option<String>) -> anyhow::Result<String> {
         if let Some(first) = bins.first() {
             return Ok(first.path().to_string_lossy().into_owned());
         }
+    }
+
+    if find_cargo_workspace_root(&cwd).as_deref() == Some(cwd.as_path()) {
+        if let Some(entrypoint) = resolve_workspace_binary_entrypoint(&cwd)? {
+            return Ok(entrypoint.to_string_lossy().into_owned());
+        }
+
+        anyhow::bail!(
+            "No default binary entry point found in this workspace root.\n\
+             Pass an explicit file or module path, e.g. `cargo runner run crates/cli/src/main.rs`."
+        );
     }
 
     // 3. src/lib.rs — library crate; cargo runner maps this to `cargo test`
@@ -440,4 +508,73 @@ fn resolve_filepath_arg(arg: Option<String>) -> anyhow::Result<String> {
          Hint: pass a file explicitly, e.g.  cargo runner run src/main.rs",
         cwd.display()
     )
+}
+
+fn resolve_workspace_binary_entrypoint(cwd: &Path) -> anyhow::Result<Option<PathBuf>> {
+    let Some(workspace_root) = find_cargo_workspace_root(cwd) else {
+        return Ok(None);
+    };
+    if workspace_root != cwd {
+        return Ok(None);
+    }
+
+    let scan_roots = workspace_scan_roots(&workspace_root)?;
+    let mut candidates = Vec::new();
+
+    for root in scan_roots {
+        let main_rs = root.join("src/main.rs");
+        if main_rs.exists() {
+            candidates.push(main_rs);
+        }
+    }
+
+    match candidates.len() {
+        0 => Ok(None),
+        1 => Ok(candidates.into_iter().next()),
+        _ => Err(anyhow::anyhow!(
+            "Workspace root has multiple binary entry points. Pass one explicitly:\n{}",
+            candidates
+                .into_iter()
+                .map(|p| format!("  - {}", p.display()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )),
+    }
+}
+
+fn resolve_default_run_entrypoint(cwd: &Path) -> anyhow::Result<Option<PathBuf>> {
+    if let Some(package_root) = find_cargo_package_root(cwd) {
+        return resolve_default_run_for_package(&package_root);
+    }
+
+    let Some(workspace_root) = find_cargo_workspace_root(cwd) else {
+        return Ok(None);
+    };
+    if workspace_root != cwd {
+        return Ok(None);
+    }
+
+    let scan_roots = workspace_scan_roots(&workspace_root)?;
+    let mut candidates = Vec::new();
+
+    for root in scan_roots {
+        match resolve_default_run_for_package(&root) {
+            Ok(Some(entrypoint)) => candidates.push(entrypoint),
+            Ok(None) => {}
+            Err(err) => return Err(err),
+        }
+    }
+
+    match candidates.len() {
+        0 => Ok(None),
+        1 => Ok(candidates.into_iter().next()),
+        _ => Err(anyhow::anyhow!(
+            "Multiple workspace packages declare default-run. Pass a file explicitly:\n{}",
+            candidates
+                .into_iter()
+                .map(|p| format!("  - {}", p.display()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )),
+    }
 }

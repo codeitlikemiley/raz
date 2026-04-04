@@ -239,7 +239,7 @@ pub fn create_bazel_config(workspace_name: &str) -> String {
                 "subcommand": "test",
                 "target": "{target}",
                 "args": ["--test_output", "streamed"],
-                "test_args": ["--nocapture", "--exact", "{test_filter}"]
+                "test_args": ["--nocapture", "{test_filter}"]
             },
             "binary_framework": {
                 "command": "bazel",

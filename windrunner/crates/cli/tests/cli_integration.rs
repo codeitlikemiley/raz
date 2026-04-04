@@ -95,6 +95,49 @@ edition = "2021"
     .unwrap();
 }
 
+/// Scaffold a workspace member with a default-run binary target.
+fn scaffold_workspace_member_default_run_binary(
+    dir: &std::path::Path,
+    member_dir: &str,
+    package_name: &str,
+    default_run: &str,
+) {
+    let member_path = dir.join(member_dir);
+    fs::create_dir_all(member_path.join("src/bin")).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        format!(
+            r#"[workspace]
+members = ["{member_dir}"]
+resolver = "2"
+"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        member_path.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "{package_name}"
+version = "0.1.0"
+edition = "2021"
+default-run = "{default_run}"
+"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        member_path.join("src/main.rs"),
+        "fn main() { println!(\"workspace member main\"); }\n",
+    )
+    .unwrap();
+    fs::write(
+        member_path.join(format!("src/bin/{default_run}.rs")),
+        format!("fn main() {{ println!(\"{default_run}\"); }}\n"),
+    )
+    .unwrap();
+}
+
 /// Scaffold a workspace member that exposes a nested module with tests.
 fn scaffold_workspace_member_module_tests(
     dir: &std::path::Path,
@@ -140,6 +183,36 @@ mod tests {
     #[test]
     fn test_helper() {
         assert_eq!(2 + 2, 4);
+    }
+}
+"#,
+    )
+    .unwrap();
+}
+
+/// Scaffold a library crate with a doc-tested struct symbol.
+fn scaffold_lib_project_with_doc_symbol(dir: &std::path::Path, name: &str) {
+    fs::create_dir_all(dir.join("src")).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "{name}"
+version = "0.1.0"
+edition = "2021"
+"#
+        ),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("src/lib.rs"),
+        r#"pub mod Users {
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn test_users() {
+            assert_eq!(2 + 2, 4);
+        }
     }
 }
 "#,
@@ -641,17 +714,22 @@ fn context_json_for_module_path() {
     scaffold_workspace_member_module_tests(tmp.path(), "crates/app", "workspace-app");
 
     cargo_runner()
-        .args(["runner", "context", "runners::unified_runner::tests", "--json"])
+        .args([
+            "runner",
+            "context",
+            "runners::unified_runner::tests",
+            "--json",
+        ])
         .env_remove("PROJECT_ROOT")
         .env_remove("PROJECT_DIR")
         .current_dir(tmp.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            r#""file_path": "#,
-        ))
+        .stdout(predicate::str::contains(r#""file_path": "#))
         .stdout(predicate::str::contains("src/runners/unified_runner.rs"))
-        .stdout(predicate::str::contains(r#""runnable_kind": "module_tests""#))
+        .stdout(predicate::str::contains(
+            r#""runnable_kind": "module_tests""#,
+        ))
         .stdout(predicate::str::contains(r#""build_system": "cargo""#));
 }
 
@@ -765,6 +843,83 @@ fn run_dry_run_module_path() {
         .assert()
         .success()
         .stdout(predicate::str::contains("cargo").and(predicate::str::contains("test")));
+}
+
+#[test]
+fn run_dry_run_honors_default_run() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_workspace_member_default_run_binary(
+        tmp.path(),
+        "crates/app",
+        "workspace-app",
+        "server",
+    );
+
+    cargo_runner()
+        .args(["run", "--dry-run"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("cargo")
+                .and(predicate::str::contains("--bin server"))
+                .and(predicate::str::contains("workspace-app")),
+        );
+}
+
+#[test]
+fn run_dry_run_bare_test_function_name() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_workspace_member_module_tests(tmp.path(), "crates/app", "workspace-app");
+
+    cargo_runner()
+        .args(["run", "test_helper", "--dry-run"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "cargo test --package workspace-app --lib -- runners::unified_runner::tests::test_helper --exact",
+        ));
+}
+
+#[test]
+fn run_dry_run_full_test_selector() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_workspace_member_module_tests(tmp.path(), "crates/app", "workspace-app");
+
+    cargo_runner()
+        .args([
+            "run",
+            "runners::unified_runner::tests::test_helper",
+            "--dry-run",
+        ])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "cargo test --package workspace-app --lib -- runners::unified_runner::tests::test_helper --exact",
+        ));
+}
+
+#[test]
+fn runnables_symbol_filter_matches_module_name() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_lib_project_with_doc_symbol(tmp.path(), "test-doc-symbol");
+
+    cargo_runner()
+        .args(["runnables", "src/lib.rs", "--symbol", "Users"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Run all tests in module 'Users'"));
 }
 
 #[test]

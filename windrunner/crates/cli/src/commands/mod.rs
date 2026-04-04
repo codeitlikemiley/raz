@@ -5,6 +5,7 @@ pub mod build_sync;
 pub mod clean;
 pub mod context;
 pub mod init;
+pub mod matching;
 pub mod override_cmd;
 pub mod run;
 pub mod unset;

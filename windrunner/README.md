@@ -52,7 +52,7 @@ Used at the project level to configure how Bazel commands are built.
       "subcommand": "test",
       "target": "{target}",
       "args": ["--test_output", "streamed"],
-      "test_args": ["--nocapture", "--exact", "{test_filter}"]
+      "test_args": ["--nocapture", "{test_filter}"]
     },
     "binary_framework": {
       "command": "bazel",
@@ -340,7 +340,7 @@ Deduplication is name-aware and content-aware:
 | `cargo runner clean` | Context-aware clean: `bazel clean` (Bazel) or `cargo clean` (Cargo) |
 | `cargo runner watch` | Context-aware file watcher: `ibazel` (Bazel) or `cargo watch` (Cargo) |
 | `cargo runner run <file\|module::path>[:<line>]` | Scope-based execution: detects build system and runs the target at the given line or module path |
-| `cargo runner runnables [file\|module::path[:line]]` | List runnable items for a file, module path, or entire workspace |
+| `cargo runner runnables [file\|module::path[:line]] [--bin] [--test] [--bench] [--doc] [--name QUERY] [--symbol SYMBOL] [--exact]` | List runnable items for a file, module path, or entire workspace |
 | `cargo runner context [file\|module::path[:line]] --json` | Emit machine-readable project/file context for TMP and other tooling |
 
 ---
@@ -376,6 +376,10 @@ When the input is not an existing file, `cargo runner` scans the current
 workspace members, matches the runnable `module_path`, and resolves the owning
 file before building the final command or context.
 
+When `cargo runner run` is called without a file, it now prefers Cargo
+`default-run` targets first, then falls back to the usual `src/main.rs` /
+workspace binary heuristics.
+
 ### Waz integration
 
 If you use `waz`, the same lookup model is available there too:
@@ -394,6 +398,23 @@ want to run.
 `waz runnables` is the companion listing command when you want to inspect the
 available run targets first, either for the whole workspace or for a specific
 module path.
+
+`--bin`, `--test`, `--bench`, and `--doc` narrow the result set by runnable
+kind. `--name` does a case-insensitive, punctuation-insensitive substring
+match against the label, module path, and function name. Add `--exact` to
+require the normalized name to match exactly instead of by substring, so
+`foo bar`, `foo_bar`, and `FooBar` still collapse to the same search key but
+`foo` will no longer match `foobar` when `--exact` is present.
+
+`--symbol` filters symbol-like targets, such as doc-tested structs, enums,
+unions, module test groups, and binary names. It can be combined with `--name`
+and the kind filters.
+
+`cargo runner run` accepts the same selector styles:
+
+- bare function or method name: `cargo runner run test_helper`
+- full module path plus function: `cargo runner run runners::unified_runner::tests::test_helper`
+- doc-test symbol: `cargo runner run Users`
 
 ### Single-file scripts
 
@@ -455,7 +476,7 @@ The resolver pipeline evaluates in priority order:
 Templates use `{placeholder}` syntax with conditionals:
 
 ```
-{cmd?bazel} test {target} {?test_output:--test_output={test_output}} {?test_filter:--test_arg=--exact --test_arg={test_filter}}
+{cmd?bazel} test {target} {?test_output:--test_output={test_output}} {?test_filter:--test_arg={test_filter}}
 ```
 
 Render:

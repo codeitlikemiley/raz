@@ -99,7 +99,10 @@ pub fn resolve_module_path_to_file(
     let matches = find_files_for_module_path(runner, module_path, cwd)?;
 
     match matches.len() {
-        0 => Err(anyhow::anyhow!("No file found for module path: {}", module_path)),
+        0 => Err(anyhow::anyhow!(
+            "No file found for module path: {}",
+            module_path
+        )),
         1 => Ok(matches.into_iter().next().unwrap()),
         _ => {
             let paths = matches

@@ -31,7 +31,7 @@ rust_binary(
 rust_test_suite(
     name = "integration_tests",
     srcs = glob(["tests/**/*.rs"]),
-    deps = all_crate_deps(normal_dev = True),
+    deps = [":cargo-runner_lib"] + all_crate_deps(normal_dev = True),
 )
 
 # END raz-managed

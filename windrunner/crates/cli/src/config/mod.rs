@@ -11,4 +11,6 @@ pub use templates::{
     create_bazel_config, create_combined_config, create_rustc_config,
     create_single_file_script_config,
 };
-pub use workspace::{get_package_name, is_workspace_only, local_dependency_labels, rust_crate_name};
+pub use workspace::{
+    get_package_name, is_workspace_only, local_dependency_labels, rust_crate_name,
+};

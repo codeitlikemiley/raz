@@ -133,6 +133,34 @@ mod tests {
     }
 
     #[test]
+    fn test_module_tests_do_not_use_exact_filter() {
+        let runnable = create_test_runnable(
+            "src/lib.rs",
+            RunnableKind::ModuleTests {
+                module_name: "tests".to_string(),
+            },
+            "runners::unified_runner::tests",
+        );
+
+        let config = Config::default();
+
+        let command = <BazelCommandBuilder as CommandBuilderImpl>::build(
+            &runnable,
+            None,
+            &config,
+            FileType::CargoProject,
+        )
+        .unwrap();
+
+        assert_eq!(command.command_type, CommandType::Bazel);
+        assert_eq!(command.args[0], "test");
+        assert!(
+            !command.args.iter().any(|arg| arg == "--exact"),
+            "Module test runs should not use --exact"
+        );
+    }
+
+    #[test]
     fn test_working_directory_set() {
         // Create a temporary directory structure with MODULE.bazel
         let temp_dir = tempfile::TempDir::new().unwrap();
