@@ -383,11 +383,17 @@ If you use `waz`, the same lookup model is available there too:
 ```bash
 waz run src/main.rs:25
 waz run runners::unified_runner::tests
+waz runnables
+waz runnables runners::unified_runner::tests
 ```
 
 `waz run` is the non-interactive path; it reuses the same project and
 module-path resolution so you can skip the TUI when you already know what you
 want to run.
+
+`waz runnables` is the companion listing command when you want to inspect the
+available run targets first, either for the whole workspace or for a specific
+module path.
 
 ### Single-file scripts
 
