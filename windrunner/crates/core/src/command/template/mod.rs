@@ -213,7 +213,15 @@ mod tests {
     #[test]
     fn test_placeholder_resolved() {
         let t = CommandTemplate::parse("{cmd?cargo} test").unwrap();
-        let result = t.render(|ph| if ph == "cmd" { Some("bazel".to_string()) } else { None }).unwrap();
+        let result = t
+            .render(|ph| {
+                if ph == "cmd" {
+                    Some("bazel".to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
         assert_eq!(result, "bazel test");
     }
 
@@ -221,7 +229,13 @@ mod tests {
     fn test_conditional_block_present() {
         let t = CommandTemplate::parse("cargo test {?package:--package {package}}").unwrap();
         let result = t
-            .render(|ph| if ph == "package" { Some("myapp".to_string()) } else { None })
+            .render(|ph| {
+                if ph == "package" {
+                    Some("myapp".to_string())
+                } else {
+                    None
+                }
+            })
             .unwrap();
         assert_eq!(result, "cargo test --package myapp");
     }
@@ -241,7 +255,13 @@ mod tests {
         )
         .unwrap();
         let result = t
-            .render(|ph| if ph == "filter" { Some("foo".to_string()) } else { None })
+            .render(|ph| {
+                if ph == "filter" {
+                    Some("foo".to_string())
+                } else {
+                    None
+                }
+            })
             .unwrap();
         // No double-space where package block was absent
         assert!(!result.contains("  "));

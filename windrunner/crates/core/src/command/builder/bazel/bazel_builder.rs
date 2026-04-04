@@ -109,10 +109,13 @@ impl BazelCommandBuilder {
         file_type: FileType,
     ) -> Result<CargoCommand> {
         tracing::debug!("build_module_tests_command called");
-        
+
         // Check if this is a benchmark file - if so, we should run the binary instead
-        let is_benchmark_file = runnable.file_path.components().any(|c| c.as_os_str() == "benches");
-        
+        let is_benchmark_file = runnable
+            .file_path
+            .components()
+            .any(|c| c.as_os_str() == "benches");
+
         if is_benchmark_file {
             tracing::debug!("Detected benchmark file - redirecting to binary command");
             // For benchmark files, run the binary instead of tests
@@ -163,29 +166,38 @@ impl BazelCommandBuilder {
         tracing::debug!("build_binary_command called for binary: {:?}", bin_name);
 
         // Check if this is a build.rs file
-        let is_build_script = runnable.file_path.file_name().map(|f| f == "build.rs").unwrap_or(false);
-        
+        let is_build_script = runnable
+            .file_path
+            .file_name()
+            .map(|f| f == "build.rs")
+            .unwrap_or(false);
+
         // Check if this is a benchmark file
-        let is_benchmark_file = runnable.file_path.components().any(|c| c.as_os_str() == "benches");
-        
+        let is_benchmark_file = runnable
+            .file_path
+            .components()
+            .any(|c| c.as_os_str() == "benches");
+
         // Get the binary framework or use defaults
         let mut framework = bazel_config
             .and_then(|bc| bc.binary_framework.clone())
             .unwrap_or_else(|| BazelConfig::default_binary_framework());
-            
+
         // For build scripts, override the subcommand to 'build'
         if is_build_script {
             framework.subcommand = Some("build".to_string());
             tracing::debug!("Using 'bazel build' for build.rs file");
         }
-        
+
         // For benchmark files, add optimization flag
         if is_benchmark_file {
             if framework.args.is_none() {
                 framework.args = Some(vec![]);
             }
             if let Some(ref mut args) = framework.args {
-                if !args.contains(&"-c".to_string()) && !args.contains(&"--compilation_mode".to_string()) {
+                if !args.contains(&"-c".to_string())
+                    && !args.contains(&"--compilation_mode".to_string())
+                {
                     args.insert(0, "-c".to_string());
                     args.insert(1, "opt".to_string());
                     tracing::debug!("Added optimization flag for benchmark binary");
@@ -275,52 +287,55 @@ impl BazelCommandBuilder {
 
         if let Some(workspace_root) = workspace_root {
             let mut finder = BazelTargetFinder::new()?;
-            if let Some(doc_test_target) = finder.find_doc_test_target(
-                &abs_file_path,
-                workspace_root,
-            )? {
+            if let Some(doc_test_target) =
+                finder.find_doc_test_target(&abs_file_path, workspace_root)?
+            {
                 // Found a rust_doc_test target!
                 tracing::debug!("Found rust_doc_test target: {}", doc_test_target.label);
-                
+
                 // Build command to run the doc test target
                 let mut args = vec!["test".to_string(), doc_test_target.label];
-                
+
                 // Add standard test output streaming
                 args.push("--test_output".to_string());
                 args.push("streamed".to_string());
-                
+
                 // Get the doc test framework or use defaults
                 let framework = bazel_config
                     .and_then(|bc| bc.doc_test_framework.clone())
                     .unwrap_or_else(|| BazelConfig::default_doc_test_framework());
-                
+
                 // Add extra args from framework
                 if let Some(extra_args) = &framework.extra_args {
                     args.extend(extra_args.clone());
                 }
-                
+
                 let mut command = CargoCommand::new_bazel(args);
-                
+
                 // Apply environment variables
                 if let Some(env) = &framework.extra_env {
                     for (key, value) in env {
                         command.env.push((key.clone(), value.clone()));
                     }
                 }
-                
+
                 // Apply overrides
                 self.apply_overrides(&mut command, runnable, config, file_type);
-                
+
                 // Note: Bazel doesn't support running individual doc tests
                 // If this is a specific doc test (not file-level), we should inform the user
-                if let RunnableKind::DocTest { method_name: Some(_), .. } = &runnable.kind {
+                if let RunnableKind::DocTest {
+                    method_name: Some(_),
+                    ..
+                } = &runnable.kind
+                {
                     // Add a comment in the environment that can be checked by the CLI
                     command.env.push((
                         "_BAZEL_DOC_TEST_LIMITATION".to_string(),
-                        "Bazel runs all doc tests together, not individual ones".to_string()
+                        "Bazel runs all doc tests together, not individual ones".to_string(),
                     ));
                 }
-                
+
                 return Ok(command);
             }
         }
@@ -437,13 +452,16 @@ impl BazelCommandBuilder {
                 .map(|cwd| cwd.join(&runnable.file_path))
                 .unwrap_or_else(|| runnable.file_path.clone())
         };
-        
+
         if let Some(workspace_root) = abs_path
             .ancestors()
-            .find(|p| p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists()) 
+            .find(|p| p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists())
         {
             command.working_dir = Some(workspace_root.to_string_lossy().to_string());
-            tracing::debug!("Set working directory for Bazel command: {:?}", workspace_root);
+            tracing::debug!(
+                "Set working directory for Bazel command: {:?}",
+                workspace_root
+            );
         }
 
         // Apply environment variables
@@ -473,89 +491,127 @@ impl BazelCommandBuilder {
                 .map(|cwd| cwd.join(&runnable.file_path))
                 .unwrap_or_else(|| runnable.file_path.clone())
         };
-        
-        tracing::debug!("determine_target: file_path={:?}, abs_file_path={:?}, is_test={}", 
-                      runnable.file_path, abs_file_path, is_test);
-        
+
+        tracing::debug!(
+            "determine_target: file_path={:?}, abs_file_path={:?}, is_test={}",
+            runnable.file_path,
+            abs_file_path,
+            is_test
+        );
+
         // Find the workspace root
         let workspace_root = abs_file_path
             .ancestors()
             .find(|p| p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists());
-            
+
         if let Some(workspace_root) = workspace_root {
             tracing::debug!("Found workspace root: {:?}", workspace_root);
-            
+
             match BazelTargetFinder::new() {
                 Ok(mut finder) => {
                     tracing::debug!("Successfully created BazelTargetFinder");
-                    
+
                     // Check if this is a build.rs file
-                    if !is_test && runnable.file_path.file_name().map(|f| f == "build.rs").unwrap_or(false) {
+                    if !is_test
+                        && runnable
+                            .file_path
+                            .file_name()
+                            .map(|f| f == "build.rs")
+                            .unwrap_or(false)
+                    {
                         tracing::debug!("Looking for cargo_build_script target for build.rs");
-                        
+
                         // Find all targets for this file
-                        if let Ok(targets) = finder.find_targets_for_file(&abs_file_path, workspace_root) {
+                        if let Ok(targets) =
+                            finder.find_targets_for_file(&abs_file_path, workspace_root)
+                        {
                             // Look for a cargo_build_script target
                             for target in targets {
                                 if matches!(target.kind, BazelTargetKind::BuildScript) {
-                                    tracing::info!("Found cargo_build_script target: {}", target.label);
+                                    tracing::info!(
+                                        "Found cargo_build_script target: {}",
+                                        target.label
+                                    );
                                     return target.label;
                                 }
                             }
                         }
-                        
+
                         tracing::warn!("No cargo_build_script target found for build.rs");
-                        tracing::warn!("Make sure your BUILD.bazel contains a cargo_build_script rule");
+                        tracing::warn!(
+                            "Make sure your BUILD.bazel contains a cargo_build_script rule"
+                        );
                     }
-                    
+
                     // First, check if this is an integration test (in tests/ directory)
-                    let has_tests_component = runnable.file_path.components().any(|c| c.as_os_str() == "tests");
+                    let has_tests_component = runnable
+                        .file_path
+                        .components()
+                        .any(|c| c.as_os_str() == "tests");
                     tracing::debug!("Has tests component: {}", has_tests_component);
-                
-                if is_test && has_tests_component {
-                    tracing::info!("Looking for integration test target for file: {:?}", abs_file_path);
-                    match finder.find_integration_test_target(&abs_file_path, workspace_root) {
-                        Ok(Some(target)) => {
-                            tracing::info!("Found integration test target from BUILD file: {}", target.label);
-                            return target.label;
-                        }
-                        Ok(None) => {
-                            tracing::warn!("No integration test target found for file: {:?}", abs_file_path);
-                            tracing::warn!("Make sure BUILD.bazel contains rust_test_suite with appropriate glob pattern");
-                            
-                            // Try to list what targets were found
-                            if let Ok(all_targets) = finder.find_targets_for_file(&abs_file_path, workspace_root) {
-                                if all_targets.is_empty() {
-                                    tracing::warn!("No targets found that include this file");
-                                } else {
-                                    tracing::warn!("Found {} targets but none are rust_test_suite:", all_targets.len());
-                                    for target in all_targets {
-                                        tracing::warn!("  - {} ({:?})", target.label, target.kind);
+
+                    if is_test && has_tests_component {
+                        tracing::info!(
+                            "Looking for integration test target for file: {:?}",
+                            abs_file_path
+                        );
+                        match finder.find_integration_test_target(&abs_file_path, workspace_root) {
+                            Ok(Some(target)) => {
+                                tracing::info!(
+                                    "Found integration test target from BUILD file: {}",
+                                    target.label
+                                );
+                                return target.label;
+                            }
+                            Ok(None) => {
+                                tracing::warn!(
+                                    "No integration test target found for file: {:?}",
+                                    abs_file_path
+                                );
+                                tracing::warn!(
+                                    "Make sure BUILD.bazel contains rust_test_suite with appropriate glob pattern"
+                                );
+
+                                // Try to list what targets were found
+                                if let Ok(all_targets) =
+                                    finder.find_targets_for_file(&abs_file_path, workspace_root)
+                                {
+                                    if all_targets.is_empty() {
+                                        tracing::warn!("No targets found that include this file");
+                                    } else {
+                                        tracing::warn!(
+                                            "Found {} targets but none are rust_test_suite:",
+                                            all_targets.len()
+                                        );
+                                        for target in all_targets {
+                                            tracing::warn!(
+                                                "  - {} ({:?})",
+                                                target.label,
+                                                target.kind
+                                            );
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            tracing::error!("Error finding integration test target: {}", e);
+                            Err(e) => {
+                                tracing::error!("Error finding integration test target: {}", e);
+                            }
                         }
                     }
-                }
-                
-                // Try to find any runnable target for this file
-                let kind_filter = if is_test {
-                    Some(BazelTargetKind::Test)
-                } else {
-                    Some(BazelTargetKind::Binary)
-                };
-                
-                if let Ok(Some(target)) = finder.find_runnable_target(
-                    &abs_file_path,
-                    workspace_root,
-                    kind_filter,
-                ) {
-                    tracing::debug!("Found target from BUILD file: {}", target.label);
-                    return target.label;
-                }
+
+                    // Try to find any runnable target for this file
+                    let kind_filter = if is_test {
+                        Some(BazelTargetKind::Test)
+                    } else {
+                        Some(BazelTargetKind::Binary)
+                    };
+
+                    if let Ok(Some(target)) =
+                        finder.find_runnable_target(&abs_file_path, workspace_root, kind_filter)
+                    {
+                        tracing::debug!("Found target from BUILD file: {}", target.label);
+                        return target.label;
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Failed to create BazelTargetFinder: {}", e);
@@ -611,11 +667,14 @@ impl BazelCommandBuilder {
         } else if is_test && file_path.to_string_lossy().contains("/tests/") {
             // For integration tests, we should have found a rust_test_suite target
             // If we're here, it means no target was found
-            tracing::error!("No rust_test_suite target found for integration test: {:?}", file_path);
+            tracing::error!(
+                "No rust_test_suite target found for integration test: {:?}",
+                file_path
+            );
             tracing::error!("Make sure your BUILD.bazel file contains a rust_test_suite rule");
             tracing::error!("Looking for file: {:?}", abs_file_path);
             tracing::error!("Workspace root used: {:?}", workspace_root);
-            
+
             // Try to provide more helpful error information
             if let Some(ws_root) = workspace_root {
                 // Find the BUILD file that should contain the target
@@ -628,13 +687,16 @@ impl BazelCommandBuilder {
                     let build = dir.join("BUILD");
                     if build_bazel.exists() || build.exists() {
                         tracing::error!("Found BUILD file at: {:?}", dir);
-                        tracing::error!("This BUILD file should contain a rust_test_suite rule with glob pattern matching {:?}", file_path.file_name());
+                        tracing::error!(
+                            "This BUILD file should contain a rust_test_suite rule with glob pattern matching {:?}",
+                            file_path.file_name()
+                        );
                         break;
                     }
                     current = dir.parent();
                 }
             }
-            
+
             // Return a generic target that will likely fail with a clear error
             ":integration_tests_not_found".to_string()
         } else if is_test {
@@ -677,60 +739,77 @@ impl BazelCommandBuilder {
         // Pre-compute target components.
         let (package, target_name) = if target.contains(':') {
             let mut parts = target.splitn(2, ':');
-            (
-                parts.next().unwrap_or(""),
-                parts.next().unwrap_or(target),
-            )
+            (parts.next().unwrap_or(""), parts.next().unwrap_or(target))
         } else {
             ("", target)
         };
 
-        let file_name_owned   = file_name.to_string();
-        let parent_dir_owned  = parent_dir.to_string();
-        let target_owned      = target.to_string();
+        let file_name_owned = file_name.to_string();
+        let parent_dir_owned = parent_dir.to_string();
+        let target_owned = target.to_string();
         let target_name_owned = target_name.to_string();
-        let package_owned     = package.to_string();
+        let package_owned = package.to_string();
         let module_path_owned = module_path.to_string();
-        let file_path_str     = file_path.to_str().unwrap_or("").to_string();
+        let file_path_str = file_path.to_str().unwrap_or("").to_string();
         let test_filter_owned = test_filter.unwrap_or("").to_string();
-        let binary_owned      = binary_name.unwrap_or(file_name).to_string();
+        let binary_owned = binary_name.unwrap_or(file_name).to_string();
 
         // Try the template engine first; fall back to legacy string-replace on parse error.
         match CommandTemplate::parse(template) {
             Ok(tmpl) => {
                 match tmpl.render(|ph| match ph {
-                    "target"       => Some(target_owned.clone()),
-                    "target_name"  => Some(target_name_owned.clone()),
-                    "package"      => Some(package_owned.clone()),
-                    "file_path"    => Some(file_path_str.clone()),
-                    "file_name"    => Some(file_name_owned.clone()),
-                    "parent_dir"   => Some(parent_dir_owned.clone()),
-                    "test_filter"
-                    | "test_name"
-                    | "bench_filter" => {
-                        if test_filter_owned.is_empty() { None } else { Some(test_filter_owned.clone()) }
+                    "target" => Some(target_owned.clone()),
+                    "target_name" => Some(target_name_owned.clone()),
+                    "package" => Some(package_owned.clone()),
+                    "file_path" => Some(file_path_str.clone()),
+                    "file_name" => Some(file_name_owned.clone()),
+                    "parent_dir" => Some(parent_dir_owned.clone()),
+                    "test_filter" | "test_name" | "bench_filter" => {
+                        if test_filter_owned.is_empty() {
+                            None
+                        } else {
+                            Some(test_filter_owned.clone())
+                        }
                     }
-                    "module_path"  => Some(module_path_owned.clone()),
-                    "binary_name"  => Some(binary_owned.clone()),
-                    _              => None,
+                    "module_path" => Some(module_path_owned.clone()),
+                    "binary_name" => Some(binary_owned.clone()),
+                    _ => None,
                 }) {
                     Ok(rendered) => rendered,
                     Err(e) => {
-                        tracing::warn!("BazelCommandBuilder: template render failed ({e}), using legacy expand");
+                        tracing::warn!(
+                            "BazelCommandBuilder: template render failed ({e}), using legacy expand"
+                        );
                         Self::legacy_expand(
-                            template, &target_owned, &target_name_owned, &package_owned,
-                            &file_path_str, &file_name_owned, &parent_dir_owned,
-                            &test_filter_owned, &module_path_owned, &binary_owned,
+                            template,
+                            &target_owned,
+                            &target_name_owned,
+                            &package_owned,
+                            &file_path_str,
+                            &file_name_owned,
+                            &parent_dir_owned,
+                            &test_filter_owned,
+                            &module_path_owned,
+                            &binary_owned,
                         )
                     }
                 }
             }
             Err(e) => {
-                tracing::warn!("BazelCommandBuilder: template parse failed ({e}), using legacy expand");
+                tracing::warn!(
+                    "BazelCommandBuilder: template parse failed ({e}), using legacy expand"
+                );
                 Self::legacy_expand(
-                    template, &target_owned, &target_name_owned, &package_owned,
-                    &file_path_str, &file_name_owned, &parent_dir_owned,
-                    &test_filter_owned, &module_path_owned, &binary_owned,
+                    template,
+                    &target_owned,
+                    &target_name_owned,
+                    &package_owned,
+                    &file_path_str,
+                    &file_name_owned,
+                    &parent_dir_owned,
+                    &test_filter_owned,
+                    &module_path_owned,
+                    &binary_owned,
                 )
             }
         }
@@ -793,21 +872,19 @@ impl BazelCommandBuilder {
                 // Use the new target finder
                 if let Ok(mut finder) = BazelTargetFinder::new() {
                     // Find the workspace root
-                    let workspace_root = project_dir
-                        .ancestors()
-                        .find(|p| p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists())?;
-                    
+                    let workspace_root = project_dir.ancestors().find(|p| {
+                        p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists()
+                    })?;
+
                     let kind_filter = if is_test {
                         Some(BazelTargetKind::Test)
                     } else {
                         Some(BazelTargetKind::Binary)
                     };
-                    
-                    if let Ok(Some(target)) = finder.find_runnable_target(
-                        abs_file_path,
-                        workspace_root,
-                        kind_filter,
-                    ) {
+
+                    if let Ok(Some(target)) =
+                        finder.find_runnable_target(abs_file_path, workspace_root, kind_filter)
+                    {
                         return Some(target.label);
                     }
                 }

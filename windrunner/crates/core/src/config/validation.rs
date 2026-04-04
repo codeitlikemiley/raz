@@ -226,7 +226,6 @@ impl ConfigValidator for MainConfigValidator {
             }
         }
 
-
         Ok(())
     }
 }

@@ -48,7 +48,10 @@ impl TemplateRenderer {
                 Ok(value)
             }
 
-            TemplatePart::OptionalWrapper { placeholder, template } => {
+            TemplatePart::OptionalWrapper {
+                placeholder,
+                template,
+            } => {
                 // Only render the inner template if the placeholder resolves
                 if resolver(placeholder).is_some() {
                     let rendered = Self::render_parts(&template.parts, resolver)?;
@@ -122,7 +125,11 @@ mod tests {
     fn test_renders_placeholder_resolved() {
         let t = CommandTemplate::parse("{cmd?bazel} test").unwrap();
         let result = TemplateRenderer::render(&t, |ph| {
-            if ph == "cmd" { Some("bazelisk".to_string()) } else { None }
+            if ph == "cmd" {
+                Some("bazelisk".to_string())
+            } else {
+                None
+            }
         })
         .unwrap();
         assert_eq!(result, "bazelisk test");
@@ -132,7 +139,11 @@ mod tests {
     fn test_optional_wrapper_present() {
         let t = CommandTemplate::parse("cargo test {?pkg:--package {pkg}}").unwrap();
         let result = TemplateRenderer::render(&t, |ph| {
-            if ph == "pkg" { Some("myapp".to_string()) } else { None }
+            if ph == "pkg" {
+                Some("myapp".to_string())
+            } else {
+                None
+            }
         })
         .unwrap();
         assert_eq!(result, "cargo test --package myapp");
@@ -148,9 +159,14 @@ mod tests {
     #[test]
     fn test_conditional_with_else_true_branch() {
         let t = CommandTemplate::parse("{?release:--release|--debug}").unwrap();
-        let result =
-            TemplateRenderer::render(&t, |ph| if ph == "release" { Some("1".to_string()) } else { None })
-                .unwrap();
+        let result = TemplateRenderer::render(&t, |ph| {
+            if ph == "release" {
+                Some("1".to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap();
         assert_eq!(result, "--release");
     }
 
@@ -164,10 +180,7 @@ mod tests {
     #[test]
     fn test_whitespace_normalization() {
         // Multiple absent optional blocks should not leave double-spaces
-        let t = CommandTemplate::parse(
-            "cargo {?a:--flag-a} {?b:--flag-b} test",
-        )
-        .unwrap();
+        let t = CommandTemplate::parse("cargo {?a:--flag-a} {?b:--flag-b} test").unwrap();
         let result = TemplateRenderer::render(&t, empty).unwrap();
         assert!(!result.contains("  "), "double space found in: {result:?}");
         assert_eq!(result, "cargo test");

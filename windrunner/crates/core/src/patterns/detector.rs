@@ -78,12 +78,12 @@ impl RunnableDetector {
                 // Prioritize by scope type first (Function > Impl > Struct), then by size
                 .min_by(|a, b| {
                     use std::cmp::Ordering;
-                    
+
                     // First, prioritize by scope kind
                     let priority_a = match a.scope.kind {
-                        ScopeKind::Function => 0,  // Highest priority
-                        ScopeKind::Impl => 1,      // Medium priority
-                        ScopeKind::Struct => 2,    // Lower priority
+                        ScopeKind::Function => 0, // Highest priority
+                        ScopeKind::Impl => 1,     // Medium priority
+                        ScopeKind::Struct => 2,   // Lower priority
                         _ => 3,
                     };
                     let priority_b = match b.scope.kind {
@@ -92,7 +92,7 @@ impl RunnableDetector {
                         ScopeKind::Struct => 2,
                         _ => 3,
                     };
-                    
+
                     match priority_a.cmp(&priority_b) {
                         Ordering::Equal => {
                             // If same priority, prefer smaller scope (more specific)

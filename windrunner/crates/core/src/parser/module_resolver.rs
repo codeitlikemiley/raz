@@ -132,7 +132,7 @@ impl ModuleResolver {
             if path_without_ext == "main" || path_without_ext == "lib" {
                 return Ok(components);
             }
-            
+
             // Handle binary files in src/bin/
             if path_without_ext.starts_with("bin/") {
                 // For files in src/bin/, we don't include the bin prefix in the module path
@@ -225,19 +225,29 @@ impl ModuleResolver {
             start_path.to_path_buf()
         };
 
-        // Determine the search boundary
-        let boundary = if let Ok(project_root) = std::env::var("PROJECT_ROOT") {
-            PathBuf::from(project_root)
-        } else if let Ok(home) = std::env::var("HOME") {
-            PathBuf::from(home)
-        } else if let Ok(user_profile) = std::env::var("USERPROFILE") {
-            // Windows fallback
-            PathBuf::from(user_profile)
-        } else {
-            // Last resort: try to detect home directory from current path
-            // This is a heuristic - if we're in /home/username or /Users/username, stop there
-            Self::detect_home_from_path(&abs_path)?
-        };
+        // Only honor a search boundary when the target path actually lives under it.
+        // Some workspaces live outside HOME (for example under /Volumes or /tmp), and
+        // stopping at HOME in those cases prevents Cargo.toml discovery entirely.
+        let boundary = std::env::var("PROJECT_ROOT")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|root| abs_path.starts_with(root))
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(PathBuf::from)
+                    .filter(|home| abs_path.starts_with(home))
+            })
+            .or_else(|| {
+                std::env::var("USERPROFILE")
+                    .ok()
+                    .map(PathBuf::from)
+                    .filter(|profile| abs_path.starts_with(profile))
+            })
+            .or_else(|| {
+                Self::detect_home_from_path(&abs_path)
+                    .filter(|detected| abs_path.starts_with(detected))
+            });
 
         let mut current = if abs_path.is_file() {
             abs_path.parent()?
@@ -251,8 +261,9 @@ impl ModuleResolver {
                 return Some(cargo_toml);
             }
 
-            // Stop if we've reached the boundary
-            if current == boundary || !current.starts_with(&boundary) {
+            // Stop if we've reached the configured boundary. Without a boundary,
+            // keep walking until the filesystem root.
+            if boundary.as_ref().is_some_and(|limit| current == limit) {
                 return None;
             }
 
@@ -283,6 +294,7 @@ impl ModuleResolver {
 mod tests {
     use super::*;
     use crate::Position;
+    use tempfile::tempdir;
 
     #[test]
     fn test_file_module_path() {
@@ -413,11 +425,11 @@ mod tests {
         // Function names are not included in module paths - they're added by the command builder
         assert_eq!(module_path, "models::user::tests");
     }
-    
+
     #[test]
     fn test_bin_file_module_path() {
         let resolver = ModuleResolver::with_package_name("my_crate".to_string());
-        
+
         // Test that files in src/bin/ don't include 'bin' in the module path
         let scopes = vec![
             Scope {
@@ -457,22 +469,22 @@ mod tests {
                 name: Some("test_proxy_binary".to_string()),
             },
         ];
-        
+
         // Test src/bin/proxy.rs
         let file_path = Path::new("/project/src/bin/proxy.rs");
         let target = &scopes[2]; // test_proxy_binary
-        
+
         let module_path = resolver
             .resolve_module_path(file_path, &scopes, target)
             .unwrap();
         // The module path should NOT include 'bin::'
         assert_eq!(module_path, "tests");
     }
-    
+
     #[test]
     fn test_bin_subdir_module_path() {
         let resolver = ModuleResolver::with_package_name("my_crate".to_string());
-        
+
         // Test files in subdirectories under src/bin/
         let scopes = vec![
             Scope {
@@ -524,16 +536,39 @@ mod tests {
                 name: Some("test_server".to_string()),
             },
         ];
-        
+
         // Test src/bin/myapp/server.rs
         let file_path = Path::new("/project/src/bin/myapp/server.rs");
         let target = &scopes[3]; // test_server function
-        
+
         let module_path = resolver
             .resolve_module_path(file_path, &scopes, target)
             .unwrap();
         // For files under src/bin/, the bin/ prefix is excluded entirely
         // So the module path is just the inline modules
         assert_eq!(module_path, "server::tests");
+    }
+
+    #[test]
+    fn test_find_cargo_toml_outside_home_boundary() {
+        let dir = tempdir().unwrap();
+        let project = dir.path().join("workspace-app");
+        let src = project.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            project.join("Cargo.toml"),
+            r#"[package]
+name = "workspace-app"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        std::fs::write(src.join("main.rs"), "fn main() {}\n").unwrap();
+
+        let cargo_toml = ModuleResolver::find_cargo_toml(&src.join("main.rs"))
+            .expect("should find Cargo.toml even when the project is outside HOME");
+
+        assert_eq!(cargo_toml, project.join("Cargo.toml"));
     }
 }

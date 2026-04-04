@@ -1,10 +1,11 @@
 //! Analyze Bazel rules to create target representations
 
+use super::rule_extractor::{AttributeValue, RuleCall};
+use super::rules::{
+    CargoBuildScriptHandler, RuleHandler, RustBenchmarkHandler, RustBinaryHandler,
+    RustDocTestHandler, RustLibraryHandler, RustTestHandler, RustTestSuiteHandler,
+};
 use std::collections::HashMap;
-use super::rule_extractor::{RuleCall, AttributeValue};
-use super::rules::{RuleHandler, RustBinaryHandler, RustTestHandler, RustTestSuiteHandler, 
-                   RustDocTestHandler, RustBenchmarkHandler, RustLibraryHandler, 
-                   CargoBuildScriptHandler};
 
 /// A Bazel target extracted from BUILD files
 #[derive(Debug, Clone)]
@@ -84,12 +85,12 @@ impl TargetAnalyzer {
             Box::new(RustLibraryHandler),
             Box::new(CargoBuildScriptHandler),
         ];
-        
+
         Self {
             rule_handlers: handlers,
         }
     }
-    
+
     /// Analyze a rule call
     pub fn analyze_rule(&self, rule: &RuleCall) -> Option<BazelTarget> {
         for handler in &self.rule_handlers {
@@ -97,7 +98,7 @@ impl TargetAnalyzer {
                 return handler.analyze(rule);
             }
         }
-        
+
         // Unknown rule type - create a generic target
         Some(BazelTarget {
             label: format!(":{}", rule.name),
@@ -109,10 +110,11 @@ impl TargetAnalyzer {
             attributes: Self::extract_attributes(&rule.attributes),
         })
     }
-    
+
     /// Filter rules to only runnable ones
     pub fn filter_runnable_rules(&self, rules: Vec<RuleCall>) -> Vec<RuleCall> {
-        rules.into_iter()
+        rules
+            .into_iter()
             .filter(|rule| {
                 self.rule_handlers
                     .iter()
@@ -120,7 +122,7 @@ impl TargetAnalyzer {
             })
             .collect()
     }
-    
+
     /// Extract source files from attributes
     pub fn extract_sources(attributes: &HashMap<String, AttributeValue>) -> Vec<String> {
         match attributes.get("srcs") {
@@ -129,58 +131,68 @@ impl TargetAnalyzer {
             _ => Vec::new(),
         }
     }
-    
+
     /// Extract dependencies from attributes
     pub fn extract_dependencies(attributes: &HashMap<String, AttributeValue>) -> Vec<String> {
         let mut deps = Vec::new();
-        
+
         // Extract from deps attribute
         if let Some(AttributeValue::List(dep_list)) = attributes.get("deps") {
             deps.extend(dep_list.clone());
         }
-        
+
         // Extract from crate attribute (for tests)
         if let Some(AttributeValue::Label(crate_ref)) = attributes.get("crate") {
             deps.push(crate_ref.clone());
         } else if let Some(AttributeValue::String(crate_ref)) = attributes.get("crate") {
             deps.push(crate_ref.clone());
         }
-        
+
         deps
     }
-    
+
     /// Extract additional attributes
     pub fn extract_attributes(attributes: &HashMap<String, AttributeValue>) -> TargetAttributes {
         let mut target_attrs = TargetAttributes::default();
-        
+
         // Extract crate reference
         if let Some(AttributeValue::Label(crate_ref)) = attributes.get("crate") {
             target_attrs.crate_ref = Some(crate_ref.clone());
         } else if let Some(AttributeValue::String(crate_ref)) = attributes.get("crate") {
             target_attrs.crate_ref = Some(crate_ref.clone());
         }
-        
+
         // Extract visibility
         if let Some(AttributeValue::List(vis)) = attributes.get("visibility") {
             target_attrs.visibility = vis.clone();
         }
-        
+
         // Extract test attributes
         if let Some(AttributeValue::String(size)) = attributes.get("size") {
             target_attrs.size = Some(size.clone());
         }
-        
+
         if let Some(AttributeValue::String(timeout)) = attributes.get("timeout") {
             target_attrs.timeout = Some(timeout.clone());
         }
-        
+
         // Store other attributes
         for (key, value) in attributes {
-            if !["name", "srcs", "deps", "crate", "visibility", "size", "timeout"].contains(&key.as_str()) {
+            if ![
+                "name",
+                "srcs",
+                "deps",
+                "crate",
+                "visibility",
+                "size",
+                "timeout",
+            ]
+            .contains(&key.as_str())
+            {
                 target_attrs.custom.insert(key.clone(), value.clone());
             }
         }
-        
+
         target_attrs
     }
 }
@@ -188,7 +200,7 @@ impl TargetAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_target_kind_is_runnable() {
         assert!(BazelTargetKind::Binary.is_runnable());
@@ -196,7 +208,7 @@ mod tests {
         assert!(BazelTargetKind::TestSuite.is_runnable());
         assert!(BazelTargetKind::DocTest.is_runnable());
         assert!(BazelTargetKind::Benchmark.is_runnable());
-        
+
         assert!(!BazelTargetKind::Library.is_runnable());
         assert!(!BazelTargetKind::BuildScript.is_runnable());
         assert!(!BazelTargetKind::Unknown("custom".to_string()).is_runnable());

@@ -48,23 +48,27 @@ impl RuleExtractor {
     pub fn extract_rules(ast: &StarlarkAst) -> Result<Vec<RuleCall>> {
         let mut rules = Vec::new();
         let mut cursor = ast.tree.walk();
-        
+
         Self::visit_node(&mut cursor, ast, &mut rules)?;
-        
+
         Ok(rules)
     }
-    
+
     /// Recursively visit nodes looking for function calls
-    fn visit_node(cursor: &mut TreeCursor, ast: &StarlarkAst, rules: &mut Vec<RuleCall>) -> Result<()> {
+    fn visit_node(
+        cursor: &mut TreeCursor,
+        ast: &StarlarkAst,
+        rules: &mut Vec<RuleCall>,
+    ) -> Result<()> {
         let node = cursor.node();
-        
+
         // Check if this is a function call
         if node.kind() == "call" {
             if let Some(rule) = Self::extract_rule_call(&node, ast)? {
                 rules.push(rule);
             }
         }
-        
+
         // Visit children
         if cursor.goto_first_child() {
             loop {
@@ -75,10 +79,10 @@ impl RuleExtractor {
             }
             cursor.goto_parent();
         }
-        
+
         Ok(())
     }
-    
+
     /// Extract a rule call from a call node
     fn extract_rule_call(node: &Node, ast: &StarlarkAst) -> Result<Option<RuleCall>> {
         // Get the function name
@@ -86,41 +90,49 @@ impl RuleExtractor {
         if function_node.is_none() {
             return Ok(None);
         }
-        
+
         let function_node = function_node.unwrap();
         let rule_type = ast.node_text(&function_node);
-        
+
         // Only process known rule types (this list can be expanded)
         let known_rules = [
-            "rust_binary", "rust_library", "rust_test", "rust_test_suite",
-            "rust_doc_test", "rust_benchmark", "cargo_build_script",
+            "rust_binary",
+            "rust_library",
+            "rust_test",
+            "rust_test_suite",
+            "rust_doc_test",
+            "rust_benchmark",
+            "cargo_build_script",
             // Also handle aliases that might be created
-            "rust_bench", "rust_proc_macro", "rust_shared_library", "rust_static_library"
+            "rust_bench",
+            "rust_proc_macro",
+            "rust_shared_library",
+            "rust_static_library",
         ];
-        
+
         if !known_rules.contains(&rule_type) {
             return Ok(None);
         }
-        
+
         // Extract arguments
         let mut attributes = HashMap::new();
         let arguments_node = node.child_by_field_name("arguments");
-        
+
         if let Some(args_node) = arguments_node {
             Self::extract_arguments(&args_node, ast, &mut attributes)?;
         }
-        
+
         // Extract the name attribute (required for all rules)
         let name = match attributes.get("name") {
             Some(AttributeValue::String(name)) => name.clone(),
             _ => return Ok(None), // Skip rules without names
         };
-        
+
         let location = SourceLocation {
             line: node.start_position().row + 1,
             column: node.start_position().column,
         };
-        
+
         Ok(Some(RuleCall {
             rule_type: rule_type.to_string(),
             name,
@@ -128,15 +140,19 @@ impl RuleExtractor {
             location,
         }))
     }
-    
+
     /// Extract arguments from an arguments node
-    fn extract_arguments(node: &Node, ast: &StarlarkAst, attributes: &mut HashMap<String, AttributeValue>) -> Result<()> {
+    fn extract_arguments(
+        node: &Node,
+        ast: &StarlarkAst,
+        attributes: &mut HashMap<String, AttributeValue>,
+    ) -> Result<()> {
         let mut cursor = node.walk();
-        
+
         if cursor.goto_first_child() {
             loop {
                 let child = cursor.node();
-                
+
                 if child.kind() == "keyword_argument" {
                     if let Some(name_node) = child.child_by_field_name("name") {
                         if let Some(value_node) = child.child_by_field_name("value") {
@@ -147,16 +163,16 @@ impl RuleExtractor {
                         }
                     }
                 }
-                
+
                 if !cursor.goto_next_sibling() {
                     break;
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Extract a value from a node
     fn extract_value(node: &Node, ast: &StarlarkAst) -> Result<Option<AttributeValue>> {
         match node.kind() {
@@ -166,11 +182,11 @@ impl RuleExtractor {
                 let value = text.trim_matches('"').trim_matches('\'').to_string();
                 Ok(Some(AttributeValue::String(value)))
             }
-            
+
             "list" => {
                 let mut items = Vec::new();
                 let mut cursor = node.walk();
-                
+
                 if cursor.goto_first_child() {
                     loop {
                         let child = cursor.node();
@@ -179,16 +195,16 @@ impl RuleExtractor {
                             let value = text.trim_matches('"').trim_matches('\'').to_string();
                             items.push(value);
                         }
-                        
+
                         if !cursor.goto_next_sibling() {
                             break;
                         }
                     }
                 }
-                
+
                 Ok(Some(AttributeValue::List(items)))
             }
-            
+
             "call" => {
                 // Check if it's a glob() call
                 if let Some(func_node) = node.child_by_field_name("function") {
@@ -201,10 +217,10 @@ impl RuleExtractor {
                 }
                 Ok(None)
             }
-            
+
             "true" => Ok(Some(AttributeValue::Boolean(true))),
             "false" => Ok(Some(AttributeValue::Boolean(false))),
-            
+
             "unary_expression" => {
                 // Handle label references like :mylib
                 let text = ast.node_text(node);
@@ -214,7 +230,7 @@ impl RuleExtractor {
                     Ok(None)
                 }
             }
-            
+
             "binary_expression" => {
                 // Handle expressions like all_crate_deps() + ["dep"]
                 // For now, just extract the list part if it exists
@@ -232,7 +248,7 @@ impl RuleExtractor {
                 }
                 Ok(None)
             }
-            
+
             _ => {
                 // For other types, try to get the text representation
                 let text = ast.node_text(node);
@@ -244,34 +260,38 @@ impl RuleExtractor {
             }
         }
     }
-    
+
     /// Extract a glob pattern
     fn extract_glob_pattern(node: &Node, ast: &StarlarkAst) -> Result<Option<AttributeValue>> {
         let mut patterns = Vec::new();
         let exclude = Vec::new(); // TODO: Handle exclude patterns
-        
+
         if let Some(args_node) = node.child_by_field_name("arguments") {
             let mut cursor = args_node.walk();
-            
+
             if cursor.goto_first_child() {
                 loop {
                     let child = cursor.node();
-                    
+
                     if child.kind() == "list" {
                         // Extract patterns from the list
-                        if let Some(AttributeValue::List(items)) = Self::extract_value(&child, ast)? {
+                        if let Some(AttributeValue::List(items)) = Self::extract_value(&child, ast)?
+                        {
                             patterns = items;
                         }
                     }
-                    
+
                     if !cursor.goto_next_sibling() {
                         break;
                     }
                 }
             }
         }
-        
-        Ok(Some(AttributeValue::Glob(GlobPattern { patterns, exclude })))
+
+        Ok(Some(AttributeValue::Glob(GlobPattern {
+            patterns,
+            exclude,
+        })))
     }
 }
 
@@ -279,7 +299,7 @@ impl RuleExtractor {
 mod tests {
     use super::*;
     use crate::bazel::StarlarkParser;
-    
+
     #[test]
     fn test_extract_simple_rules() {
         let content = r#"
@@ -294,20 +314,20 @@ rust_test(
     crate = ":mylib",
 )
 "#;
-        
+
         let mut parser = StarlarkParser::new().unwrap();
         let ast = parser.parse_build_file(content).unwrap();
         let rules = RuleExtractor::extract_rules(&ast).unwrap();
-        
+
         assert_eq!(rules.len(), 2);
-        
+
         assert_eq!(rules[0].rule_type, "rust_library");
         assert_eq!(rules[0].name, "mylib");
-        
+
         assert_eq!(rules[1].rule_type, "rust_test");
         assert_eq!(rules[1].name, "mylib_test");
     }
-    
+
     #[test]
     fn test_extract_glob_pattern() {
         let content = r#"
@@ -316,14 +336,14 @@ rust_test_suite(
     srcs = glob(["tests/*.rs"]),
 )
 "#;
-        
+
         let mut parser = StarlarkParser::new().unwrap();
         let ast = parser.parse_build_file(content).unwrap();
         let rules = RuleExtractor::extract_rules(&ast).unwrap();
-        
+
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].rule_type, "rust_test_suite");
-        
+
         if let Some(AttributeValue::Glob(glob)) = rules[0].attributes.get("srcs") {
             assert_eq!(glob.patterns, vec!["tests/*.rs"]);
         } else {

@@ -13,11 +13,8 @@ impl Pattern for BinaryPattern {
             if scope.name.as_deref() == Some("main") {
                 // For src/main.rs or main.rs (when in src/), the binary name is the package name (handled later)
                 // For src/bin/foo.rs, the binary name is "foo"
-                let file_name = file_path
-                    .file_name()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or("");
-                    
+                let file_name = file_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+
                 let bin_name = if file_name == "main.rs" {
                     // main.rs always uses the package name as binary name
                     None // Will use package name
@@ -56,7 +53,7 @@ mod tests {
     #[test]
     fn test_main_rs_detection() {
         let pattern = BinaryPattern;
-        
+
         // Test main.rs without path
         let scope = Scope {
             start: Position::new(0, 0),
@@ -64,7 +61,7 @@ mod tests {
             kind: ScopeKind::Function,
             name: Some("main".to_string()),
         };
-        
+
         let result = pattern.detect(&scope, "", Path::new("main.rs")).unwrap();
         assert!(result.is_some());
         let runnable = result.unwrap();
@@ -74,9 +71,11 @@ mod tests {
             }
             _ => panic!("Expected Binary runnable"),
         }
-        
+
         // Test src/main.rs
-        let result = pattern.detect(&scope, "", Path::new("src/main.rs")).unwrap();
+        let result = pattern
+            .detect(&scope, "", Path::new("src/main.rs"))
+            .unwrap();
         assert!(result.is_some());
         let runnable = result.unwrap();
         match runnable.kind {
@@ -85,14 +84,20 @@ mod tests {
             }
             _ => panic!("Expected Binary runnable"),
         }
-        
+
         // Test src/bin/foo.rs
-        let result = pattern.detect(&scope, "", Path::new("src/bin/foo.rs")).unwrap();
+        let result = pattern
+            .detect(&scope, "", Path::new("src/bin/foo.rs"))
+            .unwrap();
         assert!(result.is_some());
         let runnable = result.unwrap();
         match runnable.kind {
             RunnableKind::Binary { bin_name } => {
-                assert_eq!(bin_name, Some("foo".to_string()), "src/bin/foo.rs should have 'foo' as bin_name");
+                assert_eq!(
+                    bin_name,
+                    Some("foo".to_string()),
+                    "src/bin/foo.rs should have 'foo' as bin_name"
+                );
             }
             _ => panic!("Expected Binary runnable"),
         }

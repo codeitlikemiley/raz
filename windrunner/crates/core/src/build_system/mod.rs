@@ -14,7 +14,10 @@ pub struct DefaultBuildSystemDetector;
 
 impl BuildSystemDetector for DefaultBuildSystemDetector {
     fn detect(project_path: &Path) -> Option<BuildSystem> {
-        tracing::debug!("DefaultBuildSystemDetector::detect checking path: {:?}", project_path);
+        tracing::debug!(
+            "DefaultBuildSystemDetector::detect checking path: {:?}",
+            project_path
+        );
 
         // Check for Bazel first since a project might have both.
         // For Bazel detection, we require BUILD files, not just MODULE.bazel/WORKSPACE.

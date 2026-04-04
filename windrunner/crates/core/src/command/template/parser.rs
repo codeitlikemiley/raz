@@ -36,9 +36,7 @@ impl TemplateParser {
     }
 
     /// Parse a single placeholder, starting *after* the opening `{`.
-    fn parse_placeholder(
-        chars: &mut std::iter::Peekable<std::str::Chars>,
-    ) -> Result<TemplatePart> {
+    fn parse_placeholder(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<TemplatePart> {
         let mut content = String::new();
         let mut depth = 1usize;
 
@@ -83,9 +81,9 @@ impl TemplateParser {
 
                 // If the condition name appears as the sole placeholder in the inner
                 // template, use `OptionalWrapper` for cleaner semantics.
-                let is_simple_wrapper = inner_template.parts.iter().any(|p| {
-                    matches!(p, TemplatePart::Placeholder { name, .. } if name == &condition)
-                });
+                let is_simple_wrapper = inner_template.parts.iter().any(
+                    |p| matches!(p, TemplatePart::Placeholder { name, .. } if name == &condition),
+                );
 
                 if else_str.is_none() && is_simple_wrapper {
                     Ok(TemplatePart::OptionalWrapper {
@@ -118,7 +116,11 @@ impl TemplateParser {
             let default = content[default_pos + 1..].trim().to_string();
             Ok(TemplatePart::Placeholder {
                 name,
-                default: if default.is_empty() { None } else { Some(default) },
+                default: if default.is_empty() {
+                    None
+                } else {
+                    Some(default)
+                },
             })
         } else {
             // `{name}` — plain required placeholder

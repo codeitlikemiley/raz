@@ -14,7 +14,8 @@ impl CargoTargetResolver for LibResolver {
         let path_str = file_path.to_string_lossy();
 
         let in_src = path_str.contains("/src/") || path_str.starts_with("src/");
-        let is_main = path_str.ends_with("/main.rs") || path_str == "main.rs" || path_str == "src/main.rs";
+        let is_main =
+            path_str.ends_with("/main.rs") || path_str == "main.rs" || path_str == "src/main.rs";
         let in_bin = path_str.contains("/src/bin/");
 
         if in_src && !is_main && !in_bin {
@@ -55,19 +56,28 @@ mod tests {
     #[test]
     fn test_main_rs_excluded() {
         let r = LibResolver;
-        assert!(r.resolve(&PathBuf::from("myproject/src/main.rs"), None).is_none());
+        assert!(
+            r.resolve(&PathBuf::from("myproject/src/main.rs"), None)
+                .is_none()
+        );
     }
 
     #[test]
     fn test_bin_excluded() {
         let r = LibResolver;
-        assert!(r.resolve(&PathBuf::from("myproject/src/bin/tool.rs"), None).is_none());
+        assert!(
+            r.resolve(&PathBuf::from("myproject/src/bin/tool.rs"), None)
+                .is_none()
+        );
     }
 
     #[test]
     fn test_integration_test_excluded() {
         let r = LibResolver;
         // tests/ files are not under src/, so LibResolver correctly returns None
-        assert!(r.resolve(&PathBuf::from("myproject/tests/foo.rs"), None).is_none());
+        assert!(
+            r.resolve(&PathBuf::from("myproject/tests/foo.rs"), None)
+                .is_none()
+        );
     }
 }

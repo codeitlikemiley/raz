@@ -1,19 +1,19 @@
 //! Bazel support using proper Starlark parsing
 
-pub mod starlark_parser;
 pub mod rule_extractor;
+pub mod rules;
+pub mod starlark_parser;
 pub mod target_analyzer;
 pub mod target_finder;
-pub mod rules;
 
 #[cfg(test)]
-mod integration_test;
+mod debug_integration_test;
 #[cfg(test)]
 mod integration_server_test;
 #[cfg(test)]
-mod debug_integration_test;
+mod integration_test;
 
+pub use rule_extractor::{AttributeValue, RuleCall, RuleExtractor};
 pub use starlark_parser::StarlarkParser;
-pub use rule_extractor::{RuleCall, RuleExtractor, AttributeValue};
 pub use target_analyzer::{BazelTarget, BazelTargetKind, TargetAnalyzer};
 pub use target_finder::BazelTargetFinder;

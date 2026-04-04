@@ -37,7 +37,7 @@ impl CargoTargetResolver for BinResolver {
                     // Walk up: find the directory containing src/main.rs
                     // and use that directory's name as the binary name
                     file_path
-                        .parent()          // src/
+                        .parent() // src/
                         .and_then(|p| p.parent()) // project root
                         .and_then(|p| p.file_name())
                         .map(|n| n.to_string_lossy().to_string())
@@ -67,7 +67,9 @@ mod tests {
     #[test]
     fn test_main_rs_with_package() {
         let r = BinResolver::new(Some("myapp".to_string()));
-        let flags = r.resolve(&PathBuf::from("myapp/src/main.rs"), None).unwrap();
+        let flags = r
+            .resolve(&PathBuf::from("myapp/src/main.rs"), None)
+            .unwrap();
         assert_eq!(flags, vec!["--bin", "myapp"]);
     }
 
@@ -102,6 +104,9 @@ mod tests {
     #[test]
     fn test_lib_not_matched() {
         let r = BinResolver::new(None);
-        assert!(r.resolve(&PathBuf::from("myapp/src/lib.rs"), None).is_none());
+        assert!(
+            r.resolve(&PathBuf::from("myapp/src/lib.rs"), None)
+                .is_none()
+        );
     }
 }

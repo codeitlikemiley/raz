@@ -196,7 +196,11 @@ impl BazelConfig {
             subcommand: Some("test".to_string()),
             target: Some("{target}".to_string()),
             args: Some(vec!["--test_output".to_string(), "streamed".to_string()]),
-            test_args: Some(vec!["--nocapture".to_string(), "--exact".to_string(), "{test_filter}".to_string()]),
+            test_args: Some(vec![
+                "--nocapture".to_string(),
+                "--exact".to_string(),
+                "{test_filter}".to_string(),
+            ]),
             ..Default::default()
         }
     }
@@ -259,7 +263,11 @@ mod tests {
                 subcommand: Some("test".to_string()),
                 target: Some("{target}".to_string()),
                 args: Some(vec!["--test_output".to_string(), "all".to_string()]),
-                test_args: Some(vec!["--nocapture".to_string(), "--exact".to_string(), "{test_filter}".to_string()]),
+                test_args: Some(vec![
+                    "--nocapture".to_string(),
+                    "--exact".to_string(),
+                    "{test_filter}".to_string(),
+                ]),
                 ..Default::default()
             }),
             ..Default::default()

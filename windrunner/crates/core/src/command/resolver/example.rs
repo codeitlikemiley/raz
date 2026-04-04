@@ -43,8 +43,9 @@ mod tests {
     #[test]
     fn test_src_not_matched() {
         let r = ExampleResolver;
-        assert!(r
-            .resolve(&PathBuf::from("myapp/src/lib.rs"), None)
-            .is_none());
+        assert!(
+            r.resolve(&PathBuf::from("myapp/src/lib.rs"), None)
+                .is_none()
+        );
     }
 }

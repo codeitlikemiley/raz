@@ -1,7 +1,7 @@
 //! Handler for cargo_build_script rules
 
-use crate::bazel::{RuleCall, BazelTarget, BazelTargetKind, TargetAnalyzer};
 use super::RuleHandler;
+use crate::bazel::{BazelTarget, BazelTargetKind, RuleCall, TargetAnalyzer};
 
 /// Handler for cargo_build_script rules
 pub struct CargoBuildScriptHandler;
@@ -10,7 +10,7 @@ impl RuleHandler for CargoBuildScriptHandler {
     fn can_handle(&self, rule_type: &str) -> bool {
         rule_type == "cargo_build_script"
     }
-    
+
     fn analyze(&self, rule: &RuleCall) -> Option<BazelTarget> {
         Some(BazelTarget {
             label: format!(":{}", rule.name),
@@ -22,8 +22,8 @@ impl RuleHandler for CargoBuildScriptHandler {
             attributes: TargetAnalyzer::extract_attributes(&rule.attributes),
         })
     }
-    
+
     fn is_runnable(&self) -> bool {
-        false  // Build scripts are built but not directly runnable
+        false // Build scripts are built but not directly runnable
     }
 }
