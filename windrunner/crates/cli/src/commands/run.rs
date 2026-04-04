@@ -198,6 +198,11 @@ mod tests {
     fn test_file_not_found() {
         let result = run_command("nonexistent.rs", true);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("File not found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No runnable found for selector")
+        );
     }
 }

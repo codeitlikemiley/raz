@@ -934,7 +934,7 @@ fn run_nonexistent_file() {
         .current_dir(tmp.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("File not found"));
+        .stderr(predicate::str::contains("No runnable found for selector"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
