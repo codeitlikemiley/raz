@@ -3,9 +3,14 @@ use crate::{
     types::FunctionIdentity,
 };
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
-use super::{BazelConfig, CargoConfig, Override, RustcConfig, SingleFileScriptConfig};
+use super::{
+    BazelConfig, CargoConfig, Override, PluginPolicy, RustcConfig, SingleFileScriptConfig,
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +24,9 @@ pub struct Config {
     pub single_file_script: Option<SingleFileScriptConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bazel: Option<BazelConfig>,
+
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugins: BTreeMap<String, PluginPolicy>,
 
     // Overrides for specific functions
     #[serde(default)]

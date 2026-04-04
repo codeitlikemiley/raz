@@ -4,19 +4,17 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::{
-    build_system::{BuildSystem, BuildSystemDetector, DefaultBuildSystemDetector},
-    command::fallback::generate_fallback_command,
+    build_system::BuildSystem,
     command::builder::rustc::single_file_script_builder::is_single_file_script_file,
+    command::fallback::generate_fallback_command,
     config::Config,
     error::Result,
     parser::module_resolver::ModuleResolver,
+    plugins::{PluginRegistry, ProjectContext, TargetRef},
     types::{FileType, Runnable, RunnableKind},
 };
 
-use super::{
-    bazel_runner::BazelRunner, cargo_runner::CargoRunner, dioxus_runner::DioxusRunner,
-    leptos_runner::LeptosRunner, traits::CommandRunner,
-};
+use super::{bazel_runner::BazelRunner, cargo_runner::CargoRunner, traits::CommandRunner};
 
 /// Unified runner that manages multiple command runners
 pub struct UnifiedRunner {
@@ -24,6 +22,7 @@ pub struct UnifiedRunner {
         BuildSystem,
         Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
     >,
+    plugins: PluginRegistry,
     config: Config,
 }
 
@@ -46,8 +45,13 @@ impl UnifiedRunner {
 
         // Load config
         let config = Config::load()?;
+        let plugins = PluginRegistry::with_defaults();
 
-        Ok(Self { runners, config })
+        Ok(Self {
+            runners,
+            plugins,
+            config,
+        })
     }
 
     /// Create with a specific config
@@ -65,7 +69,13 @@ impl UnifiedRunner {
                 as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
         );
 
-        Ok(Self { runners, config })
+        let plugins = PluginRegistry::with_defaults();
+
+        Ok(Self {
+            runners,
+            plugins,
+            config,
+        })
     }
 
     /// Detect the build system for a given path
@@ -142,7 +152,8 @@ impl UnifiedRunner {
 
             tracing::debug!("detect_build_system: checking directory {:?}", check_path);
 
-            if let Some(build_system) = DefaultBuildSystemDetector::detect(check_path) {
+            let ctx = ProjectContext::from_path(check_path, self.config.clone());
+            if let Ok(build_system) = self.plugins.detect_primary_build_system(&ctx) {
                 tracing::info!(
                     "detect_build_system: found {:?} at {:?}",
                     build_system,
@@ -201,16 +212,19 @@ impl UnifiedRunner {
 
     /// Detect all runnables in a file
     pub fn detect_runnables(&self, file_path: &Path) -> Result<Vec<Runnable>> {
-        let build_system = self.detect_build_system_with_fallback(file_path);
-        let runner = self.get_runner(&build_system)?;
-        runner.detect_runnables(file_path)
+        let ctx = ProjectContext::from_path(file_path, self.config.clone());
+        let targets = self.plugins.discover_targets(&ctx, None)?;
+        Ok(targets
+            .into_iter()
+            .filter_map(TargetRef::into_runnable)
+            .collect())
     }
 
     /// Get the best runnable at a specific line
     pub fn get_runnable_at_line(&self, file_path: &Path, line: u32) -> Result<Option<Runnable>> {
-        let build_system = self.detect_build_system_with_fallback(file_path);
-        let runner = self.get_runner(&build_system)?;
-        runner.get_runnable_at_line(file_path, line)
+        let ctx = ProjectContext::from_path(file_path, self.config.clone());
+        let targets = self.plugins.discover_targets(&ctx, Some(line))?;
+        Ok(targets.into_iter().find_map(TargetRef::into_runnable))
     }
 
     /// Build a command for a runnable
@@ -221,51 +235,12 @@ impl UnifiedRunner {
             runnable.file_path
         );
 
-        let build_system = self.detect_build_system_with_fallback(&runnable.file_path);
-        tracing::debug!(
-            "UnifiedRunner::build_command: detected build_system={:?}",
-            build_system
-        );
-
-        // Determine file type based on build system and runnable kind
-        let file_type = match &runnable.kind {
-            RunnableKind::SingleFileScript { .. } => FileType::SingleFileScript,
-            RunnableKind::Standalone { .. } => FileType::Standalone,
-            _ => FileType::CargoProject,
-        };
-
-        // ── D4: Framework-aware dispatch for Cargo build system ──────────────
-        // Before falling back to plain CargoRunner, check for Dioxus / Leptos.
-        // Priority: Dioxus > Leptos > Cargo (most-specific wins).
-        let command = if build_system == BuildSystem::Cargo {
-            if DioxusRunner::detect(&runnable.file_path) {
-                tracing::info!(
-                    "UnifiedRunner::build_command: Dioxus project detected — routing to DioxusRunner"
-                );
-                let runner = DioxusRunner::new()?;
-                let cmd = runner.build_command(runnable, &self.config, file_type)?;
-                runner.validate_command(&cmd)?;
-                cmd
-            } else if LeptosRunner::detect(&runnable.file_path) {
-                tracing::info!(
-                    "UnifiedRunner::build_command: Leptos project detected — routing to LeptosRunner"
-                );
-                let runner = LeptosRunner::new()?;
-                let cmd = runner.build_command(runnable, &self.config, file_type)?;
-                runner.validate_command(&cmd)?;
-                cmd
-            } else {
-                let runner = self.get_runner(&build_system)?;
-                let cmd = runner.build_command(runnable, &self.config, file_type)?;
-                runner.validate_command(&cmd)?;
-                cmd
-            }
-        } else {
-            let runner = self.get_runner(&build_system)?;
-            let cmd = runner.build_command(runnable, &self.config, file_type)?;
-            runner.validate_command(&cmd)?;
-            cmd
-        };
+        let ctx = ProjectContext::from_path(&runnable.file_path, self.config.clone());
+        let target = TargetRef::from_runnable("rust", runnable.clone());
+        let command = self
+            .plugins
+            .build_command_for_target(&ctx, &target)?
+            .into_cargo_command();
 
         tracing::debug!(
             "UnifiedRunner::build_command: final command={}",
@@ -511,9 +486,7 @@ impl UnifiedRunner {
         }
 
         if is_single_file_script_file(file_path) {
-            tracing::debug!(
-                "get_file_command: detected single-file script, using fallback"
-            );
+            tracing::debug!("get_file_command: detected single-file script, using fallback");
 
             let cargo_root = file_path
                 .ancestors()
@@ -639,7 +612,9 @@ impl UnifiedRunner {
             }
 
             // Preserve the old behavior as a final attempt for any other file types.
-            self.build_command_at_position(file_path, None).map(Some).or(Ok(None))
+            self.build_command_at_position(file_path, None)
+                .map(Some)
+                .or(Ok(None))
         }
     }
 
@@ -818,8 +793,8 @@ impl UnifiedRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
     use std::fs;
+    use std::path::Path;
     use tempfile::TempDir;
 
     #[test]

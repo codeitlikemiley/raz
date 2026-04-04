@@ -155,6 +155,17 @@ impl ConfigValidator for MainConfigValidator {
             self.validate_override(override_config)?;
         }
 
+        // Validate plugin policies
+        for (plugin_id, policy) in &config.plugins {
+            if let Some(settings) = &policy.settings {
+                if !settings.is_object() {
+                    return Err(crate::error::Error::ConfigError(format!(
+                        "plugin '{plugin_id}' settings must be a JSON object"
+                    )));
+                }
+            }
+        }
+
         // Validate cargo config if present
         if let Some(cargo_config) = &config.cargo {
             // Validate extra_args if present

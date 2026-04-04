@@ -11,6 +11,7 @@ pub mod config;
 pub mod error;
 pub mod parser;
 pub mod patterns;
+pub mod plugins;
 pub mod types;
 
 // Runner architecture
@@ -23,6 +24,7 @@ pub use types::*;
 // Re-export main API components
 pub use command::{CargoCommand, CommandType};
 pub use config::Config;
+pub use plugins::{CommandSpec, CommandStrategy, PluginRegistry, ProjectContext, TargetRef};
 
 // Export the unified runner
 pub use runners::UnifiedRunner;

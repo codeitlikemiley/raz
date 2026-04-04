@@ -49,11 +49,7 @@ pub(crate) fn parse_shebang_command(shebang: &str) -> (String, Vec<String>) {
 
         // Skip /usr/bin/env and -S if present
         let start_idx = if parts.first() == Some(&"/usr/bin/env") {
-            if parts.get(1) == Some(&"-S") {
-                2
-            } else {
-                1
-            }
+            if parts.get(1) == Some(&"-S") { 2 } else { 1 }
         } else {
             0
         };

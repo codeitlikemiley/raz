@@ -8,6 +8,7 @@ pub mod target;
 pub mod template;
 
 // Re-export commonly used types
+pub use crate::plugins::{CommandSpec, CommandStrategy};
 pub use cargo_command::{CargoCommand, CommandType};
 pub use resolver::{CargoTargetResolver, ResolverChain};
 pub use target::Target;

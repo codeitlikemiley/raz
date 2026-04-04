@@ -5,7 +5,10 @@
 
 use super::{Config, Override};
 use crate::error::Result;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 use tracing::debug;
 
 #[derive(Debug, Clone)]
@@ -183,6 +186,11 @@ impl ConfigMerger {
 
         // Merge overrides - these are function-specific, so we merge the arrays
         self.merge_overrides(&mut base.overrides, override_config.overrides);
+
+        // Merge plugin policies
+        if !override_config.plugins.is_empty() {
+            self.merge_plugins(&mut base.plugins, override_config.plugins);
+        }
 
         // Cache settings are internal and not merged
 
@@ -456,6 +464,21 @@ impl ConfigMerger {
             } else {
                 // No existing override for this identity, add the new one
                 base_overrides.push(new_override);
+            }
+        }
+    }
+
+    fn merge_plugins(
+        &self,
+        base_plugins: &mut BTreeMap<String, super::PluginPolicy>,
+        new_plugins: BTreeMap<String, super::PluginPolicy>,
+    ) {
+        for (plugin_id, policy) in new_plugins {
+            match base_plugins.get_mut(&plugin_id) {
+                Some(existing) => existing.merge(policy),
+                None => {
+                    base_plugins.insert(plugin_id, policy);
+                }
             }
         }
     }

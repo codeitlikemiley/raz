@@ -147,6 +147,26 @@ fn main() {
     .unwrap();
 }
 
+/// Scaffold a single-file cargo script source file.
+fn scaffold_cargo_script_file(dir: &std::path::Path, file_name: &str) {
+    fs::write(
+        dir.join(file_name),
+        r#"#!/usr/bin/env -S cargo +nightly -Zscript
+---cargo
+[package]
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+---
+fn main() {
+    println!("hello");
+}
+"#,
+    )
+    .unwrap();
+}
+
 /// Get a `Command` for the cargo-runner binary.
 fn cargo_runner() -> Command {
     Command::cargo_bin("cargo-runner").unwrap()
@@ -468,6 +488,100 @@ fn override_remove_with_dash() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // run (dry-run mode — does not execute the command)
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// context
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn context_json_for_cargo_project() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_cargo_project(tmp.path(), "test-context");
+    let root = canonical(tmp.path());
+
+    cargo_runner()
+        .args(["runner", "context", "src/main.rs", "--json"])
+        .env("PROJECT_ROOT", &root)
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""file_kind": "cargo_project""#))
+        .stdout(predicate::str::contains(r#""build_system": "cargo""#))
+        .stdout(predicate::str::contains(
+            r#""package_name": "test-context""#,
+        ))
+        .stdout(predicate::str::contains(r#""runnable_kind": "binary""#))
+        .stdout(predicate::str::contains(
+            r#""recommended_target": "test-context""#,
+        ));
+}
+
+#[test]
+fn context_json_for_cargo_project_without_filepath() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_cargo_project(tmp.path(), "test-context");
+    let root = canonical(tmp.path());
+
+    cargo_runner()
+        .args(["runner", "context", "--json"])
+        .env("PROJECT_ROOT", &root)
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""file_path": null"#))
+        .stdout(predicate::str::contains(r#""file_kind": "cargo_project""#))
+        .stdout(predicate::str::contains(r#""build_system": "cargo""#))
+        .stdout(predicate::str::contains(
+            r#""package_name": "test-context""#,
+        ))
+        .stdout(predicate::str::contains(
+            r#""recommended_target": "test-context""#,
+        ));
+}
+
+#[test]
+fn context_json_for_rust_script() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_rust_script_file(tmp.path(), "power.rs");
+
+    cargo_runner()
+        .args(["runner", "context", "power.rs", "--json"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            r#""file_kind": "single_file_script""#,
+        ))
+        .stdout(predicate::str::contains(r#""build_system": "rust-script""#))
+        .stdout(predicate::str::contains(
+            r#""script_engine": "rust-script""#,
+        ))
+        .stdout(predicate::str::contains("power.rs"));
+}
+
+#[test]
+fn context_json_for_cargo_script() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_cargo_script_file(tmp.path(), "power.rs");
+
+    cargo_runner()
+        .args(["runner", "context", "power.rs", "--json"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            r#""file_kind": "single_file_script""#,
+        ))
+        .stdout(predicate::str::contains(r#""build_system": "cargo""#))
+        .stdout(predicate::str::contains(
+            r#""script_engine": "cargo +nightly -Zscript""#,
+        ))
+        .stdout(predicate::str::contains("power.rs"));
+}
 
 #[test]
 fn run_dry_run_binary() {

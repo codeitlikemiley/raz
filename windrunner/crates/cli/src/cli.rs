@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 
 use crate::commands::{
     analyze_command, bazel_add_command, bazel_sync_command, build_sync_command, clean_command,
-    init_command, override_command, run_command, unset_command, watch_command,
+    context_command, init_command, override_command, run_command, unset_command, watch_command,
 };
 
 #[derive(Parser)]
@@ -45,6 +45,16 @@ pub enum Commands {
         /// Show current configuration
         #[arg(short, long)]
         config: bool,
+    },
+
+    /// Emit machine-readable context for a Rust file or the current project.
+    Context {
+        /// Path to the Rust file with optional line number (e.g., src/main.rs:10).
+        filepath: Option<String>,
+
+        /// Print JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Run Rust code at a specific location
@@ -280,6 +290,7 @@ impl Commands {
                 let fp = resolve_filepath_arg(filepath)?;
                 analyze_command(&fp, verbose, config)
             }
+            Commands::Context { filepath, json } => context_command(filepath.as_deref(), json),
             Commands::Run { filepath, dry_run } => {
                 if let Ok(mut f) = std::fs::OpenOptions::new()
                     .append(true)

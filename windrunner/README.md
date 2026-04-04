@@ -340,6 +340,7 @@ Deduplication is name-aware and content-aware:
 | `cargo runner clean` | Context-aware clean: `bazel clean` (Bazel) or `cargo clean` (Cargo) |
 | `cargo runner watch` | Context-aware file watcher: `ibazel` (Bazel) or `cargo watch` (Cargo) |
 | `cargo runner run <file>:<line>` | Scope-based execution: detects build system and runs the target at the given line |
+| `cargo runner context [file[:line]] --json` | Emit machine-readable project/file context for TMP and other tooling |
 
 ---
 
