@@ -17,6 +17,7 @@ pub use self::rustc::{RustcCommandBuilder, SingleFileScriptBuilder};
 
 use crate::{
     command::CargoCommand,
+    command::builder::rustc::single_file_script_builder::is_single_file_script_file,
     config::Config,
     error::Result,
     types::{FileType, FunctionIdentity, Runnable, RunnableKind},
@@ -88,20 +89,6 @@ impl<'a> CommandBuilder<'a> {
     pub fn with_config(mut self, config: Config) -> Self {
         self.config_override = Some(config);
         self
-    }
-
-    /// Check if a file is a cargo script file
-    fn is_cargo_script_file(&self, file_path: &Path) -> Result<bool> {
-        if file_path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            if let Ok(content) = std::fs::read_to_string(file_path) {
-                if let Some(first_line) = content.lines().next() {
-                    return Ok(first_line.starts_with("#!")
-                        && first_line.contains("cargo")
-                        && first_line.contains("-Zscript"));
-                }
-            }
-        }
-        Ok(false)
     }
 
     /// Check if a file is a standalone file (not part of a Cargo project structure)
@@ -203,7 +190,7 @@ impl<'a> CommandBuilder<'a> {
 
         match &self.runnable.kind {
             RunnableKind::Standalone { .. } => {
-                if self.is_cargo_script_file(&self.runnable.file_path)? {
+                if is_single_file_script_file(&self.runnable.file_path) {
                     Ok(FileType::SingleFileScript)
                 } else {
                     Ok(FileType::Standalone)
@@ -212,7 +199,7 @@ impl<'a> CommandBuilder<'a> {
             RunnableKind::SingleFileScript { .. } => Ok(FileType::SingleFileScript),
             _ => {
                 // Check cargo script FIRST since it's more specific
-                if self.is_cargo_script_file(&self.runnable.file_path)? {
+                if is_single_file_script_file(&self.runnable.file_path) {
                     return Ok(FileType::SingleFileScript);
                 }
 

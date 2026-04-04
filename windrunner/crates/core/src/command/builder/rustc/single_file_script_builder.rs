@@ -15,6 +15,61 @@ pub struct SingleFileScriptBuilder;
 
 impl ConfigAccess for SingleFileScriptBuilder {}
 
+pub(crate) fn is_single_file_script_shebang(first_line: &str) -> bool {
+    first_line.starts_with("#!")
+        && ((first_line.contains("cargo") && first_line.contains("-Zscript"))
+            || first_line.contains("rust-script"))
+}
+
+pub(crate) fn is_single_file_script_file(file_path: &std::path::Path) -> bool {
+    if file_path.extension().and_then(|s| s.to_str()) != Some("rs") {
+        return false;
+    }
+
+    if let Ok(content) = std::fs::read_to_string(file_path) {
+        if let Some(first_line) = content.lines().next() {
+            return is_single_file_script_shebang(first_line)
+                && (content.contains("fn main(") || content.contains("fn main ("));
+        }
+    }
+
+    false
+}
+
+pub(crate) fn parse_shebang_command(shebang: &str) -> (String, Vec<String>) {
+    // Parse shebang line to extract the command and any extra args.
+    // Examples:
+    //   #!/usr/bin/env -S cargo +nightly -Zscript
+    //   #!/usr/bin/env rust-script
+    let mut command = String::new();
+    let mut args = Vec::new();
+
+    if let Some(cmd_part) = shebang.strip_prefix("#!") {
+        let parts: Vec<&str> = cmd_part.split_whitespace().collect();
+
+        // Skip /usr/bin/env and -S if present
+        let start_idx = if parts.first() == Some(&"/usr/bin/env") {
+            if parts.get(1) == Some(&"-S") {
+                2
+            } else {
+                1
+            }
+        } else {
+            0
+        };
+
+        if let Some((first, rest)) = parts[start_idx..].split_first() {
+            command = (*first).to_string();
+
+            // Cargo script needs the rustup toolchain + flag preserved.
+            // rust-script usually has no extra shebang args, but we keep any that appear.
+            args.extend(rest.iter().map(|part| (*part).to_string()));
+        }
+    }
+
+    (command, args)
+}
+
 impl CommandBuilderImpl for SingleFileScriptBuilder {
     fn build(
         runnable: &Runnable,
@@ -30,7 +85,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 let shebang = builder.extract_shebang(&runnable.file_path)?;
 
                 // Build command for running the script
-                let mut args = builder.parse_shebang_args(&shebang);
+                let (command_name, mut args) = parse_shebang_command(&shebang);
 
                 // Add the script file path
                 args.push(runnable.file_path.to_str().unwrap_or("").to_string());
@@ -50,7 +105,11 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 // Apply extra args
                 builder.apply_args(&mut args, runnable, config, file_type);
 
-                let mut command = CargoCommand::new(args);
+                let mut command = if command_name == "rust-script" {
+                    CargoCommand::new_shell(command_name, args)
+                } else {
+                    CargoCommand::new_rust_sf_script(args)
+                };
 
                 // Apply env vars
                 builder.apply_common_config(&mut command, config, file_type);
@@ -138,7 +197,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 let shebang = builder.extract_shebang(&runnable.file_path)?;
 
                 // Build command for running the script
-                let mut args = builder.parse_shebang_args(&shebang);
+                let (command_name, mut args) = parse_shebang_command(&shebang);
 
                 // Add the script file path
                 args.push(runnable.file_path.to_str().unwrap_or("").to_string());
@@ -146,7 +205,11 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 // Apply extra args
                 builder.apply_args(&mut args, runnable, config, file_type);
 
-                let mut command = CargoCommand::new(args);
+                let mut command = if command_name == "rust-script" {
+                    CargoCommand::new_shell(command_name, args)
+                } else {
+                    CargoCommand::new_rust_sf_script(args)
+                };
 
                 // Apply env vars
                 builder.apply_common_config(&mut command, config, file_type);
@@ -160,7 +223,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 let shebang = builder.extract_shebang(&runnable.file_path)?;
 
                 // Build command for running the script
-                let mut args = builder.parse_shebang_args(&shebang);
+                let (command_name, mut args) = parse_shebang_command(&shebang);
 
                 // Add the script file path
                 args.push(runnable.file_path.to_str().unwrap_or("").to_string());
@@ -175,7 +238,11 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 args.push("--".to_string());
                 args.push(bench_name.clone());
 
-                let mut command = CargoCommand::new(args);
+                let mut command = if command_name == "rust-script" {
+                    CargoCommand::new_shell(command_name, args)
+                } else {
+                    CargoCommand::new_rust_sf_script(args)
+                };
 
                 // Apply env vars
                 builder.apply_common_config(&mut command, config, file_type);
@@ -196,41 +263,13 @@ impl SingleFileScriptBuilder {
             .map_err(|e| crate::error::Error::ParseError(format!("Failed to read file: {}", e)))?;
 
         if let Some(first_line) = content.lines().next() {
-            if first_line.starts_with("#!") {
+            if is_single_file_script_shebang(first_line) {
                 return Ok(first_line.to_string());
             }
         }
 
         // Default shebang if not found
         Ok("#!/usr/bin/env -S cargo +nightly -Zscript".to_string())
-    }
-
-    fn parse_shebang_args(&self, shebang: &str) -> Vec<String> {
-        // Parse shebang line to extract cargo command and args
-        // Example: #!/usr/bin/env -S cargo +nightly -Zscript
-        let mut args = Vec::new();
-
-        if let Some(cmd_part) = shebang.strip_prefix("#!") {
-            let parts: Vec<&str> = cmd_part.split_whitespace().collect();
-
-            // Skip /usr/bin/env and -S if present
-            let start_idx = if parts.get(0) == Some(&"/usr/bin/env") {
-                if parts.get(1) == Some(&"-S") { 2 } else { 1 }
-            } else {
-                0
-            };
-
-            // Collect remaining args, skipping "cargo" since CargoCommand adds it
-            for (i, part) in parts[start_idx..].iter().enumerate() {
-                if i == 0 && *part == "cargo" {
-                    // Skip "cargo" as it's added by CargoCommand
-                    continue;
-                }
-                args.push(part.to_string());
-            }
-        }
-
-        args
     }
 
     fn apply_args(

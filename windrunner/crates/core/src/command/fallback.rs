@@ -1,5 +1,6 @@
 use crate::{
     command::CargoCommand,
+    command::builder::rustc::single_file_script_builder::is_single_file_script_file,
     config::ConfigMerger,
     error::Result,
     types::{Position, Runnable, RunnableKind, Scope, ScopeKind},
@@ -82,12 +83,9 @@ fn create_synthetic_runnable(
         if let Ok(content) = std::fs::read_to_string(file_path) {
             if let Some(first_line) = content.lines().next() {
                 debug!("First line of file: {:?}", first_line);
-                if first_line.starts_with("#!")
-                    && first_line.contains("cargo")
-                    && first_line.contains("-Zscript")
-                {
-                    debug!("Detected cargo script file!");
-                    // It's a cargo script file
+                if is_single_file_script_file(file_path) {
+                    debug!("Detected single-file script!");
+                    // It's a single-file script
                     let scope = Scope {
                         kind: ScopeKind::Function,
                         name: Some("main".to_string()),
@@ -109,9 +107,9 @@ fn create_synthetic_runnable(
                     // If it has benchmarks, we'll handle it specially when building the command
                     return Ok(Some(Runnable {
                         label: if has_benchmarks {
-                            "Run cargo script benchmarks".to_string()
+                            "Run single-file script benchmarks".to_string()
                         } else {
-                            "Run cargo script".to_string()
+                            "Run single-file script".to_string()
                         },
                         scope,
                         kind: RunnableKind::SingleFileScript {
@@ -455,11 +453,8 @@ fn generate_rustc_command(file_path: &Path) -> Result<Option<CargoCommand>> {
 
     // Check if it's a cargo script file (has shebang)
     if let Some(first_line) = content.lines().next() {
-        if first_line.starts_with("#!")
-            && first_line.contains("cargo")
-            && first_line.contains("-Zscript")
-        {
-            // It's a cargo script file
+        if is_single_file_script_file(file_path) {
+            // It's a single-file script
             let scope = Scope {
                 kind: ScopeKind::Function,
                 name: Some("main".to_string()),
@@ -474,7 +469,7 @@ fn generate_rustc_command(file_path: &Path) -> Result<Option<CargoCommand>> {
             };
 
             let runnable = Runnable {
-                label: "Run cargo script".to_string(),
+                label: "Run single-file script".to_string(),
                 scope,
                 kind: RunnableKind::SingleFileScript {
                     shebang: first_line.to_string(),

@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     build_system::{BuildSystem, BuildSystemDetector, DefaultBuildSystemDetector},
+    command::fallback::generate_fallback_command,
+    command::builder::rustc::single_file_script_builder::is_single_file_script_file,
     config::Config,
     error::Result,
     parser::module_resolver::ModuleResolver,
@@ -298,6 +300,25 @@ impl UnifiedRunner {
             line
         );
 
+        if is_single_file_script_file(file_path) {
+            tracing::debug!(
+                "build_command_at_position: single-file script detected, using file-level command"
+            );
+            let cargo_root = file_path
+                .ancestors()
+                .find(|p| p.join("Cargo.toml").exists())
+                .map(|p| p.to_path_buf());
+            let package_name = self.get_package_name_str(file_path).ok();
+
+            return generate_fallback_command(
+                file_path,
+                package_name.as_deref(),
+                cargo_root.as_deref(),
+                Some(self.config.clone()),
+            )?
+            .ok_or(crate::error::Error::NoRunnableFound);
+        }
+
         let runnable = if let Some(line_num) = line {
             // Try to get runnable at specific line
             if let Some(runnable) = self.get_runnable_at_line(file_path, line_num)? {
@@ -489,6 +510,27 @@ impl UnifiedRunner {
             return Ok(Some(command));
         }
 
+        if is_single_file_script_file(file_path) {
+            tracing::debug!(
+                "get_file_command: detected single-file script, using fallback"
+            );
+
+            let cargo_root = file_path
+                .ancestors()
+                .find(|p| p.join("Cargo.toml").exists())
+                .map(|p| p.to_path_buf());
+            let package_name = self.get_package_name_str(file_path).ok();
+
+            if let Some(command) = generate_fallback_command(
+                file_path,
+                package_name.as_deref(),
+                cargo_root.as_deref(),
+                Some(self.config.clone()),
+            )? {
+                return Ok(Some(command));
+            }
+        }
+
         // For non-lib.rs files, use the original logic
         let runnables = self.detect_runnables(file_path)?;
 
@@ -577,11 +619,27 @@ impl UnifiedRunner {
             );
             Ok(Some(self.build_command(&runnable)?))
         } else {
-            // No runnables found, try to build a generic command
-            tracing::debug!("get_file_command: no runnables found, trying generic command");
-            self.build_command_at_position(file_path, None)
-                .map(Some)
-                .or(Ok(None))
+            // No AST-based runnable found. Try the fallback detector so we still
+            // recognize cargo-script files and other non-standard single-file cases.
+            tracing::debug!("get_file_command: no runnables found, trying fallback command");
+
+            let cargo_root = file_path
+                .ancestors()
+                .find(|p| p.join("Cargo.toml").exists())
+                .map(|p| p.to_path_buf());
+            let package_name = self.get_package_name_str(file_path).ok();
+
+            if let Some(command) = generate_fallback_command(
+                file_path,
+                package_name.as_deref(),
+                cargo_root.as_deref(),
+                Some(self.config.clone()),
+            )? {
+                return Ok(Some(command));
+            }
+
+            // Preserve the old behavior as a final attempt for any other file types.
+            self.build_command_at_position(file_path, None).map(Some).or(Ok(None))
         }
     }
 
@@ -665,10 +723,8 @@ impl UnifiedRunner {
     /// Detect the file type based on the file path and content
     pub fn detect_file_type(&self, file_path: &Path) -> Result<crate::types::FileType> {
         // Check for single-file script first (cargo script)
-        if let Ok(content) = std::fs::read_to_string(file_path) {
-            if content.trim_start().starts_with("#!/usr/bin/env -S cargo") {
-                return Ok(crate::types::FileType::SingleFileScript);
-            }
+        if is_single_file_script_file(file_path) {
+            return Ok(crate::types::FileType::SingleFileScript);
         }
 
         // Check if it's part of a cargo project
@@ -762,6 +818,7 @@ impl UnifiedRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::fs;
     use tempfile::TempDir;
 
@@ -803,5 +860,84 @@ edition = "2021"
             .unwrap();
 
         assert_eq!(build_system, BuildSystem::Bazel);
+    }
+
+    #[test]
+    fn get_file_command_falls_back_to_cargo_script() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "script-workspace"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+
+        let script_path = temp_dir.path().join("power.rs");
+        fs::write(
+            &script_path,
+            r#"#!/usr/bin/env -S cargo +nightly -Zscript
+---cargo
+[package]
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+---
+fn main() {
+    println!("hello");
+}
+"#,
+        )
+        .unwrap();
+
+        let mut runner = UnifiedRunner::new().unwrap();
+        let command = runner.get_file_command(Path::new(&script_path)).unwrap();
+
+        let command = command.expect("expected a command for cargo script");
+        let shell = command.to_shell_command();
+        assert!(shell.contains("cargo"));
+        assert!(shell.contains("+nightly"));
+        assert!(shell.contains("-Zscript"));
+        assert!(shell.contains("power.rs"));
+    }
+
+    #[test]
+    fn get_file_command_falls_back_to_rust_script() {
+        let temp_dir = TempDir::new().unwrap();
+        let script_path = temp_dir.path().join("power.rs");
+        fs::write(
+            &script_path,
+            r#"#!/usr/bin/env rust-script
+//! ```cargo
+//! [dependencies]
+//! anyhow = "1"
+//! clap = { version = "4.5", features = ["derive"] }
+//! ```
+//!
+//! [package]
+//! edition = "2024"
+fn main() {
+    println!("hello");
+}
+"#,
+        )
+        .unwrap();
+
+        let mut runner = UnifiedRunner::new().unwrap();
+        let command = runner.get_file_command(Path::new(&script_path)).unwrap();
+
+        let command = command.expect("expected a command for rust-script");
+        let shell = command.to_shell_command();
+        assert!(shell.contains("rust-script"));
+        assert!(shell.contains("power.rs"));
+        assert!(!shell.contains("cargo +nightly -Zscript"));
+
+        let line_command = runner
+            .get_command_at_position_with_dir(Path::new(&script_path), Some(0))
+            .unwrap();
+        assert!(line_command.to_shell_command().contains("rust-script"));
     }
 }

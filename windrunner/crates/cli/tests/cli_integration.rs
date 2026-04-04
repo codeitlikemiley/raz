@@ -125,6 +125,28 @@ rust_binary(
     .unwrap();
 }
 
+/// Scaffold a single-file rust-script style source file.
+fn scaffold_rust_script_file(dir: &std::path::Path, file_name: &str) {
+    fs::write(
+        dir.join(file_name),
+        r#"#!/usr/bin/env rust-script
+//! ```cargo
+//! [dependencies]
+//! anyhow = "1"
+//! clap = { version = "4.5", features = ["derive"] }
+//! ```
+//!
+//! [package]
+//! edition = "2024"
+
+fn main() {
+    println!("hello");
+}
+"#,
+    )
+    .unwrap();
+}
+
 /// Get a `Command` for the cargo-runner binary.
 fn cargo_runner() -> Command {
     Command::cargo_bin("cargo-runner").unwrap()
@@ -467,6 +489,22 @@ fn run_dry_run_binary() {
         .assert()
         .success()
         .stdout(predicate::str::contains("cargo").and(predicate::str::contains("run")));
+}
+
+#[test]
+fn run_dry_run_rust_script() {
+    let tmp = TempDir::new().unwrap();
+    scaffold_rust_script_file(tmp.path(), "power.rs");
+
+    cargo_runner()
+        .args(["run", "power.rs", "--dry-run"])
+        .env_remove("PROJECT_ROOT")
+        .env_remove("PROJECT_DIR")
+        .current_dir(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rust-script"))
+        .stdout(predicate::str::contains("power.rs"));
 }
 
 #[test]

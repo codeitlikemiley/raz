@@ -1,5 +1,26 @@
 use std::path::Path;
 
+fn is_single_file_script_shebang(first_line: &str) -> bool {
+    first_line.starts_with("#!")
+        && ((first_line.contains("cargo") && first_line.contains("-Zscript"))
+            || first_line.contains("rust-script"))
+}
+
+fn is_single_file_script_file(path: &Path) -> bool {
+    if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+        return false;
+    }
+
+    if let Ok(content) = std::fs::read_to_string(path) {
+        if let Some(first_line) = content.lines().next() {
+            return is_single_file_script_shebang(first_line)
+                && (content.contains("fn main(") || content.contains("fn main ("));
+        }
+    }
+
+    false
+}
+
 pub fn determine_file_type(path: &Path) -> String {
     // Convert to absolute path for consistent checking
     let abs_path = if path.is_absolute() {
@@ -34,15 +55,15 @@ pub fn determine_file_type(path: &Path) -> String {
 
     if !has_cargo_toml {
         // Check if it's a cargo script file
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Some(first_line) = content.lines().next() {
-                if first_line.starts_with("#!")
-                    && first_line.contains("cargo")
-                    && first_line.contains("-Zscript")
-                {
-                    return "Cargo script file".to_string();
+        if is_single_file_script_file(path) {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Some(first_line) = content.lines().next() {
+                    if first_line.contains("rust-script") {
+                        return "Rust script file".to_string();
+                    }
                 }
             }
+            return "Cargo script file".to_string();
         }
         return "Standalone Rust file".to_string();
     }
@@ -121,7 +142,11 @@ pub fn print_runnable_type(kind: &cargo_runner_core::RunnableKind) {
             println!();
         }
         cargo_runner_core::RunnableKind::SingleFileScript { shebang } => {
-            println!("Cargo script file");
+            if shebang.contains("rust-script") {
+                println!("Rust script file");
+            } else {
+                println!("Cargo script file");
+            }
             println!("   🔧 Shebang: {}", shebang);
         }
     }

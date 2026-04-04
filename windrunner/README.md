@@ -361,6 +361,48 @@ Deduplication is name-aware and content-aware:
 | `fn main()` binary | `cargo run --bin name` | `bazel run //:name` |
 | Benchmark function | `cargo bench name` | `bazel run //:bench_name -c opt` |
 
+### Single-file scripts
+
+`cargo runner run` also recognizes single-file Rust scripts when the file has a
+script shebang and a `fn main()` entry point.
+
+Cargo nightly script example:
+
+```rust
+#!/usr/bin/env -S cargo +nightly -Zscript
+---cargo
+[package]
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+---
+fn main() {
+    println!("hello");
+}
+```
+
+`rust-script` example:
+
+```rust
+#!/usr/bin/env rust-script
+//! ```cargo
+//! [dependencies]
+//! anyhow = "1"
+//! clap = { version = "4.5", features = ["derive"] }
+//! ```
+//!
+//! [package]
+//! edition = "2024"
+
+fn main() {
+    println!("hello");
+}
+```
+
+In both cases, the file is treated as a single-file script only when `fn main()`
+is present. Without that entry point, it falls back to normal Rust file handling.
+
 ---
 
 ## ResolverChain
