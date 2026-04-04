@@ -1,4 +1,4 @@
-load("@complex_bazel_setup//:defs.bzl", "all_crate_deps")
+load("@complex_bazel_setup_crates//:defs.bzl", "all_crate_deps")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 
 rust_binary(

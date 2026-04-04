@@ -1,0 +1,24 @@
+load("@windrunner_crates//:defs.bzl", "all_crate_deps")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_doc_test", "rust_library", "rust_test", "rust_test_suite")
+
+# BEGIN raz-managed
+rust_library(
+    name = "cargo-runner-core_lib",
+    srcs = glob(["src/**/*.rs"]),
+    deps = all_crate_deps(),
+    visibility = ["//visibility:public"],
+    crate_name = "cargo_runner_core",
+)
+
+rust_test(
+    name = "unit_tests",
+    crate = ":cargo-runner-core_lib",
+    deps = all_crate_deps(normal_dev = True),
+)
+
+rust_doc_test(
+    name = "doc_tests",
+    crate = ":cargo-runner-core_lib",
+)
+
+# END raz-managed

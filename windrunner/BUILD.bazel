@@ -1,0 +1,2 @@
+# BUILD.bazel — workspace root (no Rust sources here)
+# See member directories for individual crate targets.

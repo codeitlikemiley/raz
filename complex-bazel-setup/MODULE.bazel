@@ -9,9 +9,34 @@ crate = use_extension(
 )
 
 crate.from_cargo(
-    name = "complex_bazel_setup",
-    manifests = ["//:Cargo.toml"],
-    cargo_lockfile = "//:Cargo.lock",
+    name = "combos_crates",
+    manifests = [
+    "//combos/backend:Cargo.toml",
+    "//combos/frontend:Cargo.toml",
+    "//combos:Cargo.toml",
+    ],
+    cargo_lockfile = "//combos:Cargo.lock",
 )
 
-use_repo(crate, "complex_bazel_setup")
+use_repo(crate, "combos_crates")
+
+crate.from_cargo(
+    name = "corex_crates",
+    manifests = [
+    "//corex:Cargo.toml",
+    ],
+    cargo_lockfile = "//corex:Cargo.lock",
+)
+
+use_repo(crate, "corex_crates")
+
+crate.from_cargo(
+    name = "server_crates",
+    manifests = [
+    "//server:Cargo.toml",
+    ],
+    cargo_lockfile = "//server:Cargo.lock",
+)
+
+use_repo(crate, "server_crates")
+
