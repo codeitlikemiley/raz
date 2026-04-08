@@ -562,7 +562,9 @@ mod tests {
 
         assert!(cmd.args.contains(&"test".to_string()));
         assert!(cmd.args.contains(&"my_crate".to_string()));
-        assert!(cmd.args.contains(&"--lib".to_string()));
+        // File-level lib.rs commands should NOT include --lib
+        // so that integration tests (tests/*.rs) also run.
+        assert!(!cmd.args.contains(&"--lib".to_string()));
     }
 
     #[test]

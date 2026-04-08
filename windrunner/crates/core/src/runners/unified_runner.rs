@@ -485,6 +485,45 @@ impl UnifiedRunner {
             return Ok(Some(command));
         }
 
+        // Check if this is an integration test file (direct child of tests/)
+        let is_integration_test = file_path
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|name| name == "tests")
+            .unwrap_or(false);
+
+        if is_integration_test {
+            let build_system = self.detect_build_system_with_fallback(file_path);
+            let runner = self.get_runner(&build_system)?;
+
+            let file_stem = file_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("integration_test")
+                .to_string();
+
+            // Create a file-level runnable for the integration test file
+            let file_runnable = Runnable {
+                scope: crate::types::Scope {
+                    start: crate::types::Position::new(0, 0),
+                    end: crate::types::Position::new(u32::MAX, 0),
+                    kind: crate::types::ScopeKind::File(crate::types::FileScope::Unknown),
+                    name: Some(file_stem.clone()),
+                },
+                kind: crate::types::RunnableKind::ModuleTests {
+                    module_name: String::new(), // Empty module name for file-level
+                },
+                module_path: String::new(),
+                file_path: file_path.to_path_buf(),
+                extended_scope: None,
+                label: format!("Run all tests in {}", file_stem),
+            };
+
+            let command =
+                runner.build_command(&file_runnable, &self.config, FileType::CargoProject)?;
+            return Ok(Some(command));
+        }
+
         if is_single_file_script_file(file_path) {
             tracing::debug!("get_file_command: detected single-file script, using fallback");
 

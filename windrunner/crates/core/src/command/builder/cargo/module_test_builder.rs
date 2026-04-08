@@ -76,8 +76,25 @@ impl CommandBuilderImpl for ModuleTestCommandBuilder {
         // Get test framework for checking if we're using default cargo test
         let test_framework = builder.get_test_framework(config, file_type);
 
-        // Add --bin for tests in binary files (like src/main.rs)
-        builder.add_bin_target(&mut args, &runnable.file_path, package, test_framework)?;
+        // For file-level lib.rs commands (empty module_name), don't add --lib
+        // so that integration tests and doc tests also run.
+        let is_file_level_lib = if let crate::types::RunnableKind::ModuleTests { module_name } =
+            &runnable.kind
+        {
+            let path_str = runnable.file_path.to_str().unwrap_or("");
+            module_name.is_empty()
+                && (path_str.ends_with("/lib.rs")
+                    || path_str == "lib.rs"
+                    || path_str.ends_with("/src/lib.rs"))
+        } else {
+            false
+        };
+
+        // Add target flags (--lib, --bin, --test, etc.) unless this is a
+        // file-level lib.rs command where we want to run ALL tests.
+        if !is_file_level_lib {
+            builder.add_bin_target(&mut args, &runnable.file_path, package, test_framework)?;
+        }
 
         // Apply configuration
         builder.apply_args(&mut args, runnable, config, file_type);
@@ -133,6 +150,29 @@ impl ModuleTestCommandBuilder {
                 true
             }
         };
+
+        // For integration test files (tests/*.rs), add --test flag
+        // Only if using default cargo test command
+        if is_default_test {
+            let is_integration_test = file_path
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|name| name == "tests")
+                .unwrap_or(false);
+            if is_integration_test {
+                if let Some(stem) = file_path.file_stem() {
+                    let test_name = stem.to_string_lossy();
+                    tracing::debug!(
+                        "Adding --test {} for module tests in tests/{}.rs",
+                        test_name,
+                        test_name
+                    );
+                    args.push("--test".to_string());
+                    args.push(test_name.to_string());
+                }
+                return Ok(());
+            }
+        }
 
         // For tests in library source files (src/**/*.rs, excluding main.rs and bin/), add --lib flag
         // Only if using default cargo test command
@@ -205,27 +245,37 @@ impl ModuleTestCommandBuilder {
     ) {
         // For module tests, we need to extract the module name from the RunnableKind
         if let crate::types::RunnableKind::ModuleTests { module_name } = &runnable.kind {
-            // For file-level commands on lib.rs files, don't add module filter
-            // This allows running all tests in the library with just --lib
-            // But we should still add the module filter if module_name is not empty
             let path_str = runnable.file_path.to_str().unwrap_or("");
             tracing::debug!(
-                "add_module_filter: path_str={}, args={:?}, contains_lib={}, module_name={}",
+                "add_module_filter: path_str={}, args={:?}, module_name={}",
                 path_str,
                 args,
-                args.contains(&"--lib".to_string()),
                 module_name
             );
 
-            // Skip module filter only for empty module names (file-level commands)
-            if args.contains(&"--lib".to_string())
-                && (path_str.ends_with("/lib.rs")
-                    || path_str == "lib.rs"
-                    || path_str.ends_with("/src/lib.rs"))
-                && module_name.is_empty()
-            {
+            // Skip module filter for file-level commands (empty module_name) on
+            // lib.rs — we want to run ALL tests in the package.
+            let is_lib_rs = path_str.ends_with("/lib.rs")
+                || path_str == "lib.rs"
+                || path_str.ends_with("/src/lib.rs");
+            if is_lib_rs && module_name.is_empty() {
                 tracing::debug!("Skipping module filter for file-level lib.rs command");
-                // Still apply test binary args if any
+                self.apply_test_binary_args(args, runnable, config, file_type);
+                return;
+            }
+
+            // Skip module filter for file-level commands on integration test files
+            // — --test <stem> already scopes to the correct binary.
+            let is_integration_test = runnable
+                .file_path
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|name| name == "tests")
+                .unwrap_or(false);
+            if is_integration_test && module_name.is_empty() {
+                tracing::debug!(
+                    "Skipping module filter for file-level integration test command"
+                );
                 self.apply_test_binary_args(args, runnable, config, file_type);
                 return;
             }
@@ -233,16 +283,51 @@ impl ModuleTestCommandBuilder {
             args.push("--".to_string());
 
             // Use the full module path if available, otherwise just the module name
-            if !runnable.module_path.is_empty() {
-                tracing::debug!("Using runnable.module_path: {}", runnable.module_path);
-                args.push(runnable.module_path.clone());
+            // For integration tests, strip the file-level prefix (tests::<file_stem>)
+            // since --test <stem> already scopes to the correct binary.
+            let effective_path = if is_integration_test {
+                Self::strip_integration_test_prefix(
+                    &runnable.file_path,
+                    if !runnable.module_path.is_empty() {
+                        &runnable.module_path
+                    } else {
+                        module_name
+                    },
+                )
+            } else if !runnable.module_path.is_empty() {
+                runnable.module_path.clone()
             } else {
-                tracing::debug!("Using module_name from RunnableKind: {}", module_name);
-                args.push(module_name.clone());
+                module_name.clone()
+            };
+
+            if !effective_path.is_empty() {
+                tracing::debug!("Using effective module path: {}", effective_path);
+                args.push(effective_path);
             }
 
             // Apply test binary args
             self.apply_test_binary_args(args, runnable, config, file_type);
+        }
+    }
+
+    /// Strip the file-level module prefix for integration tests.
+    ///
+    /// Integration test files get a synthetic module path of `tests::<file_stem>`
+    /// from the module resolver, but cargo's integration test binaries don't use
+    /// that prefix — tests are at the root namespace. Strip it so the filter works.
+    fn strip_integration_test_prefix(file_path: &std::path::Path, module_path: &str) -> String {
+        let file_stem = file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let prefix = format!("tests::{}", file_stem);
+
+        if module_path == prefix {
+            String::new()
+        } else if let Some(rest) = module_path.strip_prefix(&format!("{}::", prefix)) {
+            rest.to_string()
+        } else {
+            module_path.to_string()
         }
     }
 
