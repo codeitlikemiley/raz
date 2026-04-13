@@ -435,6 +435,16 @@ impl BazelCommandBuilder {
             }
         }
 
+        // Add environment variables to bazel args before -- separator
+        if let Some(env) = &framework.extra_env {
+            for (key, value) in env {
+                args.push(format!("--action_env={}={}", key, value));
+                if subcommand == "test" || subcommand == "run" {
+                    args.push(format!("--test_env={}={}", key, value));
+                }
+            }
+        }
+
         // Add exec args (for run subcommand)
         if subcommand == "run" {
             if let Some(exec_args) = &framework.exec_args {
@@ -1040,8 +1050,38 @@ impl BazelCommandBuilder {
 
                 // Merge environment variables
                 if let Some(env) = &ov.extra_env {
+                    let insert_pos = command.args.iter().position(|r| r == "--").unwrap_or(command.args.len());
+                    let mut flags_to_insert = Vec::new();
+                    let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
                     for (key, value) in env {
                         command.env.push((key.clone(), value.clone()));
+                        flags_to_insert.push(format!("--action_env={}={}", key, value));
+                        if subcommand == "test" || subcommand == "run" {
+                            flags_to_insert.push(format!("--test_env={}={}", key, value));
+                        }
+                    }
+                    command.args.splice(insert_pos..insert_pos, flags_to_insert);
+                }
+            }
+            
+            // Fallback: If there was no bazel extra_env override, try falling back to cargo extra_env
+            // This is critical because `cargo runner override` places overrides in the cargo section by default
+            // when the file is not definitively part of a Bazel target.
+            let bazel_has_env = override_.bazel.as_ref().and_then(|b| b.extra_env.as_ref()).is_some();
+            if !bazel_has_env {
+                if let Some(cargo_config) = &override_.cargo {
+                    if let Some(env) = &cargo_config.extra_env {
+                        let insert_pos = command.args.iter().position(|r| r == "--").unwrap_or(command.args.len());
+                        let mut flags_to_insert = Vec::new();
+                        let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
+                        for (key, value) in env {
+                            command.env.push((key.clone(), value.clone()));
+                            flags_to_insert.push(format!("--action_env={}={}", key, value));
+                            if subcommand == "test" || subcommand == "run" {
+                                flags_to_insert.push(format!("--test_env={}={}", key, value));
+                            }
+                        }
+                        command.args.splice(insert_pos..insert_pos, flags_to_insert);
                     }
                 }
             }
