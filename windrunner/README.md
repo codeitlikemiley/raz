@@ -188,6 +188,39 @@ cargo runner override src/main.rs --subcommand build -- --release
 
 > **Note**: For Leptos, you only set `--subcommand` (not `--command`) because the command is always `cargo` — the runner constructs `cargo leptos <subcommand>` automatically.
 
+#### Test binary args (ignored tests, etc.)
+
+The `/` token passes arguments directly to the test binary (after `--` in `cargo test`):
+
+```bash
+# Run all tests including ignored ones
+cargo runner override src/lib.rs -- /--include-ignored
+
+# Run only ignored tests
+cargo runner override src/lib.rs -- /--ignored
+
+# Add multiple test binary args
+cargo runner override src/lib.rs -- /--include-ignored --nocapture
+```
+
+Key distinction:
+- `-- extra_args` → cargo-level flags (before `--`)
+- `/ test_args` → test binary flags (after `--`)
+
+#### Workspace-wide test binary args
+
+To apply test binary args to **all tests in the workspace**, set `extra_test_binary_args` at the top-level `cargo` config in `.cargo-runner.json`:
+
+```json
+{
+  "cargo": {
+    "extra_test_binary_args": ["--include-ignored"]
+  }
+}
+```
+
+This applies globally without needing per-file overrides.
+
 #### Remove an override
 
 ```bash
