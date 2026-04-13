@@ -31,7 +31,7 @@ impl CommandRunner for BazelRunner {
         let mut runnables = detector.detect_runnables(file_path, None)?;
 
         // Resolve module paths using common function
-        resolve_module_paths(&mut runnables, file_path, None)?;
+        resolve_module_paths(&mut runnables, file_path, None, &mut detector)?;
 
         Ok(runnables)
     }
@@ -41,7 +41,7 @@ impl CommandRunner for BazelRunner {
         if let Some(mut runnable) = detector.get_best_runnable_at_line(file_path, line)? {
             // Resolve module path using common function
             use super::common::resolve_module_path_single;
-            resolve_module_path_single(&mut runnable, file_path, None)?;
+            resolve_module_path_single(&mut runnable, file_path, None, &mut detector)?;
             Ok(Some(runnable))
         } else {
             Ok(None)

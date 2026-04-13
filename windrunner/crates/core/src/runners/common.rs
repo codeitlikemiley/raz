@@ -2,7 +2,7 @@
 
 use crate::{
     error::Result,
-    parser::{module_resolver::ModuleResolver, rust_parser::RustParser},
+    parser::module_resolver::ModuleResolver,
     types::Runnable,
 };
 use std::path::Path;
@@ -22,6 +22,7 @@ pub fn resolve_module_paths(
     runnables: &mut [Runnable],
     file_path: &Path,
     package_name: Option<&str>,
+    detector: &mut crate::patterns::RunnableDetector,
 ) -> Result<()> {
     // Create module resolver
     let resolver = if let Some(pkg) = package_name {
@@ -30,10 +31,8 @@ pub fn resolve_module_paths(
         ModuleResolver::new()
     };
 
-    // Parse the file to get all scopes for module resolution
-    let source = std::fs::read_to_string(file_path)?;
-    let mut parser = RustParser::new()?;
-    let scopes = parser.get_scopes(&source, file_path)?;
+    // Get cached scopes from detector
+    let scopes = detector.get_cached_scopes(file_path)?;
 
     // Resolve module paths for each runnable
     for runnable in runnables {
@@ -63,6 +62,7 @@ pub fn resolve_module_path_single(
     runnable: &mut Runnable,
     file_path: &Path,
     package_name: Option<&str>,
+    detector: &mut crate::patterns::RunnableDetector,
 ) -> Result<()> {
-    resolve_module_paths(std::slice::from_mut(runnable), file_path, package_name)
+    resolve_module_paths(std::slice::from_mut(runnable), file_path, package_name, detector)
 }

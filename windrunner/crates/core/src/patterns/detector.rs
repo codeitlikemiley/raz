@@ -14,6 +14,8 @@ use std::time::SystemTime;
 struct CacheEntry {
     mtime: SystemTime,
     runnables: Vec<Runnable>,
+    source: String,
+    scopes: Vec<Scope>,
 }
 
 thread_local! {
@@ -51,13 +53,13 @@ impl RunnableDetector {
         let cached = PARSE_CACHE.with(|c| {
             if let Some(entry) = c.borrow().get(file_path) {
                 if entry.mtime == mtime {
-                    return Some(entry.runnables.clone());
+                    return Some((entry.runnables.clone(), entry.source.clone(), entry.scopes.clone()));
                 }
             }
             None
         });
 
-        let runnables = if let Some(r) = cached {
+        let (runnables, _source, _scopes) = if let Some(r) = cached {
             r
         } else {
             let source = std::fs::read_to_string(file_path)?;
@@ -264,11 +266,13 @@ impl RunnableDetector {
                 CacheEntry {
                     mtime,
                     runnables: runnables.clone(),
+                    source: source.clone(),
+                    scopes: extended_scopes.iter().map(|e| e.scope.clone()).collect(),
                 },
             );
         });
 
-        runnables
+        (runnables, source, extended_scopes.into_iter().map(|e| e.scope).collect())
     };
 
     // Filter by line if specified
@@ -299,6 +303,22 @@ impl RunnableDetector {
         Ok(runnables)
     }
 }
+
+    pub fn get_cached_scopes(&mut self, file_path: &Path) -> Result<Vec<Scope>> {
+        self.detect_runnables(file_path, None)?;
+        
+        let mtime = std::fs::metadata(file_path).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
+        let cached = PARSE_CACHE.with(|c| {
+            if let Some(entry) = c.borrow().get(file_path) {
+                if entry.mtime == mtime {
+                    return Some(entry.scopes.clone());
+                }
+            }
+            None
+        });
+        
+        Ok(cached.unwrap_or_default())
+    }
 
     pub fn get_best_runnable_at_line(
         &mut self,

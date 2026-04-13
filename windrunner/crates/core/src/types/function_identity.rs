@@ -12,72 +12,40 @@ pub struct FunctionIdentity {
     pub file_type: Option<FileType>,
 }
 
+
+macro_rules! match_opt_field {
+    ($self:ident, $other:ident, $field:ident) => {
+        if let Some(ref my_val) = $self.$field {
+            if let Some(ref other_val) = $other.$field {
+                if my_val != other_val {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+    };
+}
+
 impl FunctionIdentity {
     /// Check if this identity matches another identity (partial match)
     /// Returns true if all non-None fields in `self` match the corresponding fields in `other`
     pub fn matches(&self, other: &FunctionIdentity) -> bool {
-        // If self has a package requirement, it must match
-        if let Some(ref my_package) = self.package {
-            if let Some(ref other_package) = other.package {
-                if my_package != other_package {
-                    return false;
-                }
-            } else {
-                // Self requires package but other doesn't have one
-                return false;
-            }
-        }
+        match_opt_field!(self, other, package);
+        match_opt_field!(self, other, module_path);
+        match_opt_field!(self, other, function_name);
+        match_opt_field!(self, other, file_type);
 
-        // If self has a module_path requirement, it must match
-        if let Some(ref my_module) = self.module_path {
-            if let Some(ref other_module) = other.module_path {
-                if my_module != other_module {
-                    return false;
-                }
-            } else {
-                // Self requires module_path but other doesn't have one
-                return false;
-            }
-        }
-
-        // If self has a file_path requirement, it must match
         if let Some(ref my_file) = self.file_path {
             if let Some(ref other_file) = other.file_path {
-                // Check if paths match, handling relative vs absolute paths
                 if !paths_match(my_file, other_file) {
                     return false;
                 }
             } else {
-                // Self requires file_path but other doesn't have one
                 return false;
             }
         }
 
-        // If self has a function_name requirement, it must match
-        if let Some(ref my_func) = self.function_name {
-            if let Some(ref other_func) = other.function_name {
-                if my_func != other_func {
-                    return false;
-                }
-            } else {
-                // Self requires function_name but other doesn't have one
-                return false;
-            }
-        }
-
-        // If self has a file_type requirement, it must match
-        if let Some(my_type) = self.file_type {
-            if let Some(other_type) = other.file_type {
-                if my_type != other_type {
-                    return false;
-                }
-            } else {
-                // Self requires file_type but other doesn't have one
-                return false;
-            }
-        }
-
-        // All non-None fields in self match
         true
     }
 }

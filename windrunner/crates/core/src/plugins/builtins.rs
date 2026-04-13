@@ -39,7 +39,7 @@ impl BazelPrimaryPlugin {
     pub fn new() -> Self {
         Self {
             analyzer: RustSourceAnalyzer,
-            runner: BazelRunner::new().expect("BazelRunner::new should not fail"),
+            runner: BazelRunner,
         }
     }
 }
@@ -54,7 +54,7 @@ impl CargoPrimaryPlugin {
     pub fn new() -> Self {
         Self {
             analyzer: RustSourceAnalyzer,
-            runner: CargoRunner::new().expect("CargoRunner::new should not fail"),
+            runner: CargoRunner,
         }
     }
 }
@@ -69,7 +69,7 @@ impl RustcPrimaryPlugin {
     pub fn new() -> Self {
         Self {
             analyzer: RustSourceAnalyzer,
-            runner: RustcRunner::new().expect("RustcRunner::new should not fail"),
+            runner: RustcRunner,
         }
     }
 }
@@ -141,6 +141,7 @@ impl crate::plugins::registry::PrimaryPlugin for BazelPrimaryPlugin {
         let command =
             self.runner
                 .build_command(runnable, &ctx.config, file_type_for_runnable(runnable))?;
+        self.runner.validate_command(&command)?;
         Ok(to_spec(command))
     }
 }
@@ -167,6 +168,7 @@ impl crate::plugins::registry::PrimaryPlugin for CargoPrimaryPlugin {
         let command =
             self.runner
                 .build_command(runnable, &ctx.config, file_type_for_runnable(runnable))?;
+        self.runner.validate_command(&command)?;
         Ok(to_spec(command))
     }
 }
@@ -193,6 +195,7 @@ impl crate::plugins::registry::PrimaryPlugin for RustcPrimaryPlugin {
         let command =
             self.runner
                 .build_command(runnable, &ctx.config, file_type_for_runnable(runnable))?;
+        self.runner.validate_command(&command)?;
         Ok(to_spec(command))
     }
 }

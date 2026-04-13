@@ -124,55 +124,32 @@ impl<'a> CommandBuilder<'a> {
             ConfigResolver::new(self.project_root, &identity).resolve()?
         };
 
-        // Delegate to specific builders based on file type first, then kind
-        match (file_type, &self.runnable.kind) {
-            // Standalone files use rustc directly
-            (FileType::Standalone, RunnableKind::Test { .. }) => RustcCommandBuilder::build(
-                self.runnable,
-                self.package_name.as_deref(),
-                &config,
-                file_type,
-            ),
-            (FileType::Standalone, RunnableKind::Binary { .. }) => RustcCommandBuilder::build(
-                self.runnable,
-                self.package_name.as_deref(),
-                &config,
-                file_type,
-            ),
-            (FileType::Standalone, RunnableKind::ModuleTests { .. }) => RustcCommandBuilder::build(
-                self.runnable,
-                self.package_name.as_deref(),
-                &config,
-                file_type,
-            ),
-            (FileType::Standalone, RunnableKind::Benchmark { .. }) => RustcCommandBuilder::build(
-                self.runnable,
-                self.package_name.as_deref(),
-                &config,
-                file_type,
-            ),
-            (FileType::Standalone, RunnableKind::Standalone { .. }) => RustcCommandBuilder::build(
-                self.runnable,
-                self.package_name.as_deref(),
-                &config,
-                file_type,
-            ),
-            (FileType::Standalone, RunnableKind::DocTest { .. }) => {
-                // Doc tests in standalone files aren't supported
-                Err(crate::error::Error::ParseError(
+        // Standalone routing optimization
+        if file_type == FileType::Standalone {
+            if matches!(self.runnable.kind, RunnableKind::DocTest { .. }) {
+                return Err(crate::error::Error::ParseError(
                     "Doc tests are not supported in standalone files".to_string(),
-                ))
+                ));
             }
-            (FileType::Standalone, RunnableKind::SingleFileScript { .. }) => {
-                // This shouldn't happen - single file script should be FileType::SingleFileScript
-                SingleFileScriptBuilder::build(
+            if matches!(self.runnable.kind, RunnableKind::SingleFileScript { .. }) {
+                return SingleFileScriptBuilder::build(
                     self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
-                )
+                );
             }
+            return RustcCommandBuilder::build(
+                self.runnable,
+                self.package_name.as_deref(),
+                &config,
+                file_type,
+            );
+        }
 
+        // Delegate to specific builders based on file type first, then kind
+        match (file_type, &self.runnable.kind) {
+            (crate::types::FileType::Standalone, _) => unreachable!(),
             // Single file scripts
             (FileType::SingleFileScript, _) => SingleFileScriptBuilder::build(
                 self.runnable,
@@ -189,7 +166,6 @@ impl<'a> CommandBuilder<'a> {
                 file_type,
             ),
             (FileType::CargoProject, RunnableKind::Test { .. }) => {
-                tracing::debug!("Routing to TestCommandBuilder");
                 TestCommandBuilder::build(
                     self.runnable,
                     self.package_name.as_deref(),
@@ -202,16 +178,12 @@ impl<'a> CommandBuilder<'a> {
                     "Routing to BinaryCommandBuilder for package {:?}",
                     self.package_name
                 );
-                let result = BinaryCommandBuilder::build(
+                BinaryCommandBuilder::build(
                     self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
-                );
-                if let Ok(ref cmd) = result {
-                    tracing::debug!("BinaryCommandBuilder returned command: {:?}", cmd.args);
-                }
-                result
+                )
             }
             (FileType::CargoProject, RunnableKind::ModuleTests { .. }) => {
                 ModuleTestCommandBuilder::build(

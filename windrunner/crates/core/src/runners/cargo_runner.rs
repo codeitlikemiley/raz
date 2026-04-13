@@ -37,7 +37,7 @@ impl CommandRunner for CargoRunner {
         if !runnables.is_empty() {
             // Get package name from Cargo.toml
             let package_name = get_cargo_package_name(file_path);
-            resolve_module_paths(&mut runnables, file_path, package_name.as_deref())?;
+            resolve_module_paths(&mut runnables, file_path, package_name.as_deref(), &mut detector)?;
         }
 
         Ok(runnables)
@@ -48,7 +48,7 @@ impl CommandRunner for CargoRunner {
         if let Some(mut runnable) = detector.get_best_runnable_at_line(file_path, line)? {
             // Resolve module path for the runnable
             let package_name = get_cargo_package_name(file_path);
-            resolve_module_path_single(&mut runnable, file_path, package_name.as_deref())?;
+            resolve_module_path_single(&mut runnable, file_path, package_name.as_deref(), &mut detector)?;
             Ok(Some(runnable))
         } else {
             Ok(None)

@@ -1,6 +1,8 @@
 //! Unified runner that manages all specific runners
 
 use std::collections::HashMap;
+use crate::runners::cargo_runner::CargoRunner;
+use crate::runners::bazel_runner::BazelRunner;
 use std::path::{Path, PathBuf};
 
 use crate::{
@@ -14,7 +16,7 @@ use crate::{
     types::{FileType, Runnable, RunnableKind},
 };
 
-use super::{bazel_runner::BazelRunner, cargo_runner::CargoRunner, traits::CommandRunner};
+use super::traits::CommandRunner;
 
 /// Unified runner that manages multiple command runners
 pub struct UnifiedRunner {
@@ -26,24 +28,11 @@ pub struct UnifiedRunner {
     config: Config,
 }
 
+
 impl UnifiedRunner {
     /// Create a new unified runner with all available runners
     pub fn new() -> Result<Self> {
-        let mut runners = HashMap::new();
-
-        // Initialize all runners
-        runners.insert(
-            BuildSystem::Cargo,
-            Box::new(CargoRunner::new()?)
-                as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
-        );
-        runners.insert(
-            BuildSystem::Bazel,
-            Box::new(BazelRunner::new()?)
-                as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
-        );
-
-        // Load config
+        let runners = init_runners()?;
         let config = Config::load()?;
         let plugins = PluginRegistry::with_defaults();
 
@@ -56,19 +45,7 @@ impl UnifiedRunner {
 
     /// Create with a specific config
     pub fn with_config(config: Config) -> Result<Self> {
-        let mut runners = HashMap::new();
-
-        runners.insert(
-            BuildSystem::Cargo,
-            Box::new(CargoRunner::new()?)
-                as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
-        );
-        runners.insert(
-            BuildSystem::Bazel,
-            Box::new(BazelRunner::new()?)
-                as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
-        );
-
+        let runners = init_runners()?;
         let plugins = PluginRegistry::with_defaults();
 
         Ok(Self {
@@ -375,6 +352,19 @@ impl UnifiedRunner {
 }
 
 // Convenience methods that mirror the old CargoRunner API for backward compatibility
+fn init_runners() -> Result<HashMap<BuildSystem, Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>>> {
+    let mut runners = HashMap::new();
+    runners.insert(
+        BuildSystem::Cargo,
+        Box::new(CargoRunner::new()?) as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
+    );
+    runners.insert(
+        BuildSystem::Bazel,
+        Box::new(BazelRunner::new()?) as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
+    );
+    Ok(runners)
+}
+
 impl UnifiedRunner {
     /// Get the best runnable at a position (backward compatibility)
     pub fn get_best_runnable_at_line(&self, path: &Path, line: u32) -> Result<Option<Runnable>> {
