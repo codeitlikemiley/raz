@@ -13,16 +13,16 @@ use crate::{
 };
 use std::path::{Path, PathBuf};
 
-struct LegacyExpandArgs<'a> {
-    target: &'a str,
-    target_name: &'a str,
-    package: &'a str,
-    file_path: &'a str,
-    file_name: &'a str,
-    parent_dir: &'a str,
-    test_filter: &'a str,
-    module_path: &'a str,
-    binary_name: &'a str,
+pub(crate) struct LegacyExpandArgs<'a> {
+    pub(crate) target: &'a str,
+    pub(crate) target_name: &'a str,
+    pub(crate) package: &'a str,
+    pub(crate) file_path: &'a str,
+    pub(crate) file_name: &'a str,
+    pub(crate) parent_dir: &'a str,
+    pub(crate) test_filter: &'a str,
+    pub(crate) module_path: &'a str,
+    pub(crate) binary_name: &'a str,
 }
 
 /// Bazel command builder with rich placeholder support
@@ -73,312 +73,7 @@ impl CommandBuilderImpl for BazelCommandBuilder {
 }
 
 impl BazelCommandBuilder {
-    fn build_test_command(
-        &self,
-        runnable: &Runnable,
-        test_name: &str,
-        bazel_config: Option<&BazelConfig>,
-        config: &Config,
-        file_type: FileType,
-    ) -> Result<CargoCommand> {
-        tracing::debug!("build_test_command called for test: {}", test_name);
-
-        // Get the test framework or use defaults
-        let mut framework = bazel_config
-            .and_then(|bc| bc.test_framework.clone())
-            .unwrap_or_else(BazelConfig::default_test_framework);
-
-        if !framework
-            .test_args
-            .as_ref()
-            .map(|args| args.iter().any(|arg| arg == "--exact"))
-            .unwrap_or(false)
-        {
-            framework
-                .test_args
-                .get_or_insert_with(Vec::new)
-                .push("--exact".to_string());
-        }
-
-        // Determine the target
-        let target = self.determine_target(runnable, bazel_config, config, true);
-
-        // Build the test filter
-        let test_filter = if runnable.module_path.is_empty() {
-            test_name.to_string()
-        } else {
-            format!("{}::{}", runnable.module_path, test_name)
-        };
-
-        // Build the command
-        let mut command = self.build_command_from_framework(
-            &framework,
-            runnable,
-            Some(&target),
-            Some(&test_filter),
-            None,
-        );
-
-        // Apply overrides
-        self.apply_overrides(&mut command, runnable, config, file_type);
-
-        Ok(command)
-    }
-
-    fn build_module_tests_command(
-        &self,
-        runnable: &Runnable,
-        bazel_config: Option<&BazelConfig>,
-        config: &Config,
-        file_type: FileType,
-    ) -> Result<CargoCommand> {
-        tracing::debug!("build_module_tests_command called");
-
-        // Check if this is a benchmark file - if so, we should run the binary instead
-        let is_benchmark_file = runnable
-            .file_path
-            .components()
-            .any(|c| c.as_os_str() == "benches");
-
-        if is_benchmark_file {
-            tracing::debug!("Detected benchmark file - redirecting to binary command");
-            // For benchmark files, run the binary instead of tests
-            return self.build_binary_command(runnable, None, bazel_config, config, file_type);
-        }
-
-        // Get the test framework or use defaults
-        let mut framework = bazel_config
-            .and_then(|bc| bc.test_framework.clone())
-            .unwrap_or_else(BazelConfig::default_test_framework);
-
-        // Module-level test selection should be broad enough to match the whole
-        // module. `--exact` would require the filter to equal a single test name,
-        // which filters everything out for module runs like `foo::tests`.
-        if let Some(test_args) = &mut framework.test_args {
-            test_args.retain(|arg| arg != "--exact");
-        }
-
-        // Determine the target
-        let target = self.determine_target(runnable, bazel_config, config, true);
-
-        // Build module filter (no exact matching for module tests)
-        let test_filter = if !runnable.module_path.is_empty() {
-            Some(runnable.module_path.clone())
-        } else if let RunnableKind::ModuleTests { module_name } = &runnable.kind {
-            // For module tests, use the module name as the filter
-            Some(module_name.clone())
-        } else {
-            None
-        };
-
-        // Build the command
-        let mut command = self.build_command_from_framework(
-            &framework,
-            runnable,
-            Some(&target),
-            test_filter.as_deref(),
-            None,
-        );
-
-        // Apply overrides
-        self.apply_overrides(&mut command, runnable, config, file_type);
-
-        Ok(command)
-    }
-
-    fn build_binary_command(
-        &self,
-        runnable: &Runnable,
-        bin_name: Option<&str>,
-        bazel_config: Option<&BazelConfig>,
-        config: &Config,
-        file_type: FileType,
-    ) -> Result<CargoCommand> {
-        tracing::debug!("build_binary_command called for binary: {:?}", bin_name);
-
-        // Check if this is a build.rs file
-        let is_build_script = runnable
-            .file_path
-            .file_name()
-            .map(|f| f == "build.rs")
-            .unwrap_or(false);
-
-        // Check if this is a benchmark file
-        let is_benchmark_file = runnable
-            .file_path
-            .components()
-            .any(|c| c.as_os_str() == "benches");
-
-        // Get the binary framework or use defaults
-        let mut framework = bazel_config
-            .and_then(|bc| bc.binary_framework.clone())
-            .unwrap_or_else(BazelConfig::default_binary_framework);
-
-        // For build scripts, override the subcommand to 'build'
-        if is_build_script {
-            framework.subcommand = Some("build".to_string());
-            tracing::debug!("Using 'bazel build' for build.rs file");
-        }
-
-        // For benchmark files, add optimization flag
-        if is_benchmark_file {
-            if framework.args.is_none() {
-                framework.args = Some(vec![]);
-            }
-            if let Some(ref mut args) = framework.args {
-                if !args.contains(&"-c".to_string())
-                    && !args.contains(&"--compilation_mode".to_string())
-                {
-                    args.insert(0, "-c".to_string());
-                    args.insert(1, "opt".to_string());
-                    tracing::debug!("Added optimization flag for benchmark binary");
-                }
-            }
-        }
-
-        // Determine the target (is_test=false for binaries)
-        let target = self.determine_target(runnable, bazel_config, config, false);
-
-        // Build the command
-        let mut command =
-            self.build_command_from_framework(&framework, runnable, Some(&target), None, bin_name);
-
-        // Apply overrides
-        self.apply_overrides(&mut command, runnable, config, file_type);
-
-        Ok(command)
-    }
-
-    fn build_benchmark_command(
-        &self,
-        runnable: &Runnable,
-        bench_name: &str,
-        bazel_config: Option<&BazelConfig>,
-        config: &Config,
-        file_type: FileType,
-    ) -> Result<CargoCommand> {
-        tracing::debug!(
-            "build_benchmark_command called for benchmark: {}",
-            bench_name
-        );
-
-        // Get the benchmark framework or use defaults
-        let framework = bazel_config
-            .and_then(|bc| bc.benchmark_framework.clone())
-            .unwrap_or_else(BazelConfig::default_benchmark_framework);
-
-        // Determine the target
-        let target = self.determine_target(runnable, bazel_config, config, true);
-
-        // Build the benchmark filter
-        let bench_filter = if runnable.module_path.is_empty() {
-            bench_name.to_string()
-        } else {
-            format!("{}::{}", runnable.module_path, bench_name)
-        };
-
-        // Build the command
-        let mut command = self.build_command_from_framework(
-            &framework,
-            runnable,
-            Some(&target),
-            Some(&bench_filter),
-            None,
-        );
-
-        // Apply overrides
-        self.apply_overrides(&mut command, runnable, config, file_type);
-
-        Ok(command)
-    }
-
-    fn build_doc_test_command(
-        &self,
-        runnable: &Runnable,
-        bazel_config: Option<&BazelConfig>,
-        config: &Config,
-        file_type: FileType,
-    ) -> Result<CargoCommand> {
-        tracing::debug!("build_doc_test_command called");
-
-        // First, try to find a rust_doc_test target for this file
-        let abs_file_path = if runnable.file_path.is_absolute() {
-            runnable.file_path.clone()
-        } else {
-            std::env::current_dir()
-                .ok()
-                .map(|cwd| cwd.join(&runnable.file_path))
-                .unwrap_or_else(|| runnable.file_path.clone())
-        };
-
-        // Find the workspace root
-        let workspace_root = abs_file_path
-            .ancestors()
-            .find(|p| p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists());
-
-        if let Some(workspace_root) = workspace_root {
-            let mut finder = BazelTargetFinder::new()?;
-            if let Some(doc_test_target) =
-                finder.find_doc_test_target(&abs_file_path, workspace_root)?
-            {
-                // Found a rust_doc_test target!
-                tracing::debug!("Found rust_doc_test target: {}", doc_test_target.label);
-
-                // Build command to run the doc test target
-                let mut args = vec!["test".to_string(), doc_test_target.label];
-
-                // Add standard test output streaming
-                args.push("--test_output".to_string());
-                args.push("streamed".to_string());
-
-                // Get the doc test framework or use defaults
-                let framework = bazel_config
-                    .and_then(|bc| bc.doc_test_framework.clone())
-                    .unwrap_or_else(BazelConfig::default_doc_test_framework);
-
-                // Add extra args from framework
-                if let Some(extra_args) = &framework.extra_args {
-                    args.extend(extra_args.clone());
-                }
-
-                let mut command = CargoCommand::new_bazel(args);
-
-                // Apply environment variables
-                if let Some(env) = &framework.extra_env {
-                    for (key, value) in env {
-                        command.env.push((key.clone(), value.clone()));
-                    }
-                }
-
-                // Apply overrides
-                self.apply_overrides(&mut command, runnable, config, file_type);
-
-                // Note: Bazel doesn't support running individual doc tests
-                // If this is a specific doc test (not file-level), we should inform the user
-                if let RunnableKind::DocTest {
-                    method_name: Some(_),
-                    ..
-                } = &runnable.kind
-                {
-                    // Add a comment in the environment that can be checked by the CLI
-                    command.env.push((
-                        "_BAZEL_DOC_TEST_LIMITATION".to_string(),
-                        "Bazel runs all doc tests together, not individual ones".to_string(),
-                    ));
-                }
-
-                return Ok(command);
-            }
-        }
-
-        // No rust_doc_test target found
-        Err(crate::error::Error::ParseError(
-            "No rust_doc_test target found in BUILD file. To run doc tests in Bazel, add a rust_doc_test target.".to_string()
-        ))
-    }
-
-    /// Build a command from a framework configuration
-    fn build_command_from_framework(
+    pub(crate) fn build_command_from_framework(
         &self,
         framework: &BazelFramework,
         runnable: &Runnable,
@@ -516,7 +211,7 @@ impl BazelCommandBuilder {
     }
 
     /// Determine the Bazel target based on the runnable and configuration
-    fn determine_target(
+    pub(crate) fn determine_target(
         &self,
         runnable: &Runnable,
         bazel_config: Option<&BazelConfig>,
@@ -761,7 +456,7 @@ impl BazelCommandBuilder {
     /// - `{test_filter}` / `{test_name}` / `{bench_filter}` — test/bench filter string
     /// - `{module_path}` — Rust module path
     /// - `{binary_name}` — binary name (falls back to `{file_name}`)
-    fn expand_template(
+    pub(crate) fn expand_template(
         &self,
         template: &str,
         file_path: &Path,
@@ -862,7 +557,7 @@ impl BazelCommandBuilder {
 
     /// Legacy fallback: the original chained `.replace()` implementation.
     #[inline]
-    fn legacy_expand(template: &str, args: &LegacyExpandArgs<'_>) -> String {
+    pub(crate) fn legacy_expand(template: &str, args: &LegacyExpandArgs<'_>) -> String {
         template
             .replace("{target}", args.target)
             .replace("{target_name}", args.target_name)
@@ -878,7 +573,7 @@ impl BazelCommandBuilder {
     }
 
     /// Find Bazel target using linked projects configuration (simplified approach)
-    fn find_bazel_target_via_linked_projects(
+    pub(crate) fn find_bazel_target_via_linked_projects(
         &self,
         abs_file_path: &Path,
         linked_projects: &[String],
@@ -930,7 +625,7 @@ impl BazelCommandBuilder {
 
     /// Get Bazel package path from linked project path
     /// e.g. /Users/uriah/Code/yoyo/combos/frontend/Cargo.toml -> //combos/frontend
-    fn get_bazel_package_from_linked_project(&self, linked_project: &Path) -> Option<String> {
+    pub(crate) fn get_bazel_package_from_linked_project(&self, linked_project: &Path) -> Option<String> {
         // Find PROJECT_ROOT to determine the base path
         let project_root = if let Ok(root) = std::env::var("PROJECT_ROOT") {
             PathBuf::from(root)
@@ -960,7 +655,7 @@ impl BazelCommandBuilder {
     }
 
     /// Get override configuration for a runnable
-    fn get_override<'a>(
+    pub(crate) fn get_override<'a>(
         &self,
         runnable: &Runnable,
         config: &'a Config,
@@ -996,7 +691,7 @@ impl BazelCommandBuilder {
     ///
     /// Reads from the flat `BazelOverride` shape — all fields are optional
     /// and applied incrementally on top of the already-built command.
-    fn apply_overrides(
+    pub(crate) fn apply_overrides(
         &self,
         command: &mut CargoCommand,
         runnable: &Runnable,

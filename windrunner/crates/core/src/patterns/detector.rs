@@ -6,7 +6,19 @@ use crate::{
     },
     types::{Runnable, RunnableKind, RunnableWithScore, Scope, ScopeKind},
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::time::SystemTime;
+
+struct CacheEntry {
+    mtime: SystemTime,
+    runnables: Vec<Runnable>,
+}
+
+thread_local! {
+    static PARSE_CACHE: RefCell<HashMap<PathBuf, CacheEntry>> = RefCell::new(HashMap::new());
+}
 
 pub struct RunnableDetector {
     patterns: Vec<Box<dyn Pattern>>,
@@ -32,13 +44,29 @@ impl RunnableDetector {
         file_path: &Path,
         line: Option<u32>,
     ) -> Result<Vec<Runnable>> {
-        let source = std::fs::read_to_string(file_path)?;
+        let mtime = std::fs::metadata(file_path)
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
 
-        // Use RustParser's methods instead of duplicating logic
-        let extended_scopes = self.parser.get_extended_scopes(&source, file_path)?;
-        let doc_tests = self.parser.find_doc_tests(&source)?;
+        let cached = PARSE_CACHE.with(|c| {
+            if let Some(entry) = c.borrow().get(file_path) {
+                if entry.mtime == mtime {
+                    return Some(entry.runnables.clone());
+                }
+            }
+            None
+        });
 
-        let mut runnables = Vec::new();
+        let runnables = if let Some(r) = cached {
+            r
+        } else {
+            let source = std::fs::read_to_string(file_path)?;
+
+            // Use RustParser's methods instead of duplicating logic
+            let extended_scopes = self.parser.get_extended_scopes(&source, file_path)?;
+            let doc_tests = self.parser.find_doc_tests(&source)?;
+
+            let mut runnables = Vec::new();
 
         // Detect doc tests
         for (start, end, _text) in doc_tests {
@@ -230,37 +258,47 @@ impl RunnableDetector {
         // Sort runnables by their start position to maintain file order
         runnables.sort_by_key(|r| (r.scope.start.line, r.scope.start.character));
 
-        // Filter by line if specified
-        if let Some(line) = line {
-            // Find all runnables that contain the line
-            let mut scored_runnables: Vec<RunnableWithScore> = runnables
-                .into_iter()
-                .filter(|r| {
-                    // For doc tests with extended scope, check if line is within the parent scope
-                    if matches!(r.kind, RunnableKind::DocTest { .. }) {
-                        if let Some(ref extended) = r.extended_scope {
-                            // For doc tests, check if the line is within the parent scope
-                            // (the function/impl/struct that contains this doc test)
-                            extended.scope.contains_line(line)
-                        } else {
-                            // Fallback to checking the doc test scope itself
-                            r.scope.contains_line(line)
-                        }
+        PARSE_CACHE.with(|c| {
+            c.borrow_mut().insert(
+                file_path.to_path_buf(),
+                CacheEntry {
+                    mtime,
+                    runnables: runnables.clone(),
+                },
+            );
+        });
+
+        runnables
+    };
+
+    // Filter by line if specified
+    if let Some(line) = line {
+        // Find all runnables that contain the line
+        let mut scored_runnables: Vec<RunnableWithScore> = runnables
+            .into_iter()
+            .filter(|r| {
+                // For doc tests with extended scope, check if line is within the parent scope
+                if matches!(r.kind, RunnableKind::DocTest { .. }) {
+                    if let Some(ref extended) = r.extended_scope {
+                        extended.scope.contains_line(line)
                     } else {
                         r.scope.contains_line(line)
                     }
-                })
-                .map(RunnableWithScore::new)
-                .collect();
+                } else {
+                    r.scope.contains_line(line)
+                }
+            })
+            .map(RunnableWithScore::new)
+            .collect();
 
-            // Sort by scope size (smallest first) and priority
-            scored_runnables.sort();
+        // Sort by scope size (smallest first) and priority
+        scored_runnables.sort();
 
-            Ok(scored_runnables.into_iter().map(|r| r.runnable).collect())
-        } else {
-            Ok(runnables)
-        }
+        Ok(scored_runnables.into_iter().map(|r| r.runnable).collect())
+    } else {
+        Ok(runnables)
     }
+}
 
     pub fn get_best_runnable_at_line(
         &mut self,
