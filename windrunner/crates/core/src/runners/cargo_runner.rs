@@ -67,7 +67,7 @@ impl CommandRunner for CargoRunner {
         let package = get_cargo_package_name(&runnable.file_path);
 
         // Build command using CommandBuilder
-        let mut builder = CommandBuilder::for_runnable(runnable);
+        let mut builder = CommandBuilder::for_runnable(runnable).with_file_type(_file_type);
         if let Some(pkg) = package {
             builder = builder.with_package(pkg);
         }

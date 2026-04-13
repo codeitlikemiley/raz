@@ -60,6 +60,7 @@ pub struct CommandBuilder<'a> {
     package_name: Option<String>,
     project_root: Option<&'a Path>,
     config_override: Option<Config>,
+    file_type_override: Option<FileType>,
 }
 
 impl<'a> CommandBuilder<'a> {
@@ -70,6 +71,7 @@ impl<'a> CommandBuilder<'a> {
             package_name: None,
             project_root: None,
             config_override: None,
+            file_type_override: None,
         }
     }
 
@@ -88,6 +90,12 @@ impl<'a> CommandBuilder<'a> {
     /// Override the configuration (for testing or special cases)
     pub fn with_config(mut self, config: Config) -> Self {
         self.config_override = Some(config);
+        self
+    }
+
+    /// Override the detected file type
+    pub fn with_file_type(mut self, file_type: FileType) -> Self {
+        self.file_type_override = Some(file_type);
         self
     }
 
@@ -182,6 +190,10 @@ impl<'a> CommandBuilder<'a> {
 
     /// Detect the file type based on the runnable
     fn detect_file_type(&self) -> Result<FileType> {
+        if let Some(ft) = self.file_type_override {
+            return Ok(ft);
+        }
+
         tracing::debug!(
             "detect_file_type called for kind={:?}, path={:?}",
             self.runnable.kind,
