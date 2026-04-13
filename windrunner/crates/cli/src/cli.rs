@@ -314,7 +314,7 @@ impl Commands {
             .append(true)
             .open("/tmp/cargo-runner-execute.log")
         {
-            writeln!(f, "DEBUG Commands::execute called with: {:?}", self).ok();
+            writeln!(f, "DEBUG Commands::execute called with: {self:?}").ok();
         }
 
         match self {
@@ -353,8 +353,7 @@ impl Commands {
                 {
                     writeln!(
                         f,
-                        "DEBUG calling run_command with filepath={:?}, dry_run={}",
-                        filepath, dry_run
+                        "DEBUG calling run_command with filepath={filepath:?}, dry_run={dry_run}"
                     )
                     .ok();
                 }
@@ -454,7 +453,7 @@ fn resolve_filepath_arg(arg: Option<String>) -> anyhow::Result<String> {
     if let Ok(entries) = std::fs::read_dir(&bin_dir) {
         let mut bins: Vec<_> = entries
             .flatten()
-            .filter(|e| e.path().extension().map_or(false, |x| x == "rs"))
+            .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
             .collect();
         bins.sort_by_key(|e| e.file_name());
         if let Some(first) = bins.first() {
@@ -483,7 +482,7 @@ fn resolve_filepath_arg(arg: Option<String>) -> anyhow::Result<String> {
     if let Ok(entries) = std::fs::read_dir(cwd.join("src")) {
         let mut rs_files: Vec<_> = entries
             .flatten()
-            .filter(|e| e.path().extension().map_or(false, |x| x == "rs"))
+            .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
             .collect();
         rs_files.sort_by_key(|e| e.file_name());
         if let Some(first) = rs_files.first() {
@@ -495,7 +494,7 @@ fn resolve_filepath_arg(arg: Option<String>) -> anyhow::Result<String> {
     if let Ok(entries) = std::fs::read_dir(&cwd) {
         let mut rs_files: Vec<_> = entries
             .flatten()
-            .filter(|e| e.path().extension().map_or(false, |x| x == "rs"))
+            .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
             .collect();
         rs_files.sort_by_key(|e| e.file_name());
         if let Some(first) = rs_files.first() {

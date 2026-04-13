@@ -105,7 +105,7 @@ pub fn print_runnable_type(kind: &cargo_runner_core::RunnableKind) {
             test_name,
             is_async,
         } => {
-            print!("Test function '{}'", test_name);
+            print!("Test function '{test_name}'");
             if *is_async {
                 print!(" (async)");
             }
@@ -115,24 +115,24 @@ pub fn print_runnable_type(kind: &cargo_runner_core::RunnableKind) {
             struct_or_module_name,
             method_name,
         } => {
-            print!("Doc test for '{}'", struct_or_module_name);
+            print!("Doc test for '{struct_or_module_name}'");
             if let Some(method) = method_name {
-                print!("::{}", method);
+                print!("::{method}");
             }
             println!();
         }
         cargo_runner_core::RunnableKind::Benchmark { bench_name } => {
-            println!("Benchmark '{}'", bench_name);
+            println!("Benchmark '{bench_name}'");
         }
         cargo_runner_core::RunnableKind::Binary { bin_name } => {
             print!("Binary");
             if let Some(name) = bin_name {
-                print!(" '{}'", name);
+                print!(" '{name}'");
             }
             println!();
         }
         cargo_runner_core::RunnableKind::ModuleTests { module_name } => {
-            println!("Test module '{}'", module_name);
+            println!("Test module '{module_name}'");
         }
         cargo_runner_core::RunnableKind::Standalone { has_tests } => {
             print!("Standalone Rust file");
@@ -147,7 +147,7 @@ pub fn print_runnable_type(kind: &cargo_runner_core::RunnableKind) {
             } else {
                 println!("Cargo script file");
             }
-            println!("   🔧 Shebang: {}", shebang);
+            println!("   🔧 Shebang: {shebang}");
         }
     }
 }

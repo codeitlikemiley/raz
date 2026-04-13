@@ -17,7 +17,6 @@ pub use self::rustc::{RustcCommandBuilder, SingleFileScriptBuilder};
 
 use crate::{
     command::CargoCommand,
-    command::builder::rustc::single_file_script_builder::is_single_file_script_file,
     config::Config,
     error::Result,
     types::{FileType, FunctionIdentity, Runnable, RunnableKind},
@@ -60,18 +59,18 @@ pub struct CommandBuilder<'a> {
     package_name: Option<String>,
     project_root: Option<&'a Path>,
     config_override: Option<Config>,
-    file_type_override: Option<FileType>,
+    file_type: FileType,
 }
 
 impl<'a> CommandBuilder<'a> {
     /// Create a new command builder for a runnable
-    pub fn for_runnable(runnable: &'a Runnable) -> Self {
+    pub fn for_runnable(runnable: &'a Runnable, file_type: FileType) -> Self {
         Self {
             runnable,
             package_name: None,
             project_root: None,
             config_override: None,
-            file_type_override: None,
+            file_type,
         }
     }
 
@@ -93,206 +92,14 @@ impl<'a> CommandBuilder<'a> {
         self
     }
 
-    /// Override the detected file type
-    pub fn with_file_type(mut self, file_type: FileType) -> Self {
-        self.file_type_override = Some(file_type);
-        self
-    }
 
-    /// Check if a file is a standalone file (not part of a Cargo project structure)
-    fn is_standalone_file(&self, file_path: &Path) -> bool {
-        // First check if the file has appropriate content for the runnable type
-        let has_appropriate_content = match &self.runnable.kind {
-            RunnableKind::Binary { .. } | RunnableKind::Standalone { .. } => {
-                // For binaries, check for main function
-                if let Ok(content) = std::fs::read_to_string(file_path) {
-                    content.contains("fn main(") || content.contains("fn main (")
-                } else {
-                    return false;
-                }
-            }
-            RunnableKind::Test { .. } | RunnableKind::ModuleTests { .. } => {
-                // For tests, check for #[test] or #[cfg(test)]
-                if let Ok(content) = std::fs::read_to_string(file_path) {
-                    content.contains("#[test]") || content.contains("#[cfg(test)]")
-                } else {
-                    return false;
-                }
-            }
-            RunnableKind::Benchmark { .. } => {
-                // For benchmarks, check for #[bench]
-                if let Ok(content) = std::fs::read_to_string(file_path) {
-                    content.contains("#[bench]")
-                } else {
-                    return false;
-                }
-            }
-            _ => return false, // Other types are not standalone
-        };
-
-        if !has_appropriate_content {
-            return false;
-        }
-
-        // Check if file is part of a Cargo project
-        let cargo_root = file_path
-            .ancestors()
-            .find(|p| p.join("Cargo.toml").exists());
-
-        match cargo_root {
-            None => true, // No Cargo.toml found, definitely standalone
-            Some(root) => {
-                // Check if the file is in a standard Cargo source location
-                if let Ok(relative) = file_path.strip_prefix(root) {
-                    let path_str = relative.to_str().unwrap_or("");
-
-                    // Check standard Cargo project locations based on runnable type
-                    match &self.runnable.kind {
-                        RunnableKind::Binary { .. } | RunnableKind::Standalone { .. } => {
-                            if path_str == "src/main.rs"
-                                || path_str.starts_with("src/bin/")
-                                || path_str.starts_with("examples/")
-                            {
-                                return false; // In standard location, not standalone
-                            }
-                        }
-                        RunnableKind::Test { .. } | RunnableKind::ModuleTests { .. } => {
-                            if path_str.starts_with("tests/")
-                                || path_str.starts_with("src/")
-                                || path_str.starts_with("examples/")
-                            {
-                                return false; // In standard location, not standalone
-                            }
-                        }
-                        RunnableKind::Benchmark { .. } => {
-                            if path_str.starts_with("benches/") {
-                                return false; // In standard bench location, not standalone
-                            }
-                        }
-                        _ => {}
-                    }
-
-                    // Check if it's listed in Cargo.toml
-                    if let Ok(manifest) = std::fs::read_to_string(root.join("Cargo.toml")) {
-                        // Simple check for [[bin]] entries
-                        if manifest.contains("[[bin]]") && manifest.contains(&path_str) {
-                            return false; // Listed in Cargo.toml, not standalone
-                        }
-                    }
-                }
-
-                // If we get here, it has main() but isn't in a standard location
-                // and isn't listed in Cargo.toml, so it's standalone
-                true
-            }
-        }
-    }
-
-    /// Detect the file type based on the runnable
-    fn detect_file_type(&self) -> Result<FileType> {
-        if let Some(ft) = self.file_type_override {
-            return Ok(ft);
-        }
-
-        tracing::debug!(
-            "detect_file_type called for kind={:?}, path={:?}",
-            self.runnable.kind,
-            self.runnable.file_path
-        );
-
-        match &self.runnable.kind {
-            RunnableKind::Standalone { .. } => {
-                if is_single_file_script_file(&self.runnable.file_path) {
-                    Ok(FileType::SingleFileScript)
-                } else {
-                    Ok(FileType::Standalone)
-                }
-            }
-            RunnableKind::SingleFileScript { .. } => Ok(FileType::SingleFileScript),
-            _ => {
-                // Check cargo script FIRST since it's more specific
-                if is_single_file_script_file(&self.runnable.file_path) {
-                    return Ok(FileType::SingleFileScript);
-                }
-
-                // Check if file is part of a Cargo project BEFORE checking standalone
-                // First, resolve the file path to absolute if it's relative
-                let file_path = if self.runnable.file_path.is_absolute() {
-                    self.runnable.file_path.clone()
-                } else {
-                    std::env::current_dir()
-                        .ok()
-                        .map(|cwd| cwd.join(&self.runnable.file_path))
-                        .unwrap_or_else(|| self.runnable.file_path.clone())
-                };
-
-                let cargo_root = file_path
-                    .ancestors()
-                    .find(|p| p.join("Cargo.toml").exists());
-
-                match cargo_root {
-                    Some(root) => {
-                        // Check if the file is in a standard Cargo source location
-                        if let Ok(relative) = file_path.strip_prefix(root) {
-                            let path_str = relative.to_str().unwrap_or("");
-
-                            tracing::debug!("detect_file_type: relative path = {}", path_str);
-
-                            // Check standard Cargo project locations
-                            if path_str == "src/main.rs"
-                                || path_str.starts_with("src/bin/")
-                                || path_str.starts_with("src/")
-                                || path_str.starts_with("tests/")
-                                || path_str.starts_with("examples/")
-                                || path_str.starts_with("benches/")
-                            {
-                                tracing::debug!(
-                                    "detect_file_type: detected as CargoProject (standard location)"
-                                );
-                                Ok(FileType::CargoProject)
-                            } else if self.is_standalone_file(&file_path) {
-                                // File is in a Cargo project but not in standard location and has appropriate content
-                                tracing::debug!(
-                                    "detect_file_type: detected as Standalone (non-standard location with appropriate content)"
-                                );
-                                Ok(FileType::Standalone)
-                            } else {
-                                // File is in a Cargo project but not in standard location
-                                tracing::debug!(
-                                    "detect_file_type: detected as CargoProject (non-standard location)"
-                                );
-                                Ok(FileType::CargoProject)
-                            }
-                        } else {
-                            Ok(FileType::CargoProject)
-                        }
-                    }
-                    None => {
-                        tracing::debug!("detect_file_type: no Cargo.toml found");
-                        // No Cargo.toml found, check if it's standalone
-                        if self.is_standalone_file(&file_path) {
-                            tracing::debug!(
-                                "detect_file_type: detected as Standalone (no cargo root, has appropriate content)"
-                            );
-                            Ok(FileType::Standalone)
-                        } else {
-                            tracing::debug!(
-                                "detect_file_type: detected as CargoProject (no cargo root, default)"
-                            );
-                            Ok(FileType::CargoProject)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     /// Build the command
     pub fn build(self) -> Result<CargoCommand> {
-        let file_type = self.detect_file_type()?;
+        let file_type = self.file_type;
         tracing::debug!(
-            "CommandBuilder::build: detected file_type={:?}, runnable.kind={:?}, file_path={:?}",
-            file_type,
+            "CommandBuilder::build: file_type={:?}, runnable.kind={:?}, file_path={:?}",
+            self.file_type,
             self.runnable.kind,
             self.runnable.file_path
         );
@@ -321,31 +128,31 @@ impl<'a> CommandBuilder<'a> {
         match (file_type, &self.runnable.kind) {
             // Standalone files use rustc directly
             (FileType::Standalone, RunnableKind::Test { .. }) => RustcCommandBuilder::build(
-                &self.runnable,
+                self.runnable,
                 self.package_name.as_deref(),
                 &config,
                 file_type,
             ),
             (FileType::Standalone, RunnableKind::Binary { .. }) => RustcCommandBuilder::build(
-                &self.runnable,
+                self.runnable,
                 self.package_name.as_deref(),
                 &config,
                 file_type,
             ),
             (FileType::Standalone, RunnableKind::ModuleTests { .. }) => RustcCommandBuilder::build(
-                &self.runnable,
+                self.runnable,
                 self.package_name.as_deref(),
                 &config,
                 file_type,
             ),
             (FileType::Standalone, RunnableKind::Benchmark { .. }) => RustcCommandBuilder::build(
-                &self.runnable,
+                self.runnable,
                 self.package_name.as_deref(),
                 &config,
                 file_type,
             ),
             (FileType::Standalone, RunnableKind::Standalone { .. }) => RustcCommandBuilder::build(
-                &self.runnable,
+                self.runnable,
                 self.package_name.as_deref(),
                 &config,
                 file_type,
@@ -359,7 +166,7 @@ impl<'a> CommandBuilder<'a> {
             (FileType::Standalone, RunnableKind::SingleFileScript { .. }) => {
                 // This shouldn't happen - single file script should be FileType::SingleFileScript
                 SingleFileScriptBuilder::build(
-                    &self.runnable,
+                    self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
@@ -368,7 +175,7 @@ impl<'a> CommandBuilder<'a> {
 
             // Single file scripts
             (FileType::SingleFileScript, _) => SingleFileScriptBuilder::build(
-                &self.runnable,
+                self.runnable,
                 self.package_name.as_deref(),
                 &config,
                 file_type,
@@ -376,7 +183,7 @@ impl<'a> CommandBuilder<'a> {
 
             // Cargo projects use cargo commands
             (FileType::CargoProject, RunnableKind::DocTest { .. }) => DocTestCommandBuilder::build(
-                &self.runnable,
+                self.runnable,
                 self.package_name.as_deref(),
                 &config,
                 file_type,
@@ -384,7 +191,7 @@ impl<'a> CommandBuilder<'a> {
             (FileType::CargoProject, RunnableKind::Test { .. }) => {
                 tracing::debug!("Routing to TestCommandBuilder");
                 TestCommandBuilder::build(
-                    &self.runnable,
+                    self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
@@ -396,7 +203,7 @@ impl<'a> CommandBuilder<'a> {
                     self.package_name
                 );
                 let result = BinaryCommandBuilder::build(
-                    &self.runnable,
+                    self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
@@ -408,7 +215,7 @@ impl<'a> CommandBuilder<'a> {
             }
             (FileType::CargoProject, RunnableKind::ModuleTests { .. }) => {
                 ModuleTestCommandBuilder::build(
-                    &self.runnable,
+                    self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
@@ -416,7 +223,7 @@ impl<'a> CommandBuilder<'a> {
             }
             (FileType::CargoProject, RunnableKind::Benchmark { .. }) => {
                 BenchmarkCommandBuilder::build(
-                    &self.runnable,
+                    self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
@@ -425,7 +232,7 @@ impl<'a> CommandBuilder<'a> {
             (FileType::CargoProject, RunnableKind::Standalone { .. }) => {
                 // This shouldn't happen, but fallback to rustc
                 RustcCommandBuilder::build(
-                    &self.runnable,
+                    self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,
@@ -433,7 +240,7 @@ impl<'a> CommandBuilder<'a> {
             }
             (FileType::CargoProject, RunnableKind::SingleFileScript { .. }) => {
                 SingleFileScriptBuilder::build(
-                    &self.runnable,
+                    self.runnable,
                     self.package_name.as_deref(),
                     &config,
                     file_type,

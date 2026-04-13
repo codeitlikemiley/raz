@@ -15,7 +15,8 @@ windrunner/
 
 | Subsystem | Path | Description |
 |-----------|------|-------------|
-| **ResolverChain** | `crates/core/src/command/resolver/` | Composable resolver pipeline replacing legacy if/else dispatch |
+| **ResolverChain** | `crates/core/src/command/resolver/` | Composable resolver pipeline. Uses `.push_resolver()` to build the resolution chain. |
+| **CommandBuilder** | `crates/core/src/command/builder/mod.rs` | Unified command constructor. Now requires explicit `FileType` propagation from runners, avoiding ambiguous internal detection files logic. |
 | **CommandTemplate** | `crates/core/src/command/template/` | DSL-based template engine (`{target}`, `{test_filter}`, etc.) |
 | **BazelCommandBuilder** | `crates/core/src/command/builder/bazel/` | Bazel command generation via `CommandTemplate::parse().render()` |
 | **UnifiedRunner** | `crates/core/src/runners/unified_runner.rs` | Build-system & framework-aware dispatch |
@@ -86,10 +87,12 @@ The `overrides` array lets you customize commands for specific functions, tests,
   },
   "cargo": {
     "extra_args": ["--test-threads=1"],
-    "env": { "RUST_BACKTRACE": "1" }
+    "extra_env": { "RUST_BACKTRACE": "1", "RUSTFLAGS": "-Awarnings" }
   }
 }
 ```
+
+**Note on Cargo Environments**: Overrides correctly inject environment variables into `cargo` commands contextually. Due to accurate `FileType` contextual propagation, `RUSTFLAGS` or other systemic flags apply perfectly onto `cargo run`/`cargo test` invocations without mistakenly triggering standalone `rustc` fallbacks.
 
 #### Bazel override — **flat shape** (v2)
 
@@ -149,12 +152,14 @@ cargo runner override <filepath> -- <tokens...>
 |-------|--------|
 | `@cmd.sub` | Set command + subcommand (e.g., `@dx.run`) |
 | `+channel` | Set Rust toolchain channel (e.g., `+nightly`) |
-| `KEY=value` | Set environment variable (e.g., `RUST_LOG=debug`) |
+| `KEY=value` | Set environment variable (e.g., `RUST_LOG=debug`, `RUSTFLAGS="-Awarnings"`) |
 | `/args...` | Test binary args (like `--` in `cargo test`) |
 | `-command` | Remove the command override |
 | `-env` | Remove all env overrides |
 | `-` | Remove the entire override |
 | other | Appended as `extra_args` |
+
+> **Environment Variables**: Overrides like `KEY=value` reliably populate the `extra_env` record. For Bazel targets, these are accurately transformed strictly into `--action_env=KEY=value` (and `--test_env=KEY=value` for valid subcommands). For Cargo, these correctly attach to the `CargoCommand` execution environment across nested workspace crates.
 
 #### Dioxus examples
 

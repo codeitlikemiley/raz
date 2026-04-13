@@ -14,7 +14,7 @@ impl StarlarkParser {
         let mut parser = Parser::new();
         let language = tree_sitter_starlark::LANGUAGE;
         parser.set_language(&language.into()).map_err(|e| {
-            crate::error::Error::ParseError(format!("Failed to set Starlark language: {}", e))
+            crate::error::Error::ParseError(format!("Failed to set Starlark language: {e}"))
         })?;
 
         Ok(Self { parser })

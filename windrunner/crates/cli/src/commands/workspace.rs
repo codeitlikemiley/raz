@@ -100,8 +100,7 @@ pub fn resolve_module_path_to_file(
 
     match matches.len() {
         0 => Err(anyhow::anyhow!(
-            "No file found for module path: {}",
-            module_path
+            "No file found for module path: {module_path}"
         )),
         1 => Ok(matches.into_iter().next().unwrap()),
         _ => {
@@ -111,9 +110,7 @@ pub fn resolve_module_path_to_file(
                 .collect::<Vec<_>>()
                 .join(", ");
             Err(anyhow::anyhow!(
-                "Module path is ambiguous: {}. Matches: {}",
-                module_path,
-                paths
+                "Module path is ambiguous: {module_path}. Matches: {paths}"
             ))
         }
     }

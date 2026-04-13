@@ -19,7 +19,7 @@ pub fn override_command(
     let (filepath, line) = parse_filepath_with_line(filepath_arg);
 
     println!("🔧 Creating override configuration...");
-    println!("   📍 File: {}", filepath);
+    println!("   📍 File: {filepath}");
     if let Some(line_num) = line {
         println!("   📍 Line: {}", line_num + 1); // Convert back to 1-based
     }
@@ -70,7 +70,7 @@ pub fn override_command(
     };
 
     println!("   🎯 Found: {:?}", runnable.kind);
-    println!("   📝 File type: {:?}", file_type);
+    println!("   📝 File type: {file_type:?}");
 
     // Load the merged config to detect build system
     println!(
@@ -91,7 +91,7 @@ pub fn override_command(
                 .and_then(|c| c.command.as_ref());
 
             if let Some(cmd) = command {
-                println!("   🔍 Detected command: {}", cmd);
+                println!("   🔍 Detected command: {cmd}");
             }
 
             let is_bazel = command.map(|cmd| cmd == "bazel").unwrap_or(false);
@@ -102,9 +102,9 @@ pub fn override_command(
         cargo_runner_core::FileType::SingleFileScript => "single_file_script",
     };
 
-    println!("   🎨 Config section: {}", config_section);
+    println!("   🎨 Config section: {config_section}");
     if config_section == "rustc" {
-        println!("      └─ Framework: {}", framework_type);
+        println!("      └─ Framework: {framework_type}");
     }
 
     // Create function identity for the override
@@ -122,15 +122,15 @@ pub fn override_command(
 
     println!("   🔑 Function identity:");
     if let Some(pkg) = &identity.package {
-        println!("      - package: {}", pkg);
+        println!("      - package: {pkg}");
     }
     if let Some(module) = &identity.module_path {
-        println!("      - module_path: {}", module);
+        println!("      - module_path: {module}");
     }
     if let Some(func) = &identity.function_name {
-        println!("      - function_name: {}", func);
+        println!("      - function_name: {func}");
     }
-    println!("      - file_type: {:?}", file_type);
+    println!("      - file_type: {file_type:?}");
 
     // Create the override configuration based on file type
     let mut override_config = Map::new();
@@ -535,7 +535,7 @@ pub fn override_command(
     let json = serde_json::to_string_pretty(&config)?;
     fs::write(&config_path, json)?;
 
-    println!("   • Arguments: {:?}", override_args);
+    println!("   • Arguments: {override_args:?}");
 
     // Show what was applied
     if !parsed_args.is_empty() {
@@ -588,9 +588,9 @@ pub fn override_command(
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
                     .collect();
                 if file_type == cargo_runner_core::FileType::Standalone {
-                    println!("      • build.extra_args: {:?}", args_str);
+                    println!("      • build.extra_args: {args_str:?}");
                 } else {
-                    println!("      • extra_args: {:?}", args_str);
+                    println!("      • extra_args: {args_str:?}");
                 }
             }
         }
@@ -598,9 +598,9 @@ pub fn override_command(
             if let Some(env) = parsed_args["extra_env"].as_object() {
                 for (k, v) in env {
                     if file_type == cargo_runner_core::FileType::Standalone {
-                        println!("      • exec.extra_env: {}={}", k, v);
+                        println!("      • exec.extra_env: {k}={v}");
                     } else {
-                        println!("      • env: {}={}", k, v);
+                        println!("      • env: {k}={v}");
                     }
                 }
             }
@@ -612,9 +612,9 @@ pub fn override_command(
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
                     .collect();
                 if file_type == cargo_runner_core::FileType::Standalone {
-                    println!("      • exec.extra_test_binary_args: {:?}", args_str);
+                    println!("      • exec.extra_test_binary_args: {args_str:?}");
                 } else {
-                    println!("      • extra_test_binary_args: {:?}", args_str);
+                    println!("      • extra_test_binary_args: {args_str:?}");
                 }
             }
         }
@@ -644,7 +644,7 @@ pub fn override_command(
         {
             for key in env_keys {
                 if let Some(key_str) = key.as_str() {
-                    println!("      • ❌ removed env: {}", key_str);
+                    println!("      • ❌ removed env: {key_str}");
                 }
             }
         }
@@ -746,7 +746,7 @@ fn create_file_level_override(
 
                 println!("\n✅ File-level override created successfully!");
                 println!("   📍 Config: {}", config_path.display());
-                println!("   📄 File: {}", filepath);
+                println!("   📄 File: {filepath}");
 
                 return Ok(());
             }
@@ -763,7 +763,7 @@ fn create_file_level_override(
 
     println!("\n✅ File-level override created successfully!");
     println!("   📍 Config: {}", config_path.display());
-    println!("   📄 File: {}", filepath);
+    println!("   📄 File: {filepath}");
 
     // Show what was configured
     if let Some(cargo_config) = override_entry.get("cargo") {
@@ -823,7 +823,7 @@ fn add_override_to_existing_config(
     override_entry: Map<String, Value>,
 ) -> Result<()> {
     println!("   🔧 Adding override to config...");
-    println!("   📝 Override entry: {:?}", override_entry);
+    println!("   📝 Override entry: {override_entry:?}");
 
     // Read existing config or create new one
     let mut config: Map<String, Value> = if config_path.exists() {
@@ -906,8 +906,7 @@ fn parse_override_args(args: &[String]) -> Map<String, Value> {
             }
         }
         // Check for command token @command.subcommand
-        else if arg.starts_with('@') {
-            let token = &arg[1..];
+        else if let Some(token) = arg.strip_prefix('@') {
             let parts: Vec<&str> = token.split('.').collect();
 
             if !parts.is_empty() {
@@ -1108,7 +1107,7 @@ mod tests {
 
     #[test]
     fn env_var_with_equals_in_value() {
-        let r = parse_override_args(&vec!["RUST_LOG=key=val".to_string()]);
+        let r = parse_override_args(&["RUST_LOG=key=val".to_string()]);
         let env = r.get("extra_env").unwrap().as_object().unwrap();
         assert_eq!(env.get("RUST_LOG").unwrap(), "key=val");
     }

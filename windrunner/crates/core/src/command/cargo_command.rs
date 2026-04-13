@@ -109,9 +109,9 @@ impl CargoCommand {
                         let exec_path = if output.starts_with('/') || output.starts_with("./") {
                             output.to_string()
                         } else {
-                            format!("./{}", output)
+                            format!("./{output}")
                         };
-                        cmd.push_str(&format!(" && {}", exec_path));
+                        cmd.push_str(&format!(" && {exec_path}"));
 
                         // If this is a test command with a filter, add it
                         if self.args.contains(&"--test".to_string()) {
@@ -122,13 +122,13 @@ impl CargoCommand {
                                 // Add exec args BEFORE the test filter
                                 for arg in exec_args.split_whitespace() {
                                     if arg != "{bench_name}" && arg != "{test_name}" {
-                                        cmd.push_str(&format!(" {}", arg));
+                                        cmd.push_str(&format!(" {arg}"));
                                     }
                                 }
                             }
 
                             if let Some(ref test_filter) = self.test_filter {
-                                cmd.push_str(&format!(" {}", test_filter));
+                                cmd.push_str(&format!(" {test_filter}"));
                             }
 
                             // Add extra test binary args if present
@@ -137,7 +137,7 @@ impl CargoCommand {
                             {
                                 // No separator for test binaries - args are mixed with test names
                                 for arg in extra_args.split_whitespace() {
-                                    cmd.push_str(&format!(" {}", arg));
+                                    cmd.push_str(&format!(" {arg}"));
                                 }
                             }
                         }
@@ -146,7 +146,7 @@ impl CargoCommand {
                         if let Some((_, pipe_cmd)) =
                             self.env.iter().find(|(k, _)| k == "_RUSTC_PIPE_COMMAND")
                         {
-                            cmd.push_str(&format!(" | {}", pipe_cmd));
+                            cmd.push_str(&format!(" | {pipe_cmd}"));
                         }
 
                         break;
@@ -246,7 +246,7 @@ impl CargoCommand {
                     let exec_path = if output.starts_with('/') || output.starts_with("./") {
                         output.to_string()
                     } else {
-                        format!("./{}", output)
+                        format!("./{output}")
                     };
 
                     let mut run_cmd = if pipe_cmd.is_some() {
@@ -272,13 +272,13 @@ impl CargoCommand {
                                 // Add exec args BEFORE the test filter
                                 for arg in exec_args.split_whitespace() {
                                     if arg != "{bench_name}" && arg != "{test_name}" {
-                                        shell_cmd.push_str(&format!(" {}", arg));
+                                        shell_cmd.push_str(&format!(" {arg}"));
                                     }
                                 }
                             }
 
                             if let Some(ref test_filter) = self.test_filter {
-                                shell_cmd.push_str(&format!(" {}", test_filter));
+                                shell_cmd.push_str(&format!(" {test_filter}"));
                             }
 
                             // Add extra test binary args if present
@@ -287,13 +287,13 @@ impl CargoCommand {
                             {
                                 // No separator needed for test binaries - args are mixed with test names
                                 for arg in extra_args.split_whitespace() {
-                                    shell_cmd.push_str(&format!(" {}", arg));
+                                    shell_cmd.push_str(&format!(" {arg}"));
                                 }
                             }
                         }
 
                         // Add the pipe command
-                        shell_cmd.push_str(&format!(" | {}", pipe_to));
+                        shell_cmd.push_str(&format!(" | {pipe_to}"));
 
                         // Set the shell command as argument
                         run_cmd.arg(shell_cmd);

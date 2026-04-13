@@ -25,7 +25,7 @@ impl BazelTargetFinder {
         tracing::debug!("find_targets_in_build_file: {:?}", build_file);
 
         let content =
-            fs::read_to_string(build_file).map_err(|e| crate::error::Error::IoError(e))?;
+            fs::read_to_string(build_file).map_err(crate::error::Error::IoError)?;
 
         let ast = self.parser.parse_build_file(&content)?;
         let rules = RuleExtractor::extract_rules(&ast)?;
@@ -39,7 +39,7 @@ impl BazelTargetFinder {
         let mut targets = Vec::new();
         for rule in &rules {
             tracing::debug!("Analyzing rule: {} (type: {})", rule.name, rule.rule_type);
-            if let Some(mut target) = self.analyzer.analyze_rule(&rule) {
+            if let Some(mut target) = self.analyzer.analyze_rule(rule) {
                 // Update the label with the full package path
                 target.label = format!("{}:{}", package_path, target.name);
                 tracing::debug!("Created target: {} ({:?})", target.label, target.kind);
@@ -97,7 +97,7 @@ impl BazelTargetFinder {
         // First, find targets that directly include this file
         let mut library_name = None;
         for target in &all_targets {
-            if self.target_includes_file(&target, relative_str) {
+            if self.target_includes_file(target, relative_str) {
                 matching_targets.push(target.clone());
 
                 // If this is a library, remember its name
@@ -399,8 +399,8 @@ impl BazelTargetFinder {
                 let extension = parts[1];
 
                 // Check if file is in the specified directory and has the right extension
-                if file_path.starts_with(&format!("{}/", dir_pattern))
-                    && file_path.ends_with(&format!(".{}", extension))
+                if file_path.starts_with(&format!("{dir_pattern}/"))
+                    && file_path.ends_with(&format!(".{extension}"))
                 {
                     // Make sure it's a direct child (no subdirectories)
                     let after_dir = &file_path[dir_pattern.len() + 1..];
@@ -416,18 +416,16 @@ impl BazelTargetFinder {
                 let dir_pattern = parts[0];
                 let file_pattern = parts[1];
 
-                if file_path.starts_with(&format!("{}/", dir_pattern)) {
-                    if file_pattern == "*.rs" {
+                if file_path.starts_with(&format!("{dir_pattern}/"))
+                    && file_pattern == "*.rs" {
                         return file_path.ends_with(".rs");
                     }
-                }
             }
         }
 
         // Handle dir/** patterns (matches everything under dir/)
-        if pattern.ends_with("/**") {
-            let dir = &pattern[..pattern.len() - 3];
-            let result = file_path.starts_with(&format!("{}/", dir));
+        if let Some(dir) = pattern.strip_suffix("/**") {
+            let result = file_path.starts_with(&format!("{dir}/"));
             tracing::debug!("  Pattern '{}/**' => {}", dir, result);
             return result;
         }

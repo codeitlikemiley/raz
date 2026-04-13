@@ -55,7 +55,7 @@ impl Runnable {
                 method_name,
             } => {
                 if let Some(method) = method_name {
-                    Some(format!("{}::{}", struct_or_module_name, method))
+                    Some(format!("{struct_or_module_name}::{method}"))
                 } else {
                     Some(struct_or_module_name.clone())
                 }

@@ -63,8 +63,8 @@ mod tests {
         // Debug logging is already enabled by test runner
 
         // Debug: Print all targets found
-        println!("Looking for targets for file: {:?}", test_file);
-        println!("Workspace root: {:?}", workspace_root);
+        println!("Looking for targets for file: {test_file:?}");
+        println!("Workspace root: {workspace_root:?}");
         let all_targets = finder
             .find_targets_for_file(&test_file, workspace_root)
             .unwrap();
@@ -151,9 +151,9 @@ mod tests {
 
         println!("\nTest setup:");
         println!("  Current dir: {:?}", env::current_dir().unwrap());
-        println!("  Relative path: {:?}", relative_test_file);
-        println!("  Absolute path: {:?}", abs_test_file);
-        println!("  Workspace root: {:?}", workspace_root);
+        println!("  Relative path: {relative_test_file:?}");
+        println!("  Absolute path: {abs_test_file:?}");
+        println!("  Workspace root: {workspace_root:?}");
 
         // Test the target finder
         let mut finder = BazelTargetFinder::new().unwrap();
@@ -184,7 +184,7 @@ mod tests {
             .ancestors()
             .find(|p| p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists())
             .unwrap();
-        println!("  Detected workspace root: {:?}", detected_workspace_root);
+        println!("  Detected workspace root: {detected_workspace_root:?}");
 
         let integration_target2 = finder
             .find_integration_test_target(&abs_test_file, detected_workspace_root)
@@ -252,8 +252,8 @@ mod tests {
         .unwrap();
 
         println!("\nTest setup (server at root):");
-        println!("  Test file: {:?}", test_file);
-        println!("  Workspace root: {:?}", workspace_root);
+        println!("  Test file: {test_file:?}");
+        println!("  Workspace root: {workspace_root:?}");
 
         // Test the target finder
         let mut finder = BazelTargetFinder::new().unwrap();
@@ -305,8 +305,8 @@ mod tests {
         .unwrap();
 
         println!("\nTest setup (no BUILD file):");
-        println!("  Test file: {:?}", test_file);
-        println!("  Workspace root: {:?}", workspace_root);
+        println!("  Test file: {test_file:?}");
+        println!("  Workspace root: {workspace_root:?}");
 
         // Test the target finder
         let mut finder = BazelTargetFinder::new().unwrap();
@@ -362,8 +362,8 @@ mod tests {
         .unwrap();
 
         println!("\nTest setup (no rust_test_suite):");
-        println!("  Test file: {:?}", test_file);
-        println!("  Workspace root: {:?}", workspace_root);
+        println!("  Test file: {test_file:?}");
+        println!("  Workspace root: {workspace_root:?}");
 
         // Test the target finder
         let mut finder = BazelTargetFinder::new().unwrap();
@@ -468,8 +468,7 @@ mod tests {
         let target_arg = &cmd.args[1]; // First arg is "test", second is target
         assert!(
             target_arg == ":test" || target_arg == ":integration_tests_not_found",
-            "Should use fallback target, got: {}",
-            target_arg
+            "Should use fallback target, got: {target_arg}"
         );
     }
 
@@ -539,8 +538,8 @@ mod tests {
         .unwrap();
 
         println!("\nTest setup (with glob([\"tests/**\"])):");
-        println!("  Test file: {:?}", test_file);
-        println!("  Workspace root: {:?}", workspace_root);
+        println!("  Test file: {test_file:?}");
+        println!("  Workspace root: {workspace_root:?}");
 
         // Test the target finder
         let mut finder = BazelTargetFinder::new().unwrap();
@@ -596,8 +595,8 @@ fn main() {
         .unwrap();
 
         println!("\nTest setup (build.rs):");
-        println!("  Build file: {:?}", build_file);
-        println!("  Workspace root: {:?}", workspace_root);
+        println!("  Build file: {build_file:?}");
+        println!("  Workspace root: {workspace_root:?}");
 
         // Test the target finder
         let mut finder = BazelTargetFinder::new().unwrap();
@@ -729,8 +728,8 @@ mod tests {
         .unwrap();
 
         println!("\nTest setup (main.rs with tests):");
-        println!("  Main file: {:?}", main_file);
-        println!("  Workspace root: {:?}", workspace_root);
+        println!("  Main file: {main_file:?}");
+        println!("  Workspace root: {workspace_root:?}");
 
         // Test the target finder
         let mut finder = BazelTargetFinder::new().unwrap();

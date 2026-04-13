@@ -73,6 +73,12 @@ pub struct TargetAnalyzer {
     rule_handlers: Vec<Box<dyn RuleHandler>>,
 }
 
+impl Default for TargetAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TargetAnalyzer {
     /// Create a new target analyzer with default handlers
     pub fn new() -> Self {

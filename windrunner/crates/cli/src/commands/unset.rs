@@ -9,7 +9,7 @@ pub fn unset_command(clean: bool) -> Result<()> {
     let project_root = env::var("PROJECT_ROOT").ok();
 
     if let Some(root) = &project_root {
-        println!("📍 Current PROJECT_ROOT: {}", root);
+        println!("📍 Current PROJECT_ROOT: {root}");
 
         if clean {
             println!("🧹 Cleaning .cargo-runner.json files...");
@@ -32,7 +32,7 @@ pub fn unset_command(clean: bool) -> Result<()> {
                 }
             }
 
-            println!("   • Removed {} config files", removed);
+            println!("   • Removed {removed} config files");
         }
     } else {
         println!("ℹ️  PROJECT_ROOT is not currently set");

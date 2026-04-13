@@ -270,7 +270,7 @@ mod tests {
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
-        println!("Serialized Bazel config:\n{}", json);
+        println!("Serialized Bazel config:\n{json}");
 
         let parsed: BazelConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.workspace, Some("my_workspace".to_string()));

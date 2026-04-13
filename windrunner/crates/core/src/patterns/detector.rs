@@ -139,14 +139,13 @@ impl RunnableDetector {
                         let impl_name = parent.name.as_deref().unwrap_or("impl");
                         let type_name = if impl_name.starts_with("impl ") {
                             let stripped = impl_name.strip_prefix("impl ").unwrap_or(impl_name);
-                            let final_name =
-                                stripped.split(" for ").last().unwrap_or(stripped).trim();
-                            final_name
+                            
+                            stripped.split(" for ").last().unwrap_or(stripped).trim()
                         } else {
                             impl_name
                         };
                         // Return with "impl" marker to differentiate from struct doc tests
-                        (format!("impl {}", type_name), None)
+                        (format!("impl {type_name}"), None)
                     } else {
                         // Struct
                         (parent.name.clone().unwrap_or_default(), None)

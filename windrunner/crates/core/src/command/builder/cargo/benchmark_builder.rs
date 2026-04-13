@@ -29,7 +29,7 @@ impl CommandBuilderImpl for BenchmarkCommandBuilder {
 
         // Add channel
         if let Some(channel) = builder.get_channel(config, file_type) {
-            args.push(format!("+{}", channel));
+            args.push(format!("+{channel}"));
         }
 
         args.push("bench".to_string());

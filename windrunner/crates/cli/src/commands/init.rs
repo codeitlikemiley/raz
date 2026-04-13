@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::{Path, PathBuf}};
 use tracing::info;
 use walkdir::WalkDir;
 
@@ -170,11 +170,10 @@ pub fn init_command(
     }
 
     println!("\n✅ Initialization complete!");
-    println!("   • Created {} config files", created);
+    println!("   • Created {created} config files");
     if skipped > 0 {
         println!(
-            "   • Skipped {} existing configs (use --force to overwrite)",
-            skipped
+            "   • Skipped {skipped} existing configs (use --force to overwrite)"
         );
     }
 
@@ -194,7 +193,7 @@ pub fn init_command(
 //   - MODULE.bazel missing OR force  → full workspace scaffold + .cargo-runner.json
 //
 fn handle_bazel_init(
-    project_root: &PathBuf,
+    project_root: &Path,
     force: bool,
     workspace_name: Option<&str>,
     skip_sync: bool,
@@ -221,7 +220,7 @@ fn handle_bazel_init(
 
     if already_bazel && !force {
         // Already a Bazel workspace — re-sync BUILD.bazel targets + config
-        println!("🔥 Bazel workspace already initialised: {}", ws_name);
+        println!("🔥 Bazel workspace already initialised: {ws_name}");
         println!("   Re-scanning source files to update BUILD.bazel targets…\n");
 
         // Run build-sync logic across all detected crates
@@ -258,13 +257,13 @@ fn handle_bazel_init(
             ws_name
         );
     } else {
-        println!("🚀 Scaffolding Bazel workspace: {}", ws_name);
+        println!("🚀 Scaffolding Bazel workspace: {ws_name}");
     }
     println!("   Directory: {}", project_root.display());
     println!();
 
     let cargo_tomls = discover_cargo_tomls(project_root);
-    let cargo_workspace_blocks = collect_cargo_workspace_blocks(&project_root, &cargo_tomls);
+    let cargo_workspace_blocks = collect_cargo_workspace_blocks(project_root, &cargo_tomls);
 
     // ── Generate MODULE.bazel ─────────────────────────────────────────────
     // For mixed Bazel/Cargo trees: group Cargo manifests by their Cargo
@@ -286,7 +285,7 @@ fn handle_bazel_init(
         for member_rel in &workspace_members {
             let member_dir = project_root.join(member_rel);
             if !member_dir.exists() {
-                println!("   ⚠️  member '{}' not found, skipping", member_rel);
+                println!("   ⚠️  member '{member_rel}' not found, skipping");
                 continue;
             }
 
@@ -300,7 +299,7 @@ fn handle_bazel_init(
             let member_repo = cargo_workspace_repo_name_for_path(&member_dir)
                 .unwrap_or_else(|| crate_repo_name(&member_name));
 
-            println!("\n📁 {}/", member_rel);
+            println!("\n📁 {member_rel}/");
 
             // Generate BUILD.bazel for this member using build-sync inference
             let build_path = member_dir.join("BUILD.bazel");
@@ -312,7 +311,7 @@ fn handle_bazel_init(
                     infer_targets(&member_dir, &member_name, &member_repo, &existing_names, "");
 
                 if targets.is_empty() {
-                    println!("   ⚠️  no targets inferred for {}", member_name);
+                    println!("   ⚠️  no targets inferred for {member_name}");
                 } else {
                     let _local_deps = local_dependency_labels(&member_dir).unwrap_or_default();
                     let has_build_script = targets
@@ -324,7 +323,7 @@ fn handle_bazel_init(
                         build_file_header(&member_repo)
                     };
                     let managed = render_managed_block(&targets);
-                    let content = format!("{}\n{}", header, managed);
+                    let content = format!("{header}\n{managed}");
                     fs::write(&build_path, content)
                         .with_context(|| format!("Failed to write {}", build_path.display()))?;
                     for t in &targets {
@@ -403,7 +402,7 @@ fn handle_bazel_init(
     println!();
     println!("✅ Workspace scaffolded:");
     println!("   MODULE.bazel   — bzlmod deps");
-    println!("   .bazelversion  — pins Bazel {}", BAZEL_VERSION);
+    println!("   .bazelversion  — pins Bazel {BAZEL_VERSION}");
     println!("   .bazelrc       — build flags + shared caches");
     if is_workspace {
         println!(
@@ -460,7 +459,7 @@ fn handle_bazel_init(
                         .lines()
                         .filter(|l| l.contains("ERROR") || l.contains("error"))
                     {
-                        println!("   {}", line);
+                        println!("   {line}");
                     }
                     println!("   Run `bazel build --nobuild //...` for full details.");
                 }
@@ -484,7 +483,7 @@ fn handle_bazel_init(
     Ok(())
 }
 
-fn write_bazel_runner_config(project_root: &PathBuf, ws_name: &str, force: bool) -> Result<()> {
+fn write_bazel_runner_config(project_root: &Path, ws_name: &str, force: bool) -> Result<()> {
     let config_path = project_root.join(".cargo-runner.json");
     if config_path.exists() && !force {
         println!("   ℹ️  .cargo-runner.json already exists (--force to overwrite)");
@@ -497,18 +496,18 @@ fn write_bazel_runner_config(project_root: &PathBuf, ws_name: &str, force: bool)
     Ok(())
 }
 
-fn write_file_if(root: &PathBuf, name: &str, content: &str, force: bool) -> Result<()> {
+fn write_file_if(root: &Path, name: &str, content: &str, force: bool) -> Result<()> {
     let path = root.join(name);
     if path.exists() && !force {
-        println!("   ~ skipping {} (already exists, use --force)", name);
+        println!("   ~ skipping {name} (already exists, use --force)");
         return Ok(());
     }
     fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;
-    println!("   ✅ {}", name);
+    println!("   ✅ {name}");
     Ok(())
 }
 
-fn read_cargo_package_name(root: &PathBuf) -> Option<String> {
+fn read_cargo_package_name(root: &Path) -> Option<String> {
     let content = fs::read_to_string(root.join("Cargo.toml")).ok()?;
     let mut in_package = false;
     for line in content.lines() {
@@ -521,7 +520,7 @@ fn read_cargo_package_name(root: &PathBuf) -> Option<String> {
             in_package = false;
         }
         if in_package && trimmed.starts_with("name") {
-            if let Some(val) = trimmed.splitn(2, '=').nth(1) {
+            if let Some(val) = trimmed.split_once('=').map(|x| x.1) {
                 return Some(val.trim().trim_matches('"').trim_matches('\'').to_string());
             }
         }
@@ -571,7 +570,7 @@ fn parse_workspace_members(cargo_toml_path: &std::path::Path) -> Result<Vec<Stri
 
         // Look for `members = [...]`
         if trimmed.starts_with("members") {
-            if let Some(rhs) = trimmed.splitn(2, '=').nth(1) {
+            if let Some(rhs) = trimmed.split_once('=').map(|x| x.1) {
                 let rhs = rhs.trim();
                 if rhs.contains('[') && rhs.contains(']') {
                     // Single-line: members = ["a", "b"]
@@ -602,12 +601,11 @@ fn parse_workspace_members(cargo_toml_path: &std::path::Path) -> Result<Vec<Stri
             for ch in members_line_buf.chars() {
                 match ch {
                     '"' => {
-                        if in_quote {
-                            if !current.is_empty() {
+                        if in_quote
+                            && !current.is_empty() {
                                 members.push(current.clone());
                                 current.clear();
                             }
-                        }
                         in_quote = !in_quote;
                     }
                     _ if in_quote => current.push(ch),
@@ -646,7 +644,7 @@ fn parse_workspace_members(cargo_toml_path: &std::path::Path) -> Result<Vec<Stri
     Ok(expanded)
 }
 
-fn cargo_manifest_labels(project_root: &PathBuf, cargo_tomls: &[PathBuf]) -> Vec<String> {
+fn cargo_manifest_labels(project_root: &Path, cargo_tomls: &[PathBuf]) -> Vec<String> {
     let mut labels = Vec::new();
     for cargo_toml in cargo_tomls {
         if let Ok(rel) = cargo_toml.strip_prefix(project_root) {
@@ -658,7 +656,7 @@ fn cargo_manifest_labels(project_root: &PathBuf, cargo_tomls: &[PathBuf]) -> Vec
                 .and_then(|p| p.strip_prefix(project_root).ok())
             {
                 let parent = parent.to_string_lossy().replace('\\', "/");
-                labels.push(format!("//{}:Cargo.toml", parent));
+                labels.push(format!("//{parent}:Cargo.toml"));
             } else {
                 labels.push("//:Cargo.toml".to_string());
             }
@@ -683,7 +681,7 @@ struct CargoWorkspaceBlock {
 }
 
 fn collect_cargo_workspace_blocks(
-    project_root: &PathBuf,
+    project_root: &Path,
     cargo_tomls: &[PathBuf],
 ) -> Vec<CargoWorkspaceBlock> {
     let mut groups: std::collections::BTreeMap<PathBuf, Vec<PathBuf>> =
@@ -726,7 +724,7 @@ fn collect_cargo_workspace_blocks(
     blocks
 }
 
-fn discover_cargo_tomls(project_root: &PathBuf) -> Vec<PathBuf> {
+fn discover_cargo_tomls(project_root: &Path) -> Vec<PathBuf> {
     WalkDir::new(project_root)
         .follow_links(true)
         .into_iter()
@@ -751,7 +749,7 @@ fn module_bazel_content(ws_name: &str, blocks: &[CargoWorkspaceBlock]) -> String
             let manifests_block = block
                 .manifests
                 .iter()
-                .map(|m| format!(r#"    "{}","#, m))
+                .map(|m| format!(r#"    "{m}","#))
                 .collect::<Vec<_>>()
                 .join("\n");
             format!(
@@ -788,12 +786,12 @@ crate = use_extension(
     )
 }
 
-fn workspace_root_label(project_root: &PathBuf, workspace_root: &PathBuf) -> String {
+fn workspace_root_label(project_root: &Path, workspace_root: &Path) -> String {
     if workspace_root == project_root {
         "//:Cargo.lock".to_string()
     } else if let Ok(rel) = workspace_root.strip_prefix(project_root) {
         let rel = rel.to_string_lossy().replace('\\', "/");
-        format!("//{}:Cargo.lock", rel)
+        format!("//{rel}:Cargo.lock")
     } else {
         "//:Cargo.lock".to_string()
     }
@@ -851,7 +849,6 @@ rust_binary(
     visibility = ["//visibility:public"],
 )
 "#,
-            local_deps_expr = local_deps_expr,
         )
     }
 }

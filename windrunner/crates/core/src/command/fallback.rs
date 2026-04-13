@@ -51,7 +51,12 @@ pub fn generate_fallback_command(
             "Calling CommandBuilder::for_runnable with package_name={:?}",
             package_name
         );
-        let command = crate::command::builder::CommandBuilder::for_runnable(&runnable)
+        let file_type = if is_single_file_script_file(&runnable.file_path) {
+            crate::types::FileType::SingleFileScript
+        } else {
+            crate::types::FileType::CargoProject
+        };
+        let command = crate::command::builder::CommandBuilder::for_runnable(&runnable, file_type)
             .with_package(package_name.unwrap_or_default())
             .with_project_root(project_root.unwrap_or_else(|| Path::new(".")))
             .with_config(config)
@@ -62,11 +67,10 @@ pub fn generate_fallback_command(
         Ok(Some(command))
     } else {
         // Check if this might be a standalone Rust file
-        if file_path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            if is_standalone_rust_file(file_path) {
+        if file_path.extension().and_then(|s| s.to_str()) == Some("rs")
+            && is_standalone_rust_file(file_path) {
                 return generate_rustc_command(file_path);
             }
-        }
 
         Ok(None)
     }
@@ -167,7 +171,7 @@ fn create_synthetic_runnable(
 
         Ok(Some(Runnable {
             label: if let Some(ref name) = bin_name {
-                format!("Run binary '{}'", name)
+                format!("Run binary '{name}'")
             } else {
                 "Run main()".to_string()
             },
@@ -180,7 +184,7 @@ fn create_synthetic_runnable(
     } else if normalized_path.contains("/benches/") || normalized_path.contains("benches/") {
         // Benchmark target
         Ok(Some(Runnable {
-            label: format!("Run benchmark '{}'", file_name),
+            label: format!("Run benchmark '{file_name}'"),
             scope,
             kind: RunnableKind::Benchmark {
                 bench_name: file_name.to_string(),
@@ -195,7 +199,7 @@ fn create_synthetic_runnable(
     {
         // Integration test
         Ok(Some(Runnable {
-            label: format!("Run test '{}'", file_name),
+            label: format!("Run test '{file_name}'"),
             scope,
             kind: RunnableKind::Test {
                 test_name: file_name.to_string(),
@@ -225,7 +229,7 @@ fn create_synthetic_runnable(
     } else if normalized_path.contains("/examples/") || normalized_path.contains("examples/") {
         // Example target - treat as binary
         Ok(Some(Runnable {
-            label: format!("Run example '{}'", file_name),
+            label: format!("Run example '{file_name}'"),
             scope,
             kind: RunnableKind::Binary {
                 bin_name: Some(file_name.to_string()),
@@ -291,7 +295,7 @@ fn check_cargo_toml_for_runnable(
                 if path == relative_str {
                     let bin_name = bin.name.clone().unwrap_or_else(|| file_name.to_string());
                     return Ok(Some(Runnable {
-                        label: format!("Run binary '{}'", bin_name),
+                        label: format!("Run binary '{bin_name}'"),
                         scope,
                         kind: RunnableKind::Binary {
                             bin_name: Some(bin_name),
@@ -315,7 +319,7 @@ fn check_cargo_toml_for_runnable(
                         .clone()
                         .unwrap_or_else(|| file_name.to_string());
                     return Ok(Some(Runnable {
-                        label: format!("Run example '{}'", example_name),
+                        label: format!("Run example '{example_name}'"),
                         scope,
                         kind: RunnableKind::Binary {
                             bin_name: Some(example_name),
@@ -336,7 +340,7 @@ fn check_cargo_toml_for_runnable(
                 if path == relative_str {
                     let test_name = test.name.clone().unwrap_or_else(|| file_name.to_string());
                     return Ok(Some(Runnable {
-                        label: format!("Run test '{}'", test_name),
+                        label: format!("Run test '{test_name}'"),
                         scope,
                         kind: RunnableKind::Test {
                             test_name,
@@ -358,7 +362,7 @@ fn check_cargo_toml_for_runnable(
                 if path == relative_str {
                     let bench_name = bench.name.clone().unwrap_or_else(|| file_name.to_string());
                     return Ok(Some(Runnable {
-                        label: format!("Run benchmark '{}'", bench_name),
+                        label: format!("Run benchmark '{bench_name}'"),
                         scope,
                         kind: RunnableKind::Benchmark { bench_name },
                         module_path: package_name.unwrap_or_default().to_string(),
@@ -449,7 +453,7 @@ fn is_standalone_rust_file(file_path: &Path) -> bool {
 /// Generate a rustc command for standalone Rust files
 fn generate_rustc_command(file_path: &Path) -> Result<Option<CargoCommand>> {
     // Read the file content to check for shebang and tests
-    let content = std::fs::read_to_string(file_path).map_err(|e| crate::Error::IoError(e))?;
+    let content = std::fs::read_to_string(file_path).map_err(crate::Error::IoError)?;
 
     // Check if it's a cargo script file (has shebang)
     if let Some(first_line) = content.lines().next() {
@@ -480,8 +484,13 @@ fn generate_rustc_command(file_path: &Path) -> Result<Option<CargoCommand>> {
             };
 
             // Use the CommandBuilder to build the command
+            let file_type = if is_single_file_script_file(&runnable.file_path) {
+                crate::types::FileType::SingleFileScript
+            } else {
+                crate::types::FileType::CargoProject
+            };
             let command =
-                crate::command::builder::CommandBuilder::for_runnable(&runnable).build()?;
+                crate::command::builder::CommandBuilder::for_runnable(&runnable, file_type).build()?;
 
             return Ok(Some(command));
         }
@@ -514,7 +523,12 @@ fn generate_rustc_command(file_path: &Path) -> Result<Option<CargoCommand>> {
     };
 
     // Use the CommandBuilder to build the command
-    let command = crate::command::builder::CommandBuilder::for_runnable(&runnable).build()?;
+    let file_type = if is_single_file_script_file(&runnable.file_path) {
+        crate::types::FileType::SingleFileScript
+    } else {
+        crate::types::FileType::CargoProject
+    };
+    let command = crate::command::builder::CommandBuilder::for_runnable(&runnable, file_type).build()?;
 
     Ok(Some(command))
 }

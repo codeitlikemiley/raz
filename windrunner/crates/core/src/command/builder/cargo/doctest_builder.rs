@@ -38,7 +38,7 @@ impl CommandBuilderImpl for DocTestCommandBuilder {
                     .unwrap_or(struct_or_module_name);
 
                 if let Some(method) = method_name {
-                    format!("{}::{}", clean_name, method)
+                    format!("{clean_name}::{method}")
                 } else {
                     clean_name.to_string()
                 }
@@ -54,7 +54,7 @@ impl CommandBuilderImpl for DocTestCommandBuilder {
 
         // Add channel
         if let Some(channel) = builder.get_channel(config, file_type) {
-            args.push(format!("+{}", channel));
+            args.push(format!("+{channel}"));
         }
 
         args.push("test".to_string());

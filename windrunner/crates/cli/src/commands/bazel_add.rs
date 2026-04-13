@@ -34,7 +34,7 @@ pub fn bazel_add_command(
     let target_dir = if let Some(dir) = crate_dir {
         PathBuf::from(dir)
             .canonicalize()
-            .with_context(|| format!("cannot find crate directory: {}", dir))?
+            .with_context(|| format!("cannot find crate directory: {dir}"))?
     } else {
         // Walk up to find a directory that has Cargo.toml + BUILD.bazel
         find_local_bazel_crate(&cwd)?
@@ -61,7 +61,7 @@ pub fn bazel_add_command(
     let mut args = vec!["add", krate];
     let features_flag;
     if let Some(feats) = features {
-        features_flag = format!("--features={}", feats);
+        features_flag = format!("--features={feats}");
         args.push(&features_flag);
     }
     if dev {
@@ -72,7 +72,7 @@ pub fn bazel_add_command(
         "📦 cargo add {}{}  in  {}",
         krate,
         features
-            .map(|f| format!(" --features {}", f))
+            .map(|f| format!(" --features {f}"))
             .unwrap_or_default(),
         target_dir.display()
     );
@@ -84,7 +84,7 @@ pub fn bazel_add_command(
         .context("failed to run `cargo add`")?;
 
     if !status.success() {
-        bail!("`cargo add {}` failed", krate);
+        bail!("`cargo add {krate}` failed");
     }
 
     // ── 2. cargo update ───────────────────────────────────────────────────
@@ -100,8 +100,8 @@ pub fn bazel_add_command(
     }
 
     // ── 3. bazel sync ─────────────────────────────────────────────────────
-    println!("🔥 bazel sync  →  {}", repo_name);
-    let only_flag = format!("--only={}", repo_name);
+    println!("🔥 bazel sync  →  {repo_name}");
+    let only_flag = format!("--only={repo_name}");
     let status = Command::new("bazel")
         .args(["sync", &only_flag])
         .current_dir(&bazel_root)
@@ -109,7 +109,7 @@ pub fn bazel_add_command(
         .context("failed to run `bazel sync`")?;
 
     if !status.success() {
-        bail!("`bazel sync {}` failed", only_flag);
+        bail!("`bazel sync {only_flag}` failed");
     }
 
     // ── 4. Regenerate rust-project.json ───────────────────────────────────
@@ -118,7 +118,7 @@ pub fn bazel_add_command(
         run_gen_rust_project(&bazel_root);
     }
 
-    println!("\n✅  '{}' added to {}.", krate, crate_name);
+    println!("\n✅  '{krate}' added to {crate_name}.");
     println!(
         "   Available in BUILD.bazel via all_crate_deps(){}.",
         if dev { " (dev)" } else { "" }
@@ -162,7 +162,7 @@ fn extract_crate_name(toml_content: &str) -> Option<String> {
             in_package = false;
         }
         if in_package && t.starts_with("name") {
-            if let Some(val) = t.splitn(2, '=').nth(1) {
+            if let Some(val) = t.split_once('=').map(|x| x.1) {
                 let name = val.trim().trim_matches('"').trim_matches('\'').to_string();
                 if !name.is_empty() {
                     return Some(name);

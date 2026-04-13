@@ -166,25 +166,25 @@ fn print_human_context(context: &RunnerContext) {
     println!("build system: {}", context.build_system);
     println!("file kind: {}", context.file_kind);
     if let Some(ref root) = context.project_root {
-        println!("project root: {}", root);
+        println!("project root: {root}");
     }
     if let Some(ref file) = context.file_path {
-        println!("file: {}", file);
+        println!("file: {file}");
     }
     if let Some(line) = context.line {
-        println!("line: {}", line);
+        println!("line: {line}");
     }
     if let Some(ref package) = context.package_name {
-        println!("package: {}", package);
+        println!("package: {package}");
     }
     if let Some(ref runnable) = context.runnable_kind {
-        println!("runnable kind: {}", runnable);
+        println!("runnable kind: {runnable}");
     }
     if let Some(ref target) = context.recommended_target {
-        println!("recommended target: {}", target);
+        println!("recommended target: {target}");
     }
     if let Some(ref engine) = context.script_engine {
-        println!("script engine: {}", engine);
+        println!("script engine: {engine}");
     }
 }
 
@@ -408,21 +408,14 @@ fn detect_file_kind(
 
     if normalized.ends_with("build.rs") {
         "build_script".to_string()
-    } else if normalized.contains("/tests/") || normalized.starts_with("tests/") {
-        "cargo_project".to_string()
-    } else if normalized.contains("/benches/") || normalized.starts_with("benches/") {
-        "cargo_project".to_string()
-    } else if normalized.contains("/examples/") || normalized.starts_with("examples/") {
-        "cargo_project".to_string()
-    } else if normalized.ends_with("/src/main.rs")
-        || normalized.ends_with("src/main.rs")
-        || normalized.contains("/src/bin/")
-        || normalized.starts_with("src/bin/")
-        || normalized.ends_with("/src/lib.rs")
-        || normalized.ends_with("src/lib.rs")
+    } else if normalized.contains("/tests/") || normalized.starts_with("tests/")
+        || normalized.contains("/benches/") || normalized.starts_with("benches/")
+        || normalized.contains("/examples/") || normalized.starts_with("examples/")
+        || normalized.ends_with("/src/main.rs") || normalized.ends_with("src/main.rs")
+        || normalized.contains("/src/bin/") || normalized.starts_with("src/bin/")
+        || normalized.ends_with("/src/lib.rs") || normalized.ends_with("src/lib.rs")
+        || cargo_ctx.is_some()
     {
-        "cargo_project".to_string()
-    } else if cargo_ctx.is_some() {
         "cargo_project".to_string()
     } else {
         "standalone".to_string()
@@ -537,9 +530,9 @@ fn detect_runnable_kind(
         Some("benchmark".to_string())
     } else if normalized.contains("/tests/") || normalized.starts_with("tests/") {
         Some("test".to_string())
-    } else if normalized.contains("/examples/") || normalized.starts_with("examples/") {
-        Some("binary".to_string())
-    } else if normalized.ends_with("/src/main.rs")
+    } else if normalized.contains("/examples/")
+        || normalized.starts_with("examples/")
+        || normalized.ends_with("/src/main.rs")
         || normalized.ends_with("src/main.rs")
         || normalized.contains("/src/bin/")
         || normalized.starts_with("src/bin/")

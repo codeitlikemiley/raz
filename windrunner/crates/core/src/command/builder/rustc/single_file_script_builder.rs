@@ -256,7 +256,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
 impl SingleFileScriptBuilder {
     fn extract_shebang(&self, file_path: &std::path::Path) -> Result<String> {
         let content = std::fs::read_to_string(file_path)
-            .map_err(|e| crate::error::Error::ParseError(format!("Failed to read file: {}", e)))?;
+            .map_err(|e| crate::error::Error::ParseError(format!("Failed to read file: {e}")))?;
 
         if let Some(first_line) = content.lines().next() {
             if is_single_file_script_shebang(first_line) {

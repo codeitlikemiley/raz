@@ -25,6 +25,12 @@ pub struct ConfigMerger {
     config_info: ConfigInfo,
 }
 
+impl Default for ConfigMerger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigMerger {
     pub fn new() -> Self {
         Self {

@@ -43,7 +43,7 @@ impl ResolverChain {
     }
 
     /// Add a resolver. The chain is sorted by priority (descending) before use.
-    pub fn add(mut self, resolver: impl CargoTargetResolver + 'static) -> Self {
+    pub fn push_resolver(mut self, resolver: impl CargoTargetResolver + 'static) -> Self {
         let prio = resolver.priority();
         self.resolvers.push((prio, Box::new(resolver)));
         // Re-sort: highest priority first
@@ -70,11 +70,11 @@ impl ResolverChain {
         //   100  BenchResolver            — benches/*.rs
         //    50  LibResolver              — src/**/*.rs (default)
         Self::new()
-            .add(IntegrationTestResolver)
-            .add(BinResolver::new(package.map(str::to_string)))
-            .add(ExampleResolver)
-            .add(BenchResolver)
-            .add(LibResolver)
+            .push_resolver(IntegrationTestResolver)
+            .push_resolver(BinResolver::new(package.map(str::to_string)))
+            .push_resolver(ExampleResolver)
+            .push_resolver(BenchResolver)
+            .push_resolver(LibResolver)
     }
 }
 

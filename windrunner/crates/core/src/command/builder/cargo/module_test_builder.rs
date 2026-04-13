@@ -36,9 +36,9 @@ impl CommandBuilderImpl for ModuleTestCommandBuilder {
         if let Some(test_framework) = builder.get_test_framework(config, file_type) {
             // Add channel
             if let Some(channel) = &test_framework.channel {
-                args.push(format!("+{}", channel));
+                args.push(format!("+{channel}"));
             } else if let Some(channel) = builder.get_channel(config, file_type) {
-                args.push(format!("+{}", channel));
+                args.push(format!("+{channel}"));
             }
 
             // Add subcommand
@@ -60,7 +60,7 @@ impl CommandBuilderImpl for ModuleTestCommandBuilder {
         } else {
             // Standard test command
             if let Some(channel) = builder.get_channel(config, file_type) {
-                args.push(format!("+{}", channel));
+                args.push(format!("+{channel}"));
             }
             args.push("test".to_string());
         }
@@ -316,11 +316,11 @@ impl ModuleTestCommandBuilder {
     /// that prefix — tests are at the root namespace. Strip it so the filter works.
     fn strip_integration_test_prefix(file_path: &std::path::Path, module_path: &str) -> String {
         let file_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let prefix = format!("tests::{}", file_stem);
+        let prefix = format!("tests::{file_stem}");
 
         if module_path == prefix {
             String::new()
-        } else if let Some(rest) = module_path.strip_prefix(&format!("{}::", prefix)) {
+        } else if let Some(rest) = module_path.strip_prefix(&format!("{prefix}::")) {
             rest.to_string()
         } else {
             module_path.to_string()

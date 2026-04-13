@@ -84,9 +84,9 @@ fn remove_cache_dir(label: &str, raw_path: &str) -> Result<()> {
         println!("🗑️  Removing {}: {}", label, expanded.display());
         std::fs::remove_dir_all(&expanded)
             .with_context(|| format!("Failed to remove {}", expanded.display()))?;
-        println!("   ✅ {} cleared", label);
+        println!("   ✅ {label} cleared");
     } else {
-        println!("   ~ {} not found — skipping", label);
+        println!("   ~ {label} not found — skipping");
     }
     Ok(())
 }
@@ -110,7 +110,7 @@ mod tests {
         let home = std::env::var("HOME").unwrap();
         assert_eq!(
             result,
-            std::path::PathBuf::from(format!("{}/.cache/bazel-disk", home))
+            std::path::PathBuf::from(format!("{home}/.cache/bazel-disk"))
         );
     }
 
@@ -133,7 +133,7 @@ mod tests {
         let home = std::env::var("HOME").unwrap();
         assert_eq!(
             result,
-            std::path::PathBuf::from(format!("{}/a/b/c/d", home))
+            std::path::PathBuf::from(format!("{home}/a/b/c/d"))
         );
     }
 }

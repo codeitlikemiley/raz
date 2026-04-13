@@ -48,23 +48,23 @@ pub fn print_command_breakdown(command: &CargoCommand) {
             }
 
             if let Some(name) = crate_name {
-                println!("      • crate-name: {}", name);
+                println!("      • crate-name: {name}");
             }
 
             if let Some(name) = output_name {
-                println!("      • output: {}", name);
+                println!("      • output: {name}");
             }
 
             if let Some(file) = source_file {
-                println!("      • source: {}", file);
+                println!("      • source: {file}");
             }
 
             if !extra_args.is_empty() {
-                println!("      • extraArgs: {:?}", extra_args);
+                println!("      • extraArgs: {extra_args:?}");
             }
 
             if let Some(test_filter) = &command.test_filter {
-                println!("      • testFilter: {}", test_filter);
+                println!("      • testFilter: {test_filter}");
             }
 
             // Check for test binary args in env
@@ -75,7 +75,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
             if let Some((_, extra_args)) = has_test_extra_args {
                 let args: Vec<&str> = extra_args.split_whitespace().collect();
                 if !args.is_empty() {
-                    println!("      • extraTestBinaryArgs: {:?}", args);
+                    println!("      • extraTestBinaryArgs: {args:?}");
                 }
             }
         }
@@ -85,7 +85,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
             // Parse Bazel-specific arguments
             if !command.args.is_empty() {
                 let subcommand = &command.args[0];
-                println!("      • subcommand: {}", subcommand);
+                println!("      • subcommand: {subcommand}");
 
                 // Show target if present
                 if command.args.len() > 1 {
@@ -95,7 +95,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
                 // Show other args
                 let extra_args: Vec<_> = command.args.iter().skip(2).collect();
                 if !extra_args.is_empty() {
-                    println!("      • extraArgs: {:?}", extra_args);
+                    println!("      • extraArgs: {extra_args:?}");
                 }
 
                 // Check for doc test limitation note
@@ -104,7 +104,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
                     .iter()
                     .find(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION")
                 {
-                    println!("      • ⚠️  Note: {}", msg);
+                    println!("      • ⚠️  Note: {msg}");
                 }
             }
         }
@@ -116,19 +116,19 @@ pub fn print_command_breakdown(command: &CargoCommand) {
             println!("      • command: cargo");
 
             if let Some(subcmd) = subcommand {
-                println!("      • subcommand: {}", subcmd);
+                println!("      • subcommand: {subcmd}");
             }
 
             if let Some(pkg) = package {
-                println!("      • package: {}", pkg);
+                println!("      • package: {pkg}");
             }
 
             if !extra_args.is_empty() {
-                println!("      • extraArgs: {:?}", extra_args);
+                println!("      • extraArgs: {extra_args:?}");
             }
 
             if !test_binary_args.is_empty() {
-                println!("      • extraTestBinaryArgs: {:?}", test_binary_args);
+                println!("      • extraTestBinaryArgs: {test_binary_args:?}");
             }
         }
     }
@@ -144,7 +144,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
         if !visible_env.is_empty() {
             println!("      • extraEnv:");
             for (key, value) in visible_env {
-                println!("         - {}={}", key, value);
+                println!("         - {key}={value}");
             }
         }
     }

@@ -193,12 +193,12 @@ pub fn local_dependency_labels(crate_dir: &Path) -> Result<Vec<String>> {
         let dep_dir = fs::canonicalize(&dep_dir)
             .with_context(|| format!("Failed to resolve {}", dep_dir.display()))?;
         let label = match dep_dir.strip_prefix(&workspace_root) {
-            Ok(rel) if rel.as_os_str().is_empty() => format!("//:{}_lib", package_name),
+            Ok(rel) if rel.as_os_str().is_empty() => format!("//:{package_name}_lib"),
             Ok(rel) => {
                 let rel = rel.to_string_lossy().replace('\\', "/");
-                format!("//{}:{}_lib", rel, package_name)
+                format!("//{rel}:{package_name}_lib")
             }
-            Err(_) => format!("//:{}_lib", package_name),
+            Err(_) => format!("//:{package_name}_lib"),
         };
         labels.insert(label);
     }

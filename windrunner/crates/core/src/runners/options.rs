@@ -216,7 +216,7 @@ impl OutputOptions {
 
         if let Some(color) = &self.color {
             if !["auto", "always", "never"].contains(&color.as_str()) {
-                return Err(format!("Invalid color mode: {}", color));
+                return Err(format!("Invalid color mode: {color}"));
             }
         }
 

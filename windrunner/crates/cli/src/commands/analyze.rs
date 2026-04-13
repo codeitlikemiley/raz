@@ -126,8 +126,7 @@ fn analyze_module_path_command(
 
     match matches.len() {
         0 => Err(anyhow::anyhow!(
-            "No file found for module path: {}",
-            module_path
+            "No file found for module path: {module_path}"
         )),
         1 => {
             let path = matches.into_iter().next().unwrap();
@@ -150,9 +149,7 @@ fn analyze_module_path_command(
                 .collect::<Vec<_>>()
                 .join(", ");
             Err(anyhow::anyhow!(
-                "Module path is ambiguous: {}. Matches: {}",
-                module_path,
-                paths
+                "Module path is ambiguous: {module_path}. Matches: {paths}"
             ))
         }
     }
@@ -282,149 +279,6 @@ fn describe_runnable_kind(kind: &cargo_runner_core::RunnableKind) -> &'static st
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cargo_runner_core::types::{Position, Scope, ScopeKind};
-    use std::path::PathBuf;
-
-    fn sample_runnable(
-        kind: RunnableKind,
-        label: &str,
-        module_path: &str,
-        scope_name: Option<&str>,
-    ) -> Runnable {
-        Runnable {
-            label: label.to_string(),
-            scope: Scope {
-                start: Position::new(0, 0),
-                end: Position::new(1, 0),
-                kind: ScopeKind::Function,
-                name: scope_name.map(str::to_string),
-            },
-            kind,
-            module_path: module_path.to_string(),
-            file_path: PathBuf::from("src/lib.rs"),
-            extended_scope: None,
-        }
-    }
-
-    #[test]
-    fn name_filter_is_case_and_separator_insensitive() {
-        let filters = RunnableFilters {
-            name: Some("My Function".to_string()),
-            ..Default::default()
-        };
-        let runnable = sample_runnable(
-            RunnableKind::Test {
-                test_name: "my_function".to_string(),
-                is_async: false,
-            },
-            "Run test 'my_function'",
-            "crate::tests",
-            Some("my_function"),
-        );
-
-        assert!(filters.matches(&runnable));
-    }
-
-    #[test]
-    fn exact_name_filter_requires_full_normalized_match() {
-        let fuzzy = RunnableFilters {
-            name: Some("my".to_string()),
-            exact: true,
-            ..Default::default()
-        };
-        let exact = RunnableFilters {
-            name: Some("my function".to_string()),
-            exact: true,
-            ..Default::default()
-        };
-        let runnable = sample_runnable(
-            RunnableKind::Test {
-                test_name: "my_function".to_string(),
-                is_async: false,
-            },
-            "Run test 'my_function'",
-            "crate::tests",
-            Some("my_function"),
-        );
-
-        assert!(!fuzzy.matches(&runnable));
-        assert!(exact.matches(&runnable));
-    }
-
-    #[test]
-    fn symbol_filter_targets_doc_test_symbols_only() {
-        let filters = RunnableFilters {
-            symbol: Some("Users".to_string()),
-            ..Default::default()
-        };
-        let doc_symbol = sample_runnable(
-            RunnableKind::DocTest {
-                struct_or_module_name: "Users".to_string(),
-                method_name: None,
-            },
-            "Run doc test for 'Users'",
-            "crate::models",
-            Some("Users"),
-        );
-        let doc_method = sample_runnable(
-            RunnableKind::DocTest {
-                struct_or_module_name: "Users".to_string(),
-                method_name: Some("new".to_string()),
-            },
-            "Run doc test for 'Users::new'",
-            "crate::models",
-            Some("Users"),
-        );
-
-        assert!(filters.matches(&doc_symbol));
-        assert!(!filters.matches(&doc_method));
-    }
-
-    #[test]
-    fn kind_filters_can_be_combined_with_name_and_symbol_filters() {
-        let filters = RunnableFilters {
-            bin: true,
-            test: true,
-            name: Some("app".to_string()),
-            symbol: Some("Users".to_string()),
-            ..Default::default()
-        };
-        let test_runnable = sample_runnable(
-            RunnableKind::Test {
-                test_name: "test_add".to_string(),
-                is_async: false,
-            },
-            "Run test 'test_add'",
-            "crate::tests",
-            Some("test_add"),
-        );
-        let binary_runnable = sample_runnable(
-            RunnableKind::Binary {
-                bin_name: Some("app".to_string()),
-            },
-            "Run binary 'app'",
-            "crate::main",
-            Some("app"),
-        );
-        let symbol_runnable = sample_runnable(
-            RunnableKind::DocTest {
-                struct_or_module_name: "Users".to_string(),
-                method_name: None,
-            },
-            "Run doc test for 'Users'",
-            "crate::models",
-            Some("Users"),
-        );
-
-        assert!(!filters.matches(&test_runnable));
-        assert!(!filters.matches(&binary_runnable));
-        assert!(!filters.matches(&symbol_runnable));
-    }
-}
-
 pub fn print_formatted_analysis(
     runner: &mut cargo_runner_core::UnifiedRunner,
     filepath: &str,
@@ -461,19 +315,19 @@ pub fn print_formatted_analysis(
 
             // Determine file type
             let file_type = determine_file_type(path);
-            println!("   📦 Type: {}", file_type);
+            println!("   📦 Type: {file_type}");
 
             // Get file scope info
             if let Ok(source) = std::fs::read_to_string(path) {
                 let line_count = source.lines().count();
-                println!("   📏 Scope: lines 1-{}", line_count);
+                println!("   📏 Scope: lines 1-{line_count}");
             }
         }
         Ok(None) => {
             println!("\n📄 File-level command: None");
         }
         Err(e) => {
-            println!("\n📄 File-level command: Error - {}", e);
+            println!("\n📄 File-level command: Error - {e}");
         }
     }
 
@@ -618,7 +472,7 @@ pub fn print_formatted_analysis(
                                     println!("        - features: all");
                                 }
                                 cargo_runner_core::config::Features::Selected(selected) => {
-                                    println!("        - features: {:?}", selected);
+                                    println!("        - features: {selected:?}");
                                 }
                                 _ => {}
                             }
@@ -688,7 +542,7 @@ pub fn print_formatted_analysis(
     // Display final command at the end
     if let Some(cmd) = final_command {
         println!("\n🎯 Command to run:");
-        println!("   {}", cmd);
+        println!("   {cmd}");
     }
 
     println!("\n{}", "=".repeat(80));
@@ -735,13 +589,13 @@ fn print_config_details(_runner: &cargo_runner_core::UnifiedRunner, filepath: &s
     // Show cargo configuration if present
     if let Some(cargo_config) = &merged_config.cargo {
         if let Some(command) = &cargo_config.command {
-            println!("      • command: {}", command);
+            println!("      • command: {command}");
         }
         if let Some(subcommand) = &cargo_config.subcommand {
-            println!("      • subcommand: {}", subcommand);
+            println!("      • subcommand: {subcommand}");
         }
         if let Some(channel) = &cargo_config.channel {
-            println!("      • channel: {}", channel);
+            println!("      • channel: {channel}");
         }
         if let Some(features) = &cargo_config.features {
             match features {
@@ -749,14 +603,14 @@ fn print_config_details(_runner: &cargo_runner_core::UnifiedRunner, filepath: &s
                     println!("      • features: all");
                 }
                 cargo_runner_core::config::Features::Selected(selected) => {
-                    println!("      • features: {:?}", selected);
+                    println!("      • features: {selected:?}");
                 }
                 _ => {}
             }
         }
         if let Some(extra_args) = &cargo_config.extra_args {
             if !extra_args.is_empty() {
-                println!("      • extra_args: {:?}", extra_args);
+                println!("      • extra_args: {extra_args:?}");
             }
         }
         if let Some(extra_env) = &cargo_config.extra_env {
@@ -791,7 +645,7 @@ fn print_config_details(_runner: &cargo_runner_core::UnifiedRunner, filepath: &s
         println!("      • single_file_script config:");
         if let Some(extra_args) = &sfs_config.extra_args {
             if !extra_args.is_empty() {
-                println!("         - extra_args: {:?}", extra_args);
+                println!("         - extra_args: {extra_args:?}");
             }
         }
         if let Some(extra_env) = &sfs_config.extra_env {
@@ -809,4 +663,147 @@ fn print_config_details(_runner: &cargo_runner_core::UnifiedRunner, filepath: &s
 
     println!();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cargo_runner_core::types::{Position, Scope, ScopeKind};
+    use std::path::PathBuf;
+
+    fn sample_runnable(
+        kind: RunnableKind,
+        label: &str,
+        module_path: &str,
+        scope_name: Option<&str>,
+    ) -> Runnable {
+        Runnable {
+            label: label.to_string(),
+            scope: Scope {
+                start: Position::new(0, 0),
+                end: Position::new(1, 0),
+                kind: ScopeKind::Function,
+                name: scope_name.map(str::to_string),
+            },
+            kind,
+            module_path: module_path.to_string(),
+            file_path: PathBuf::from("src/lib.rs"),
+            extended_scope: None,
+        }
+    }
+
+    #[test]
+    fn name_filter_is_case_and_separator_insensitive() {
+        let filters = RunnableFilters {
+            name: Some("My Function".to_string()),
+            ..Default::default()
+        };
+        let runnable = sample_runnable(
+            RunnableKind::Test {
+                test_name: "my_function".to_string(),
+                is_async: false,
+            },
+            "Run test 'my_function'",
+            "crate::tests",
+            Some("my_function"),
+        );
+
+        assert!(filters.matches(&runnable));
+    }
+
+    #[test]
+    fn exact_name_filter_requires_full_normalized_match() {
+        let fuzzy = RunnableFilters {
+            name: Some("my".to_string()),
+            exact: true,
+            ..Default::default()
+        };
+        let exact = RunnableFilters {
+            name: Some("my function".to_string()),
+            exact: true,
+            ..Default::default()
+        };
+        let runnable = sample_runnable(
+            RunnableKind::Test {
+                test_name: "my_function".to_string(),
+                is_async: false,
+            },
+            "Run test 'my_function'",
+            "crate::tests",
+            Some("my_function"),
+        );
+
+        assert!(!fuzzy.matches(&runnable));
+        assert!(exact.matches(&runnable));
+    }
+
+    #[test]
+    fn symbol_filter_targets_doc_test_symbols_only() {
+        let filters = RunnableFilters {
+            symbol: Some("Users".to_string()),
+            ..Default::default()
+        };
+        let doc_symbol = sample_runnable(
+            RunnableKind::DocTest {
+                struct_or_module_name: "Users".to_string(),
+                method_name: None,
+            },
+            "Run doc test for 'Users'",
+            "crate::models",
+            Some("Users"),
+        );
+        let doc_method = sample_runnable(
+            RunnableKind::DocTest {
+                struct_or_module_name: "Users".to_string(),
+                method_name: Some("new".to_string()),
+            },
+            "Run doc test for 'Users::new'",
+            "crate::models",
+            Some("Users"),
+        );
+
+        assert!(filters.matches(&doc_symbol));
+        assert!(!filters.matches(&doc_method));
+    }
+
+    #[test]
+    fn kind_filters_can_be_combined_with_name_and_symbol_filters() {
+        let filters = RunnableFilters {
+            bin: true,
+            test: true,
+            name: Some("app".to_string()),
+            symbol: Some("Users".to_string()),
+            ..Default::default()
+        };
+        let test_runnable = sample_runnable(
+            RunnableKind::Test {
+                test_name: "test_add".to_string(),
+                is_async: false,
+            },
+            "Run test 'test_add'",
+            "crate::tests",
+            Some("test_add"),
+        );
+        let binary_runnable = sample_runnable(
+            RunnableKind::Binary {
+                bin_name: Some("app".to_string()),
+            },
+            "Run binary 'app'",
+            "crate::main",
+            Some("app"),
+        );
+        let symbol_runnable = sample_runnable(
+            RunnableKind::DocTest {
+                struct_or_module_name: "Users".to_string(),
+                method_name: None,
+            },
+            "Run doc test for 'Users'",
+            "crate::models",
+            Some("Users"),
+        );
+
+        assert!(!filters.matches(&test_runnable));
+        assert!(!filters.matches(&binary_runnable));
+        assert!(!filters.matches(&symbol_runnable));
+    }
 }

@@ -13,6 +13,18 @@ use crate::{
 };
 use std::path::{Path, PathBuf};
 
+struct LegacyExpandArgs<'a> {
+    target: &'a str,
+    target_name: &'a str,
+    package: &'a str,
+    file_path: &'a str,
+    file_name: &'a str,
+    parent_dir: &'a str,
+    test_filter: &'a str,
+    module_path: &'a str,
+    binary_name: &'a str,
+}
+
 /// Bazel command builder with rich placeholder support
 pub struct BazelCommandBuilder;
 
@@ -74,7 +86,7 @@ impl BazelCommandBuilder {
         // Get the test framework or use defaults
         let mut framework = bazel_config
             .and_then(|bc| bc.test_framework.clone())
-            .unwrap_or_else(|| BazelConfig::default_test_framework());
+            .unwrap_or_else(BazelConfig::default_test_framework);
 
         if !framework
             .test_args
@@ -137,7 +149,7 @@ impl BazelCommandBuilder {
         // Get the test framework or use defaults
         let mut framework = bazel_config
             .and_then(|bc| bc.test_framework.clone())
-            .unwrap_or_else(|| BazelConfig::default_test_framework());
+            .unwrap_or_else(BazelConfig::default_test_framework);
 
         // Module-level test selection should be broad enough to match the whole
         // module. `--exact` would require the filter to equal a single test name,
@@ -200,7 +212,7 @@ impl BazelCommandBuilder {
         // Get the binary framework or use defaults
         let mut framework = bazel_config
             .and_then(|bc| bc.binary_framework.clone())
-            .unwrap_or_else(|| BazelConfig::default_binary_framework());
+            .unwrap_or_else(BazelConfig::default_binary_framework);
 
         // For build scripts, override the subcommand to 'build'
         if is_build_script {
@@ -253,7 +265,7 @@ impl BazelCommandBuilder {
         // Get the benchmark framework or use defaults
         let framework = bazel_config
             .and_then(|bc| bc.benchmark_framework.clone())
-            .unwrap_or_else(|| BazelConfig::default_benchmark_framework());
+            .unwrap_or_else(BazelConfig::default_benchmark_framework);
 
         // Determine the target
         let target = self.determine_target(runnable, bazel_config, config, true);
@@ -322,7 +334,7 @@ impl BazelCommandBuilder {
                 // Get the doc test framework or use defaults
                 let framework = bazel_config
                     .and_then(|bc| bc.doc_test_framework.clone())
-                    .unwrap_or_else(|| BazelConfig::default_doc_test_framework());
+                    .unwrap_or_else(BazelConfig::default_doc_test_framework);
 
                 // Add extra args from framework
                 if let Some(extra_args) = &framework.extra_args {
@@ -438,9 +450,9 @@ impl BazelCommandBuilder {
         // Add environment variables to bazel args before -- separator
         if let Some(env) = &framework.extra_env {
             for (key, value) in env {
-                args.push(format!("--action_env={}={}", key, value));
+                args.push(format!("--action_env={key}={value}"));
                 if subcommand == "test" || subcommand == "run" {
-                    args.push(format!("--test_env={}={}", key, value));
+                    args.push(format!("--test_env={key}={value}"));
                 }
             }
         }
@@ -689,7 +701,7 @@ impl BazelCommandBuilder {
         // Check common patterns
         if file_path.to_string_lossy().contains("src/bin/") {
             // Binary in src/bin
-            format!("//src/bin:{}", file_name)
+            format!("//src/bin:{file_name}")
         } else if file_name == "main" && !is_test {
             // Main binary
             "//:main".to_string()
@@ -811,15 +823,17 @@ impl BazelCommandBuilder {
                         );
                         Self::legacy_expand(
                             template,
-                            &target_owned,
-                            &target_name_owned,
-                            &package_owned,
-                            &file_path_str,
-                            &file_name_owned,
-                            &parent_dir_owned,
-                            &test_filter_owned,
-                            &module_path_owned,
-                            &binary_owned,
+                            &LegacyExpandArgs {
+                                target: &target_owned,
+                                target_name: &target_name_owned,
+                                package: &package_owned,
+                                file_path: &file_path_str,
+                                file_name: &file_name_owned,
+                                parent_dir: &parent_dir_owned,
+                                test_filter: &test_filter_owned,
+                                module_path: &module_path_owned,
+                                binary_name: &binary_owned,
+                            },
                         )
                     }
                 }
@@ -830,15 +844,17 @@ impl BazelCommandBuilder {
                 );
                 Self::legacy_expand(
                     template,
-                    &target_owned,
-                    &target_name_owned,
-                    &package_owned,
-                    &file_path_str,
-                    &file_name_owned,
-                    &parent_dir_owned,
-                    &test_filter_owned,
-                    &module_path_owned,
-                    &binary_owned,
+                    &LegacyExpandArgs {
+                        target: &target_owned,
+                        target_name: &target_name_owned,
+                        package: &package_owned,
+                        file_path: &file_path_str,
+                        file_name: &file_name_owned,
+                        parent_dir: &parent_dir_owned,
+                        test_filter: &test_filter_owned,
+                        module_path: &module_path_owned,
+                        binary_name: &binary_owned,
+                    },
                 )
             }
         }
@@ -846,30 +862,19 @@ impl BazelCommandBuilder {
 
     /// Legacy fallback: the original chained `.replace()` implementation.
     #[inline]
-    fn legacy_expand(
-        template: &str,
-        target: &str,
-        target_name: &str,
-        package: &str,
-        file_path: &str,
-        file_name: &str,
-        parent_dir: &str,
-        test_filter: &str,
-        module_path: &str,
-        binary_name: &str,
-    ) -> String {
+    fn legacy_expand(template: &str, args: &LegacyExpandArgs<'_>) -> String {
         template
-            .replace("{target}", target)
-            .replace("{target_name}", target_name)
-            .replace("{package}", package)
-            .replace("{file_path}", file_path)
-            .replace("{file_name}", file_name)
-            .replace("{parent_dir}", parent_dir)
-            .replace("{test_filter}", test_filter)
-            .replace("{bench_filter}", test_filter)
-            .replace("{test_name}", test_filter)
-            .replace("{module_path}", module_path)
-            .replace("{binary_name}", binary_name)
+            .replace("{target}", args.target)
+            .replace("{target_name}", args.target_name)
+            .replace("{package}", args.package)
+            .replace("{file_path}", args.file_path)
+            .replace("{file_name}", args.file_name)
+            .replace("{parent_dir}", args.parent_dir)
+            .replace("{test_filter}", args.test_filter)
+            .replace("{bench_filter}", args.test_filter)
+            .replace("{test_name}", args.test_filter)
+            .replace("{module_path}", args.module_path)
+            .replace("{binary_name}", args.binary_name)
     }
 
     /// Find Bazel target using linked projects configuration (simplified approach)
@@ -1055,9 +1060,9 @@ impl BazelCommandBuilder {
                     let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
                     for (key, value) in env {
                         command.env.push((key.clone(), value.clone()));
-                        flags_to_insert.push(format!("--action_env={}={}", key, value));
+                        flags_to_insert.push(format!("--action_env={key}={value}"));
                         if subcommand == "test" || subcommand == "run" {
-                            flags_to_insert.push(format!("--test_env={}={}", key, value));
+                            flags_to_insert.push(format!("--test_env={key}={value}"));
                         }
                     }
                     command.args.splice(insert_pos..insert_pos, flags_to_insert);
@@ -1076,9 +1081,9 @@ impl BazelCommandBuilder {
                         let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
                         for (key, value) in env {
                             command.env.push((key.clone(), value.clone()));
-                            flags_to_insert.push(format!("--action_env={}={}", key, value));
+                            flags_to_insert.push(format!("--action_env={key}={value}"));
                             if subcommand == "test" || subcommand == "run" {
-                                flags_to_insert.push(format!("--test_env={}={}", key, value));
+                                flags_to_insert.push(format!("--test_env={key}={value}"));
                             }
                         }
                         command.args.splice(insert_pos..insert_pos, flags_to_insert);

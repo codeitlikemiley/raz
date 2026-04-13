@@ -85,7 +85,7 @@ impl UnifiedRunner {
             path.to_path_buf()
         } else {
             std::env::current_dir()
-                .map_err(|e| crate::error::Error::IoError(e))?
+                .map_err(crate::error::Error::IoError)?
                 .join(path)
         };
 
@@ -204,8 +204,7 @@ impl UnifiedRunner {
             .map(|r| r.as_ref())
             .ok_or_else(|| {
                 crate::error::Error::Other(format!(
-                    "No runner available for build system: {:?}",
-                    build_system
+                    "No runner available for build system: {build_system:?}"
                 ))
             })
     }
@@ -350,7 +349,7 @@ impl UnifiedRunner {
             self.detect_runnables(file_path)?
                 .into_iter()
                 .next()
-                .ok_or_else(|| crate::error::Error::NoRunnableFound)?
+                .ok_or(crate::error::Error::NoRunnableFound)?
         };
 
         self.build_command(&runnable)
@@ -516,7 +515,7 @@ impl UnifiedRunner {
                 module_path: String::new(),
                 file_path: file_path.to_path_buf(),
                 extended_scope: None,
-                label: format!("Run all tests in {}", file_stem),
+                label: format!("Run all tests in {file_stem}"),
             };
 
             let command =
@@ -700,7 +699,7 @@ impl UnifiedRunner {
                     method_name,
                 } => {
                     if let Some(method) = method_name {
-                        Some(format!("{}::{}", struct_or_module_name, method))
+                        Some(format!("{struct_or_module_name}::{method}"))
                     } else {
                         Some(struct_or_module_name.clone())
                     }
@@ -744,19 +743,9 @@ impl UnifiedRunner {
         // Check if it's part of a cargo project
         if ModuleResolver::find_cargo_toml(file_path).is_some() {
             // Check if it's a library, binary, test, etc.
-            let file_name = file_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            let _file_name = file_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            Ok(crate::types::FileType::CargoProject)
 
-            if file_name == "main.rs" || file_name == "lib.rs" {
-                Ok(crate::types::FileType::CargoProject)
-            } else if file_path.components().any(|c| c.as_os_str() == "tests") {
-                Ok(crate::types::FileType::CargoProject)
-            } else if file_path.components().any(|c| c.as_os_str() == "examples") {
-                Ok(crate::types::FileType::CargoProject)
-            } else if file_path.components().any(|c| c.as_os_str() == "benches") {
-                Ok(crate::types::FileType::CargoProject)
-            } else {
-                Ok(crate::types::FileType::CargoProject)
-            }
         } else {
             // Standalone file
             Ok(crate::types::FileType::Standalone)
@@ -769,7 +758,7 @@ impl UnifiedRunner {
         if let Some(cargo_toml_path) = ModuleResolver::find_cargo_toml(file_path) {
             // Read and parse the Cargo.toml
             let content = std::fs::read_to_string(&cargo_toml_path)
-                .map_err(|e| crate::error::Error::IoError(e))?;
+                .map_err(crate::error::Error::IoError)?;
 
             // Scoped TOML parsing — only extract `name` from the [package] section.
             // A naïve scan of the whole file would match dependency entries like

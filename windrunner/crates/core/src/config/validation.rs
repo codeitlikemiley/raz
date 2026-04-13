@@ -22,6 +22,12 @@ pub struct MainConfigValidator {
     bazel_rules: ValidationRuleSet,
 }
 
+impl Default for MainConfigValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MainConfigValidator {
     pub fn new() -> Self {
         Self {
@@ -201,12 +207,10 @@ impl ConfigValidator for MainConfigValidator {
                 &bazel_config.doc_test_framework,
             ];
 
-            for framework_opt in frameworks {
-                if let Some(framework) = framework_opt {
-                    if let Some(extra_args) = &framework.extra_args {
-                        let options = self.parse_args_to_options(extra_args)?;
-                        self.bazel_rules.validate(&options)?;
-                    }
+            for framework in frameworks.into_iter().flatten() {
+                if let Some(extra_args) = &framework.extra_args {
+                    let options = self.parse_args_to_options(extra_args)?;
+                    self.bazel_rules.validate(&options)?;
                 }
             }
         }

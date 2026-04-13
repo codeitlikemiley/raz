@@ -60,9 +60,9 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
                     } else {
                         // Standard cargo with channel
                         if let Some(channel) = &override_cargo.channel {
-                            args.push(format!("+{}", channel));
+                            args.push(format!("+{channel}"));
                         } else if let Some(channel) = builder.get_channel(config, file_type) {
-                            args.push(format!("+{}", channel));
+                            args.push(format!("+{channel}"));
                         }
 
                         if let Some(subcommand) = &override_cargo.subcommand {
@@ -91,9 +91,9 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
                 } else {
                     // Standard cargo with channel
                     if let Some(channel) = &binary_framework.channel {
-                        args.push(format!("+{}", channel));
+                        args.push(format!("+{channel}"));
                     } else if let Some(channel) = builder.get_channel(config, file_type) {
-                        args.push(format!("+{}", channel));
+                        args.push(format!("+{channel}"));
                     }
 
                     // Add subcommand
@@ -106,9 +106,9 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
             } else {
                 // No custom command, use standard cargo
                 if let Some(channel) = &binary_framework.channel {
-                    args.push(format!("+{}", channel));
+                    args.push(format!("+{channel}"));
                 } else if let Some(channel) = builder.get_channel(config, file_type) {
-                    args.push(format!("+{}", channel));
+                    args.push(format!("+{channel}"));
                 }
 
                 if let Some(subcommand) = &binary_framework.subcommand {
@@ -132,7 +132,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         } else if !has_override_command {
             // Standard binary command (only if no override was applied)
             if let Some(channel) = builder.get_channel(config, file_type) {
-                args.push(format!("+{}", channel));
+                args.push(format!("+{channel}"));
             }
             args.push("run".to_string());
         }
@@ -195,7 +195,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         }
 
         // Apply binary framework env
-        if let Some(ref binary_framework) = binary_framework {
+        if let Some(binary_framework) = binary_framework {
             if let Some(extra_env) = &binary_framework.extra_env {
                 for (key, value) in extra_env {
                     command.env.push((key.clone(), value.clone()));
@@ -264,13 +264,11 @@ impl BinaryCommandBuilder {
         is_default_run: bool,
     ) -> Result<()> {
         // First check if we have an explicit binary name in the runnable
-        if let crate::types::RunnableKind::Binary { bin_name } = &runnable.kind {
-            if let Some(name) = bin_name {
-                tracing::debug!("Using explicit bin_name: {}", name);
-                args.push("--bin".to_string());
-                args.push(name.clone());
-                return Ok(());
-            }
+        if let crate::types::RunnableKind::Binary { bin_name: Some(name) } = &runnable.kind {
+            tracing::debug!("Using explicit bin_name: {}", name);
+            args.push("--bin".to_string());
+            args.push(name.clone());
+            return Ok(());
         }
 
         // For src/main.rs, we might need to add --bin with the package name

@@ -227,17 +227,19 @@ mod tests {
             "tests",
         );
 
-        let mut config = Config::default();
-        config.bazel = Some(BazelConfig {
-            test_framework: Some(BazelFramework {
-                command: Some("bazelisk".to_string()),
-                subcommand: Some("test".to_string()),
-                args: Some(vec!["--test_output".to_string(), "all".to_string()]),
-                test_args: Some(vec!["--verbose".to_string(), "{test_filter}".to_string()]),
+        let config = Config {
+            bazel: Some(BazelConfig {
+                test_framework: Some(BazelFramework {
+                    command: Some("bazelisk".to_string()),
+                    subcommand: Some("test".to_string()),
+                    args: Some(vec!["--test_output".to_string(), "all".to_string()]),
+                    test_args: Some(vec!["--verbose".to_string(), "{test_filter}".to_string()]),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }),
             ..Default::default()
-        });
+        };
 
         let command = <BazelCommandBuilder as CommandBuilderImpl>::build(
             &runnable,

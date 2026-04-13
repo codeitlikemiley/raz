@@ -53,7 +53,7 @@ pub fn watch_command(
         let target = resolve_bazel_target(&bazel_root, &cwd);
         let mode = mode_str(run_mode, test_mode);
         println!("👀 [Bazel] Watching: {}", watch_dir.display());
-        println!("   target: {}  |  mode: bazel {}", target, mode);
+        println!("   target: {target}  |  mode: bazel {mode}");
         run_notify_loop(&watch_dir, debounce_ms, move |_changed| {
             bazel_trigger(&bazel_root, &target, mode);
         })
@@ -124,7 +124,7 @@ fn resolve_bazel_target(bazel_root: &Path, cwd: &Path) -> String {
             return if s.is_empty() {
                 "//...".to_string()
             } else {
-                format!("//{}:...", s)
+                format!("//{s}:...")
             };
         }
     }
@@ -139,9 +139,9 @@ fn bazel_trigger(root: &Path, target: &str, mode: &str) {
         cmd.arg("--test_output=errors");
     }
     match cmd.status() {
-        Ok(s) if s.success() => println!("✅ bazel {} succeeded", mode),
-        Ok(_) => println!("❌ bazel {} failed — waiting for next change …", mode),
-        Err(e) => println!("⚠️  Failed to run bazel: {}", e),
+        Ok(s) if s.success() => println!("✅ bazel {mode} succeeded"),
+        Ok(_) => println!("❌ bazel {mode} failed — waiting for next change …"),
+        Err(e) => println!("⚠️  Failed to run bazel: {e}"),
     }
 }
 
@@ -153,9 +153,9 @@ fn cargo_trigger(root: &Path, mode: &str) {
         .current_dir(root)
         .status()
     {
-        Ok(s) if s.success() => println!("✅ cargo {} succeeded", cmd_name),
-        Ok(_) => println!("❌ cargo {} failed — waiting for next change …", cmd_name),
-        Err(e) => println!("⚠️  Failed to run cargo: {}", e),
+        Ok(s) if s.success() => println!("✅ cargo {cmd_name} succeeded"),
+        Ok(_) => println!("❌ cargo {cmd_name} failed — waiting for next change …"),
+        Err(e) => println!("⚠️  Failed to run cargo: {e}"),
     }
 }
 
@@ -202,7 +202,7 @@ where
                 println!("📝 Changed: {}", files.join(", "));
                 trigger(&files.join(", "));
             }
-            Ok(Err(e)) => eprintln!("⚠️  Watcher error: {}", e),
+            Ok(Err(e)) => eprintln!("⚠️  Watcher error: {e}"),
             Err(_) => break,
         }
     }
@@ -214,7 +214,7 @@ fn is_rust_change(event: &Event) -> bool {
         && event
             .paths
             .iter()
-            .any(|p| p.extension().map_or(false, |e| e == "rs"))
+            .any(|p| p.extension().is_some_and(|e| e == "rs"))
 }
 
 #[cfg(test)]

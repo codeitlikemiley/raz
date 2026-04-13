@@ -48,7 +48,7 @@ pub fn bazel_sync_command(crate_filter: Option<&str>, skip_ide: bool) -> Result<
     let crates_to_sync: Vec<_> = if let Some(filter) = crate_filter {
         let filtered: Vec<_> = all_crates
             .iter()
-            .filter(|c| c.name == filter || c.dir.file_name().map_or(false, |n| n == filter))
+            .filter(|c| c.name == filter || c.dir.file_name().is_some_and(|n| n == filter))
             .collect();
         if filtered.is_empty() {
             bail!(
@@ -118,7 +118,7 @@ fn run_bazel_sync(bazel_root: &Path, repos: &[&str]) -> Result<()> {
         .context("failed to run `bazel sync`")?;
 
     if !status.success() {
-        bail!("`bazel sync {}` failed", only_flag);
+        bail!("`bazel sync {only_flag}` failed");
     }
     Ok(())
 }

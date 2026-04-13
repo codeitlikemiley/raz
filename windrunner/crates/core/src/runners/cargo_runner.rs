@@ -67,7 +67,7 @@ impl CommandRunner for CargoRunner {
         let package = get_cargo_package_name(&runnable.file_path);
 
         // Build command using CommandBuilder
-        let mut builder = CommandBuilder::for_runnable(runnable).with_file_type(_file_type);
+        let mut builder = CommandBuilder::for_runnable(runnable, _file_type);
         if let Some(pkg) = package {
             builder = builder.with_package(pkg);
         }
@@ -101,11 +101,11 @@ impl RunnerCommand for CargoCommand {
     }
 
     fn execute(&self) -> Result<std::process::ExitStatus> {
-        crate::command::CargoCommand::execute(self).map_err(|e| crate::error::Error::IoError(e))
+        crate::command::CargoCommand::execute(self).map_err(crate::error::Error::IoError)
     }
 
     fn working_dir(&self) -> Option<&Path> {
-        self.working_dir.as_ref().map(|s| Path::new(s))
+        self.working_dir.as_ref().map(Path::new)
     }
 
     fn env_vars(&self) -> &[(String, String)] {

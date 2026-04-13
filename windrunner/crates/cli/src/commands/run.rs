@@ -49,12 +49,12 @@ pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
     if dry_run {
         println!("{}", command.to_shell_command());
         if let Some(ref dir) = command.working_dir {
-            println!("Working directory: {}", dir);
+            println!("Working directory: {dir}");
         }
         if !command.env.is_empty() {
             println!("Environment variables:");
             for (key, value) in &command.env {
-                println!("  {}={}", key, value);
+                println!("  {key}={value}");
             }
         }
     } else {
@@ -64,7 +64,7 @@ pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
             .iter()
             .find(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION")
         {
-            eprintln!("Note: {}", msg);
+            eprintln!("Note: {msg}");
             eprintln!("Running all doc tests for the crate instead.");
         }
 
@@ -77,7 +77,7 @@ pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
         // Execute using the CargoCommand's execute method which handles working_dir
         let status = command
             .execute()
-            .with_context(|| format!("Failed to execute: {}", shell_cmd))?;
+            .with_context(|| format!("Failed to execute: {shell_cmd}"))?;
 
         if !status.success() {
             std::process::exit(status.code().unwrap_or(1));
@@ -90,7 +90,7 @@ pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
 #[derive(Debug)]
 enum RunTarget {
     File(PathBuf),
-    Runnable(Runnable),
+    Runnable(Box<Runnable>),
 }
 
 #[derive(Debug)]
@@ -131,16 +131,15 @@ fn resolve_run_target(
     let matches = find_selector_matches(runner, cwd, filepath)?;
     match matches.as_slice() {
         [] => Err(anyhow::anyhow!(
-            "No runnable found for selector: {}",
-            filepath
+            "No runnable found for selector: {filepath}"
         )),
-        [only] => Ok(RunTarget::Runnable(only.runnable.clone())),
+        [only] => Ok(RunTarget::Runnable(Box::new(only.runnable.clone()))),
         [first, second, ..] if first.selector_rank == second.selector_rank => Err(anyhow::anyhow!(
             "Selector is ambiguous: {}. Matches: {}",
             filepath,
             format_selector_matches(&matches)
         )),
-        [first, ..] => Ok(RunTarget::Runnable(first.runnable.clone())),
+        [first, ..] => Ok(RunTarget::Runnable(Box::new(first.runnable.clone()))),
     }
 }
 

@@ -45,7 +45,7 @@ pub fn build_sync_command(crate_filter: Option<&str>, dry_run: bool) -> Result<(
                 c.name == filter
                     || c.dir
                         .file_name()
-                        .map_or(false, |n| n.to_string_lossy() == filter)
+                        .is_some_and(|n| n.to_string_lossy() == filter)
             })
             .collect()
     } else {
@@ -127,7 +127,7 @@ pub(crate) fn process_crate(
         if header_changed {
             if dry_run {
                 println!("   Would update stale BUILD.bazel header:");
-                println!("   load(\"@{}//:defs.bzl\", \"all_crate_deps\")", repo_name);
+                println!("   load(\"@{repo_name}//:defs.bzl\", \"all_crate_deps\")");
             } else {
                 std::fs::write(&build_path, normalized_content)
                     .with_context(|| format!("writing {}", build_path.display()))?;
@@ -143,7 +143,7 @@ pub(crate) fn process_crate(
 
     if dry_run {
         println!("   Would write to: {}", build_path.display());
-        println!("   Generated block:\n{}", generated);
+        println!("   Generated block:\n{generated}");
         return Ok(());
     }
 
@@ -158,7 +158,7 @@ pub(crate) fn process_crate(
         } else {
             build_file_header(repo_name)
         };
-        std::fs::write(&build_path, format!("{}\n{}", header, generated))
+        std::fs::write(&build_path, format!("{header}\n{generated}"))
             .with_context(|| format!("creating {}", build_path.display()))?;
     }
 
@@ -455,7 +455,7 @@ pub(crate) fn infer_targets(
         // Convention: src/main.rs → binary named <crate>_bin
         if dir.join("src/main.rs").exists() {
             candidates.push(BazelTarget::Binary {
-                name: format!("{}_bin", crate_name),
+                name: format!("{crate_name}_bin"),
                 src: "src/main.rs".to_string(),
                 repo_name: repo_name.to_string(),
                 crate_name: crate_name.to_string(),
@@ -482,7 +482,7 @@ pub(crate) fn infer_targets(
                     let stem = path.file_name().unwrap().to_string_lossy().to_string();
                     candidates.push(BazelTarget::Binary {
                         name: stem.clone(),
-                        src: format!("src/bin/{}/main.rs", stem),
+                        src: format!("src/bin/{stem}/main.rs"),
                         repo_name: repo_name.to_string(),
                         crate_name: crate_name.to_string(),
                         has_local_lib: dir.join("src/lib.rs").exists(),
@@ -509,7 +509,7 @@ pub(crate) fn infer_targets(
             .map(|entries| {
                 entries
                     .flatten()
-                    .any(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
+                    .any(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
             })
             .unwrap_or(false);
 
@@ -557,7 +557,7 @@ pub(crate) fn infer_targets(
                     let stem = path.file_name().unwrap().to_string_lossy().to_string();
                     candidates.push(BazelTarget::Example {
                         name: stem.clone(),
-                        src: format!("examples/{}/main.rs", stem),
+                        src: format!("examples/{stem}/main.rs"),
                         repo_name: repo_name.to_string(),
                         crate_name: crate_name.to_string(),
                         has_local_lib: dir.join("src/lib.rs").exists(),
@@ -643,7 +643,7 @@ struct CargoTarget {
 /// Extracts `name` and `path` fields from each section. Uses simple line-based
 /// scanning (no TOML crate dependency).
 fn parse_cargo_targets(content: &str, kind: &str) -> Vec<CargoTarget> {
-    let header = format!("[[{}]]", kind);
+    let header = format!("[[{kind}]]");
     let mut targets = Vec::new();
     let mut current_name: Option<String> = None;
     let mut current_path: Option<String> = None;
@@ -706,7 +706,7 @@ fn parse_cargo_targets(content: &str, kind: &str) -> Vec<CargoTarget> {
 
 /// Extract the string value from a line like `name = "foo"`.
 fn extract_string_value(line: &str) -> Option<String> {
-    let rhs = line.splitn(2, '=').nth(1)?.trim();
+    let rhs = line.split_once('=')?.1.trim();
     let val = rhs.trim_matches('"').trim_matches('\'');
     if val.is_empty() {
         None
@@ -734,7 +734,7 @@ fn scan_rs_dir_with_main_check<F>(
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() || path.extension().map_or(true, |e| e != "rs") {
+        if !path.is_file() || path.extension().is_none_or(|e| e != "rs") {
             continue;
         }
 
@@ -743,7 +743,7 @@ fn scan_rs_dir_with_main_check<F>(
         }
 
         let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-        let src = format!("{}/{}.rs", rel_dir, stem);
+        let src = format!("{rel_dir}/{stem}.rs");
         candidates.push(make_target(stem, src));
     }
 }

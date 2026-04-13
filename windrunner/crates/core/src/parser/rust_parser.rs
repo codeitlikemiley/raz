@@ -112,7 +112,7 @@ fn hello() {
         let scopes = parser.get_scopes(source, &path).unwrap();
 
         println!("\n=== test_get_scopes_simple_function ===");
-        println!("Source code:\n{}", source);
+        println!("Source code:\n{source}");
         println!("Found {} scopes:", scopes.len());
         for (i, scope) in scopes.iter().enumerate() {
             println!(
@@ -168,7 +168,7 @@ fn test_something() {
         let scopes = parser.get_scopes(source, &path).unwrap();
 
         println!("\n=== test_get_scopes_with_test_function ===");
-        println!("Source code:\n{}", source);
+        println!("Source code:\n{source}");
         println!("Found {} scopes:", scopes.len());
         for (i, scope) in scopes.iter().enumerate() {
             println!(
@@ -341,7 +341,7 @@ fn test_with_attributes() {}
         let extended_scopes = parser.get_extended_scopes(source, &path).unwrap();
 
         println!("\n=== test_get_extended_scopes ===");
-        println!("Source code:\n{}", source);
+        println!("Source code:\n{source}");
         println!("Found {} extended scopes:", extended_scopes.len());
         for (i, es) in extended_scopes.iter().enumerate() {
             println!(
@@ -439,7 +439,7 @@ fn my_test() {
         let regular_scopes = parser.get_scopes(source, &path).unwrap();
 
         println!("\n=== test_extended_scope_ranges ===");
-        println!("Source code:\n{}", source);
+        println!("Source code:\n{source}");
         println!("\nExtended scopes:");
         for (i, es) in extended_scopes.iter().enumerate() {
             println!(

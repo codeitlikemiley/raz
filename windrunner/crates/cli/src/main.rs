@@ -23,7 +23,7 @@ fn parse_commands() -> Commands {
     // Check if invoked as "cargo runner" (cargo subcommand)
     // When cargo invokes a subcommand, it looks for cargo-<subcommand> binary
     // and passes the subcommand name as the first argument
-    if args.get(1).map_or(false, |arg| arg == "runner") {
+    if args.get(1).is_some_and(|arg| arg == "runner") {
         let cargo = Cargo::parse();
         let CargoCommand::Runner(runner) = cargo.command;
         runner.command

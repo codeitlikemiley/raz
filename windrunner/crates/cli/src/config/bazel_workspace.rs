@@ -138,7 +138,7 @@ fn extract_package_name(toml_content: &str) -> Option<String> {
         }
         if in_package && trimmed.starts_with("name") {
             // name = "server"
-            if let Some(val) = trimmed.splitn(2, '=').nth(1) {
+            if let Some(val) = trimmed.split_once('=').map(|x| x.1) {
                 let name = val.trim().trim_matches('"').trim_matches('\'').to_string();
                 if !name.is_empty() {
                     return Some(name);

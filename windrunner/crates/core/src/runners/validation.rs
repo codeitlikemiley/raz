@@ -125,6 +125,12 @@ pub struct ValidationRuleSet {
     rules: Vec<Box<dyn ValidationRule>>,
 }
 
+impl Default for ValidationRuleSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidationRuleSet {
     pub fn new() -> Self {
         Self { rules: vec![] }

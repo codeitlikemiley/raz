@@ -418,13 +418,11 @@ fn override_with_named_flags() {
     let ov_str = serde_json::to_string(ov).unwrap();
     assert!(
         ov_str.contains("dx"),
-        "override should contain 'dx' command: {}",
-        ov_str
+        "override should contain 'dx' command: {ov_str}"
     );
     assert!(
         ov_str.contains("serve"),
-        "override should contain 'serve' subcommand: {}",
-        ov_str
+        "override should contain 'serve' subcommand: {ov_str}"
     );
 }
 
@@ -463,8 +461,8 @@ fn override_with_token_syntax() {
 
     // Verify the override contains dx and serve
     let ov_str = serde_json::to_string(&overrides[0]).unwrap();
-    assert!(ov_str.contains("dx"), "should contain dx: {}", ov_str);
-    assert!(ov_str.contains("serve"), "should contain serve: {}", ov_str);
+    assert!(ov_str.contains("dx"), "should contain dx: {ov_str}");
+    assert!(ov_str.contains("serve"), "should contain serve: {ov_str}");
 }
 
 #[test]
@@ -496,8 +494,7 @@ fn override_leptos_token() {
     let ov_str = serde_json::to_string(&overrides[0]).unwrap();
     assert!(
         ov_str.contains("leptos watch"),
-        "should contain 'leptos watch': {}",
-        ov_str
+        "should contain 'leptos watch': {ov_str}"
     );
 }
 
@@ -552,8 +549,7 @@ fn override_updates_existing() {
     let ov_str = serde_json::to_string(&overrides[0]).unwrap();
     assert!(
         ov_str.contains("build"),
-        "should contain new subcommand 'build': {}",
-        ov_str
+        "should contain new subcommand 'build': {ov_str}"
     );
 }
 
@@ -605,8 +601,7 @@ fn override_remove_with_dash() {
     let overrides = config.get("overrides").unwrap().as_array().unwrap();
     assert!(
         overrides.is_empty(),
-        "overrides should be empty after removal: {}",
-        config_content
+        "overrides should be empty after removal: {config_content}"
     );
 }
 
@@ -802,8 +797,7 @@ fn run_dry_run_bazel_binary_outside_home_uses_bazel_dispatch() {
         .success()
         .stdout(predicate::str::contains("bazel run //app:app"))
         .stdout(predicate::str::contains(format!(
-            "Working directory: {}",
-            root
+            "Working directory: {root}"
         )));
 }
 
@@ -1045,8 +1039,7 @@ fn analyze_verbose_shows_json() {
     // Verbose mode outputs structured/JSON-like content
     assert!(
         stdout.contains("{") || stdout.contains("Binary"),
-        "verbose output: {}",
-        stdout
+        "verbose output: {stdout}"
     );
 }
 
@@ -1151,12 +1144,10 @@ fn clean_in_cargo_project() {
     // It should at least attempt "cargo clean" — we check the output
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
-    let combined = format!("{}{}", stdout, stderr);
+    let combined = format!("{stdout}{stderr}");
     assert!(
         combined.contains("clean") || combined.contains("Clean") || output.status.success(),
-        "clean should work or mention clean: stdout={}, stderr={}",
-        stdout,
-        stderr
+        "clean should work or mention clean: stdout={stdout}, stderr={stderr}"
     );
 }
 
@@ -1196,8 +1187,7 @@ fn override_then_dry_run_shows_custom_command() {
     let config_content = fs::read_to_string(tmp.path().join(".cargo-runner.json")).unwrap();
     assert!(
         config_content.contains("dx"),
-        "config should have dx: {}",
-        config_content
+        "config should have dx: {config_content}"
     );
 
     // Dry run should show the overridden command
@@ -1213,8 +1203,7 @@ fn override_then_dry_run_shows_custom_command() {
     // The output should show either the overridden command or the default
     assert!(
         stdout.contains("dx") || stdout.contains("serve") || stdout.contains("cargo"),
-        "dry-run should show a command: {}",
-        stdout
+        "dry-run should show a command: {stdout}"
     );
 }
 

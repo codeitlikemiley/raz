@@ -29,12 +29,24 @@ pub struct RustcPrimaryPlugin {
 pub struct DioxusOverlayPlugin;
 pub struct LeptosOverlayPlugin;
 
+impl Default for BazelPrimaryPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BazelPrimaryPlugin {
     pub fn new() -> Self {
         Self {
             analyzer: RustSourceAnalyzer,
             runner: BazelRunner::new().expect("BazelRunner::new should not fail"),
         }
+    }
+}
+
+impl Default for CargoPrimaryPlugin {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -47,6 +59,12 @@ impl CargoPrimaryPlugin {
     }
 }
 
+impl Default for RustcPrimaryPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RustcPrimaryPlugin {
     pub fn new() -> Self {
         Self {
@@ -56,9 +74,21 @@ impl RustcPrimaryPlugin {
     }
 }
 
+impl Default for DioxusOverlayPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DioxusOverlayPlugin {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for LeptosOverlayPlugin {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

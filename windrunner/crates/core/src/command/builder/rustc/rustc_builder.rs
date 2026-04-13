@@ -66,7 +66,7 @@ impl RustcCommandBuilder {
         let file_name = self.get_file_name(runnable)?;
         // Convert to snake_case for consistency
         let snake_case_name = self.to_snake_case(&file_name);
-        let output_name = format!("{}_test", snake_case_name);
+        let output_name = format!("{snake_case_name}_test");
 
         // Build phase
         let mut build_args = self.create_build_args(
@@ -129,7 +129,7 @@ impl RustcCommandBuilder {
         let file_name = self.get_file_name(runnable)?;
         // Convert to snake_case for consistency
         let snake_case_name = self.to_snake_case(&file_name);
-        let output_name = format!("{}_test", snake_case_name);
+        let output_name = format!("{snake_case_name}_test");
 
         // Build phase
         let mut build_args = self.create_build_args(
@@ -203,7 +203,7 @@ impl RustcCommandBuilder {
         let file_name = self.get_file_name(runnable)?;
         // Convert to snake_case for consistency
         let snake_case_name = self.to_snake_case(&file_name);
-        let output_name = format!("{}_bench", snake_case_name);
+        let output_name = format!("{snake_case_name}_bench");
 
         // Build phase
         let mut build_args =
