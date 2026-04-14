@@ -40,7 +40,7 @@ mod tests {
             "",
         );
 
-        let mut config = Config {
+        let config = Config {
             bazel: Some(BazelConfig {
                 binary_target: Some("//benches:fibonacci_benchmark".to_string()),
                 ..Default::default()
@@ -207,7 +207,7 @@ mod tests {
         let runnable =
             create_test_runnable("build.rs", RunnableKind::Binary { bin_name: None }, "");
 
-        let mut config = Config {
+        let config = Config {
             bazel: Some(BazelConfig {
                 binary_target: Some("//:build_script_build".to_string()),
                 ..Default::default()
