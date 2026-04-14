@@ -11,7 +11,6 @@ mod rustc_config;
 mod settings;
 pub mod test_framework;
 pub mod utils;
-pub mod validation;
 
 // Re-export main types
 pub use bazel_config::{BazelConfig, BazelFramework, BazelOverride};
