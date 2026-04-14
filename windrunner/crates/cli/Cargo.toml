@@ -16,7 +16,7 @@ name = "cargo_runner"
 path = "src/lib.rs"
 
 [[bin]]
-name = "cargo-runner-cli"
+name = "cargo-runner"
 path = "src/main.rs"
 
 [dependencies]
