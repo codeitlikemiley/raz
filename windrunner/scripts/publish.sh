@@ -15,9 +15,9 @@ else
     echo -e "${GREEN}Running in dry-run mode. Use --execute to actually publish.${NC}"
 fi
 
-echo "Publishing cargo-runner-core..."
+echo "Publishing windrunner-core..."
 cd crates/core
-cargo publish $DRY_RUN
+cargo publish $DRY_RUN --allow-dirty
 cd ../..
 
 echo "Waiting for core crate to propagate on crates.io..."
@@ -27,7 +27,7 @@ fi
 
 echo "Publishing cargo-runner cli..."
 cd crates/cli
-cargo publish $DRY_RUN
+cargo publish $DRY_RUN --allow-dirty
 cd ../..
 
 echo -e "${GREEN}Publish sequence complete!${NC}"

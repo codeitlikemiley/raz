@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - 'cargo-runner-v*' # Trigger on tags like cargo-runner-v0.1.0
+      - 'windrunner-v*' # Trigger on tags like windrunner-v0.1.0
 
 env:
   CARGO_TERM_COLOR: always
-  CRATE_NAME: cargo-runner
+  CRATE_NAME: cargo-windrunner
 
 jobs:
   build:
@@ -52,19 +52,19 @@ jobs:
     - name: Build Binary
       run: |
         if [ "${{ matrix.use-cross }}" == "true" ]; then
-          cross build --release --target ${{ matrix.target }} -p cargo-runner
+          cross build --release --target ${{ matrix.target }} -p cargo-windrunner
         else
-          cargo build --release --target ${{ matrix.target }} -p cargo-runner
+          cargo build --release --target ${{ matrix.target }} -p cargo-windrunner
         fi
       working-directory: windrunner
 
     - name: Package Release (Unix)
       if: matrix.os != 'windows-latest'
       run: |
-        VERSION=${GITHUB_REF_NAME#cargo-runner-v}
+        VERSION=${GITHUB_REF_NAME#windrunner-v}
         ARCHIVE_NAME="${CRATE_NAME}-${{ matrix.target }}-v${VERSION}"
         mkdir -p "${ARCHIVE_NAME}"
-        cp windrunner/target/${{ matrix.target }}/release/cargo-runner "${ARCHIVE_NAME}/"
+        cp windrunner/target/${{ matrix.target }}/release/cargo-windrunner "${ARCHIVE_NAME}/"
         cp windrunner/README.md windrunner/LICENSE "${ARCHIVE_NAME}/"
         tar -czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}"
         echo "ASSET_NAME=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
@@ -73,10 +73,10 @@ jobs:
       if: matrix.os == 'windows-latest'
       shell: pwsh
       run: |
-        $VERSION = $env:GITHUB_REF_NAME.Replace("cargo-runner-v", "")
+        $VERSION = $env:GITHUB_REF_NAME.Replace("windrunner-v", "")
         $ARCHIVE_NAME = "${env:CRATE_NAME}-${{ matrix.target }}-v${VERSION}"
         New-Item -ItemType Directory -Force -Path $ARCHIVE_NAME
-        Copy-Item -Path windrunner\target\${{ matrix.target }}\release\cargo-runner.exe -Destination $ARCHIVE_NAME\
+        Copy-Item -Path windrunner\target\${{ matrix.target }}\release\cargo-windrunner.exe -Destination $ARCHIVE_NAME\
         Copy-Item -Path windrunner\README.md -Destination $ARCHIVE_NAME\
         Copy-Item -Path windrunner\LICENSE -Destination $ARCHIVE_NAME\
         Compress-Archive -Path $ARCHIVE_NAME -DestinationPath "${ARCHIVE_NAME}.zip"
