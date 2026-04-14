@@ -48,7 +48,7 @@ use std::path::Path;
 ///     extended_scope: None,
 /// };
 ///
-/// let command = CommandBuilder::for_runnable(&runnable)
+/// let command = CommandBuilder::for_runnable(&runnable, cargo_runner_core::types::FileType::CargoProject)
 ///     .with_package("my-package")
 ///     .with_project_root(Path::new("/path/to/project"))
 ///     .build()

@@ -653,8 +653,14 @@ fn main() {
             extended_scope: None,
         };
 
-        // Create a default config
-        let config = Config::default();
+        // Create a config with target
+        let config = Config {
+            bazel: Some(crate::config::BazelConfig {
+                binary_target: Some("//:build_script_build".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
 
         // Build command - in real scenario this would find the target
         let command = BazelCommandBuilder::build(&runnable, None, &config, FileType::CargoProject);
