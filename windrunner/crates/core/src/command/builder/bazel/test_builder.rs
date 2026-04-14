@@ -36,6 +36,13 @@ impl BazelCommandBuilder {
         // Determine the target
         let target = self.determine_target(runnable, bazel_config, config, true);
 
+        if target.is_empty() {
+            return Err(crate::error::Error::ParseError(format!(
+                "No Bazel target found for file: {}. Make sure it is declared in a BUILD.bazel rule, or run it outside a Bazel workspace.",
+                runnable.file_path.display()
+            )));
+        }
+
         // Build the test filter
         let test_filter = if runnable.module_path.is_empty() {
             test_name.to_string()
@@ -94,6 +101,13 @@ impl BazelCommandBuilder {
 
         // Determine the target
         let target = self.determine_target(runnable, bazel_config, config, true);
+
+        if target.is_empty() {
+            return Err(crate::error::Error::ParseError(format!(
+                "No Bazel target found for file: {}. Make sure it is declared in a BUILD.bazel rule, or run it outside a Bazel workspace.",
+                runnable.file_path.display()
+            )));
+        }
 
         // Build module filter (no exact matching for module tests)
         let test_filter = if !runnable.module_path.is_empty() {

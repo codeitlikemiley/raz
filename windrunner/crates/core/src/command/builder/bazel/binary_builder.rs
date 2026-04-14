@@ -55,8 +55,14 @@ impl BazelCommandBuilder {
             }
         }
 
-        // Determine the target (is_test=false for binaries)
         let target = self.determine_target(runnable, bazel_config, config, false);
+
+        if target.is_empty() {
+            return Err(crate::error::Error::ParseError(format!(
+                "No Bazel target found for file: {}. Make sure it is declared in a BUILD.bazel rule, or run it outside a Bazel workspace.",
+                runnable.file_path.display()
+            )));
+        }
 
         // Build the command
         let mut command =

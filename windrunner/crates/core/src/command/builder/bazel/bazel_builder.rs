@@ -439,8 +439,8 @@ impl BazelCommandBuilder {
             // Default test target
             ":test".to_string()
         } else {
-            // Default binary target
-            "//:server".to_string()
+            // Signal that no matching Bazel target is found.
+            String::new()
         }
     }
 
