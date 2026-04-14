@@ -9,6 +9,74 @@ use cargo_toml::Manifest;
 use std::path::Path;
 use tracing::debug;
 
+/// Represents the classification of a Cargo target based on file path
+#[derive(Debug, PartialEq, Eq)]
+pub enum CargoTarget {
+    Library,
+    Binary(Option<String>),
+    Benchmark(String),
+    IntegrationTest(String),
+    Example(String),
+    BuildScript,
+    Unknown,
+}
+
+impl CargoTarget {
+    /// Classify a file path into a CargoTarget
+    pub fn from_path(file_path: &Path) -> Self {
+        let path_str = file_path.to_str().unwrap_or("");
+        let file_name = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let normalized_path = path_str.replace('\\', "/");
+
+        if normalized_path.ends_with("/build.rs") || normalized_path.ends_with("build.rs") {
+            return CargoTarget::BuildScript;
+        }
+
+        if normalized_path.contains("/src/bin/")
+            || normalized_path.contains("src/bin/")
+            || normalized_path.ends_with("/src/main.rs")
+            || normalized_path.ends_with("src/main.rs")
+        {
+            let bin_name = if normalized_path.ends_with("/src/main.rs")
+                || normalized_path.ends_with("src/main.rs")
+            {
+                None
+            } else if file_name != "main" {
+                Some(file_name.to_string())
+            } else {
+                None
+            };
+            return CargoTarget::Binary(bin_name);
+        }
+
+        if normalized_path.contains("/benches/") || normalized_path.contains("benches/") {
+            return CargoTarget::Benchmark(file_name.to_string());
+        }
+
+        if (normalized_path.contains("/tests/") || normalized_path.contains("tests/"))
+            && !normalized_path.ends_with("/mod.rs")
+            && !normalized_path.ends_with("mod.rs")
+        {
+            return CargoTarget::IntegrationTest(file_name.to_string());
+        }
+
+        if normalized_path.ends_with("/src/lib.rs")
+            || normalized_path.ends_with("src/lib.rs")
+            || ((normalized_path.contains("/src/") || normalized_path.starts_with("src/"))
+                && !normalized_path.contains("/src/bin/")
+                && !normalized_path.starts_with("src/bin/"))
+        {
+            return CargoTarget::Library;
+        }
+
+        if normalized_path.contains("/examples/") || normalized_path.contains("examples/") {
+            return CargoTarget::Example(file_name.to_string());
+        }
+
+        CargoTarget::Unknown
+    }
+}
+
 /// Generate a fallback command when no specific runnable is found at the given line
 pub fn generate_fallback_command(
     file_path: &Path,
@@ -132,12 +200,7 @@ fn create_synthetic_runnable(
     let project_root = file_path
         .ancestors()
         .find(|p| p.join("Cargo.toml").exists());
-    let path_str = file_path.to_str().unwrap_or("");
-    let file_name = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-
-    // Normalize path separators
-    let normalized_path = path_str.replace('\\', "/");
-
+        
     // Create a dummy scope for the synthetic runnable
     let scope = Scope {
         kind: ScopeKind::Function,
@@ -153,23 +216,8 @@ fn create_synthetic_runnable(
     };
 
     // Determine runnable kind based on file location patterns
-    if normalized_path.contains("/src/bin/")
-        || normalized_path.contains("src/bin/")
-        || normalized_path.ends_with("/src/main.rs")
-        || normalized_path.ends_with("src/main.rs")
-    {
-        // Binary target
-        let bin_name = if normalized_path.ends_with("/src/main.rs")
-            || normalized_path.ends_with("src/main.rs")
-        {
-            None
-        } else if file_name != "main" {
-            Some(file_name.to_string())
-        } else {
-            None
-        };
-
-        Ok(Some(Runnable {
+    match CargoTarget::from_path(file_path) {
+        CargoTarget::Binary(bin_name) => Ok(Some(Runnable {
             label: if let Some(ref name) = bin_name {
                 format!("Run binary '{name}'")
             } else {
@@ -180,43 +228,27 @@ fn create_synthetic_runnable(
             module_path: package_name.unwrap_or_default().to_string(),
             file_path: file_path.to_path_buf(),
             extended_scope: None,
-        }))
-    } else if normalized_path.contains("/benches/") || normalized_path.contains("benches/") {
-        // Benchmark target
-        Ok(Some(Runnable {
-            label: format!("Run benchmark '{file_name}'"),
+        })),
+        CargoTarget::Benchmark(bench_name) => Ok(Some(Runnable {
+            label: format!("Run benchmark '{bench_name}'"),
             scope,
-            kind: RunnableKind::Benchmark {
-                bench_name: file_name.to_string(),
-            },
+            kind: RunnableKind::Benchmark { bench_name },
             module_path: String::new(),
             file_path: file_path.to_path_buf(),
             extended_scope: None,
-        }))
-    } else if (normalized_path.contains("/tests/") || normalized_path.contains("tests/"))
-        && !normalized_path.ends_with("/mod.rs")
-        && !normalized_path.ends_with("mod.rs")
-    {
-        // Integration test
-        Ok(Some(Runnable {
-            label: format!("Run test '{file_name}'"),
+        })),
+        CargoTarget::IntegrationTest(test_name) => Ok(Some(Runnable {
+            label: format!("Run test '{test_name}'"),
             scope,
             kind: RunnableKind::Test {
-                test_name: file_name.to_string(),
+                test_name,
                 is_async: false,
             },
             module_path: String::new(),
             file_path: file_path.to_path_buf(),
             extended_scope: None,
-        }))
-    } else if normalized_path.ends_with("/src/lib.rs")
-        || normalized_path.ends_with("src/lib.rs")
-        || ((normalized_path.contains("/src/") || normalized_path.starts_with("src/"))
-            && !normalized_path.contains("/src/bin/")
-            && !normalized_path.starts_with("src/bin/"))
-    {
-        // Library target - run all tests in the library
-        Ok(Some(Runnable {
+        })),
+        CargoTarget::Library => Ok(Some(Runnable {
             label: "Run library tests".to_string(),
             scope,
             kind: RunnableKind::ModuleTests {
@@ -225,28 +257,25 @@ fn create_synthetic_runnable(
             module_path: String::new(),
             file_path: file_path.to_path_buf(),
             extended_scope: None,
-        }))
-    } else if normalized_path.contains("/examples/") || normalized_path.contains("examples/") {
-        // Example target - treat as binary
-        Ok(Some(Runnable {
-            label: format!("Run example '{file_name}'"),
+        })),
+        CargoTarget::Example(example_name) => Ok(Some(Runnable {
+            label: format!("Run example '{example_name}'"),
             scope,
             kind: RunnableKind::Binary {
-                bin_name: Some(file_name.to_string()),
+                bin_name: Some(example_name),
             },
             module_path: String::new(),
             file_path: file_path.to_path_buf(),
             extended_scope: None,
-        }))
-    } else if normalized_path.ends_with("/build.rs") || normalized_path.ends_with("build.rs") {
-        // Build script - we can't create a runnable for this
-        Ok(None)
-    } else {
-        // Check for custom targets in Cargo.toml
-        if let Some(project_root) = project_root {
-            check_cargo_toml_for_runnable(file_path, project_root, package_name)
-        } else {
-            Ok(None)
+        })),
+        CargoTarget::BuildScript => Ok(None),
+        CargoTarget::Unknown => {
+            // Check for custom targets in Cargo.toml
+            if let Some(project_root) = project_root {
+                check_cargo_toml_for_runnable(file_path, project_root, package_name)
+            } else {
+                Ok(None)
+            }
         }
     }
 }
