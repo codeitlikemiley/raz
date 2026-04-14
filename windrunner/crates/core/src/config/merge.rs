@@ -6,7 +6,7 @@
 use super::{Config, Override};
 use crate::error::Result;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
 };
 use tracing::debug;
