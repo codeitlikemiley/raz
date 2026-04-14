@@ -34,7 +34,11 @@ impl BazelCommandBuilder {
         }
 
         // Determine the target
-        let target = self.determine_target(runnable, bazel_config, config, true);
+        let target = if let Some(t) = bazel_config.and_then(|c| c.test_target.as_ref()) {
+            t.to_string()
+        } else {
+            self.determine_target(runnable, bazel_config, config, true)
+        };
 
         if target.is_empty() {
             return Err(crate::error::Error::ParseError(format!(
@@ -100,7 +104,11 @@ impl BazelCommandBuilder {
         }
 
         // Determine the target
-        let target = self.determine_target(runnable, bazel_config, config, true);
+        let target = if let Some(t) = bazel_config.and_then(|c| c.test_target.as_ref()) {
+            t.to_string()
+        } else {
+            self.determine_target(runnable, bazel_config, config, true)
+        };
 
         if target.is_empty() {
             return Err(crate::error::Error::ParseError(format!(
