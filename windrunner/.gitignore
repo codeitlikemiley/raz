@@ -9,3 +9,4 @@ bazel-windrunner
 *.md
 !README.md
 *.py
+!test_builder.rs
