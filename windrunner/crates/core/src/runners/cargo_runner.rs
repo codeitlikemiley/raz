@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::{
-    command::CargoCommand,
+    command::Command,
     config::Config,
     error::Result,
     patterns::RunnableDetector,
@@ -26,7 +26,7 @@ impl CargoRunner {
 
 impl CommandRunner for CargoRunner {
     type Config = Config;
-    type Command = CargoCommand;
+    type Command = Command;
 
     fn detect_runnables(&self, file_path: &Path) -> Result<Vec<Runnable>> {
         // RunnableDetector has its own mutable state, so we need to create a new instance
@@ -94,21 +94,21 @@ impl CommandRunner for CargoRunner {
     }
 }
 
-// Implement RunnerCommand for CargoCommand
-impl RunnerCommand for CargoCommand {
+// Implement RunnerCommand for Command
+impl RunnerCommand for Command {
     fn to_shell_command(&self) -> String {
-        crate::command::CargoCommand::to_shell_command(self)
+        crate::command::Command::to_shell_command(self)
     }
 
     fn execute(&self) -> Result<std::process::ExitStatus> {
-        crate::command::CargoCommand::execute(self).map_err(crate::error::Error::IoError)
+        crate::command::Command::execute(self).map_err(crate::error::Error::IoError)
     }
 
     fn working_dir(&self) -> Option<&Path> {
         self.working_dir.as_ref().map(Path::new)
     }
 
-    fn env_vars(&self) -> &[(String, String)] {
+    fn env_vars(&self) -> &std::collections::BTreeMap<String, String> {
         &self.env
     }
 

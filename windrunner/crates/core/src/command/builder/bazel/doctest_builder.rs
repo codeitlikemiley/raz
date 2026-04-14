@@ -1,5 +1,5 @@
 use super::*;
-use crate::command::CargoCommand;
+use crate::command::Command;
 use crate::config::{BazelConfig, Config};
 use crate::error::Result;
 use crate::types::{FileType, Runnable};
@@ -13,7 +13,7 @@ impl BazelCommandBuilder {
         bazel_config: Option<&BazelConfig>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!("build_doc_test_command called");
 
         // First, try to find a rust_doc_test target for this file
@@ -56,12 +56,12 @@ impl BazelCommandBuilder {
                     args.extend(extra_args.clone());
                 }
 
-                let mut command = CargoCommand::new_bazel(args);
+                let mut command = Command::bazel(args);
 
                 // Apply environment variables
                 if let Some(env) = &framework.extra_env {
                     for (key, value) in env {
-                        command.env.push((key.clone(), value.clone()));
+                        command.env.insert(key.clone(), value.clone());
                     }
                 }
 
@@ -76,10 +76,10 @@ impl BazelCommandBuilder {
                 } = &runnable.kind
                 {
                     // Add a comment in the environment that can be checked by the CLI
-                    command.env.push((
+                    command.env.insert(
                         "_BAZEL_DOC_TEST_LIMITATION".to_string(),
                         "Bazel runs all doc tests together, not individual ones".to_string(),
-                    ));
+                    );
                 }
 
                 return Ok(command);

@@ -15,11 +15,11 @@ use crate::config::workspace::{find_cargo_package_root, resolve_default_run_for_
 #[command(version, propagate_version = true)]
 pub struct Cargo {
     #[command(subcommand)]
-    pub command: CargoCommand,
+    pub command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum CargoCommand {
+pub enum Command {
     #[command(name = "runner")]
     #[command(about = "Run Rust code at specific locations")]
     Runner(Runner),

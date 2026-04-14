@@ -3,7 +3,7 @@
 use super::common::CargoBuilderHelper;
 use crate::{
     command::{
-        CargoCommand,
+        Command,
         builder::{CommandBuilderImpl, ConfigAccess},
     },
     config::Config,
@@ -23,7 +23,7 @@ impl CommandBuilderImpl for BenchmarkCommandBuilder {
         package: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         let builder = BenchmarkCommandBuilder;
         let mut args = vec![];
 
@@ -51,7 +51,7 @@ impl CommandBuilderImpl for BenchmarkCommandBuilder {
             args.push(bench_name.clone());
         }
 
-        let mut command = CargoCommand::new(args);
+        let mut command = Command::cargo(args);
 
         // Set working directory to cargo root
         if let Some(cargo_root) = builder.find_cargo_root(&runnable.file_path) {
@@ -104,7 +104,7 @@ impl BenchmarkCommandBuilder {
 
     fn apply_env(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         runnable: &Runnable,
         config: &Config,
         file_type: FileType,
@@ -114,7 +114,7 @@ impl BenchmarkCommandBuilder {
             if let Some(override_cargo) = &override_config.cargo {
                 if let Some(extra_env) = &override_cargo.extra_env {
                     for (key, value) in extra_env {
-                        command.env.push((key.clone(), value.clone()));
+                        command.env.insert(key.clone(), value.clone());
                     }
                 }
             }

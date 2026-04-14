@@ -4,7 +4,7 @@ use super::common::CargoBuilderHelper;
 use crate::{
     command::{
         builder::{CommandBuilderImpl, ConfigAccess},
-        CargoCommand,
+        Command,
     },
     config::Config,
     error::Result,
@@ -23,7 +23,7 @@ impl CommandBuilderImpl for ModuleTestCommandBuilder {
         package: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::warn!(
             "ModuleTestCommandBuilder::build called for {:?}, package={:?}",
             runnable.file_path,
@@ -101,7 +101,7 @@ impl CommandBuilderImpl for ModuleTestCommandBuilder {
         // Add module filter
         builder.add_module_filter(&mut args, runnable, config, file_type);
 
-        let mut command = CargoCommand::new(args);
+        let mut command = Command::cargo(args);
 
         // Set working directory to cargo root
         if let Some(cargo_root) = builder.find_cargo_root(&runnable.file_path) {
@@ -112,7 +112,7 @@ impl CommandBuilderImpl for ModuleTestCommandBuilder {
         if let Some(test_framework) = builder.get_test_framework(config, file_type) {
             if let Some(extra_env) = &test_framework.extra_env {
                 for (key, value) in extra_env {
-                    command.env.push((key.clone(), value.clone()));
+                    command.env.insert(key.clone(), value.clone());
                 }
             }
         }
@@ -382,7 +382,7 @@ impl ModuleTestCommandBuilder {
 
     fn apply_env(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         runnable: &Runnable,
         config: &Config,
         file_type: FileType,
@@ -392,7 +392,7 @@ impl ModuleTestCommandBuilder {
             if let Some(override_cargo) = &override_config.cargo {
                 if let Some(extra_env) = &override_cargo.extra_env {
                     for (key, value) in extra_env {
-                        command.env.push((key.clone(), value.clone()));
+                        command.env.insert(key.clone(), value.clone());
                     }
                 }
             }

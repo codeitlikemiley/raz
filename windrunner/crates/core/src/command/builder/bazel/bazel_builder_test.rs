@@ -2,7 +2,7 @@
 mod tests {
     use super::super::*;
     use crate::{
-        command::CommandType,
+        command::CommandStrategy,
         config::{BazelConfig, BazelFramework, Config},
         types::{FileType, Position, Runnable, RunnableKind, Scope, ScopeKind},
     };
@@ -57,7 +57,7 @@ mod tests {
         .unwrap();
 
         // Should run the binary, not tests
-        assert_eq!(command.command_type, CommandType::Bazel);
+        assert_eq!(command.strategy, CommandStrategy::Bazel);
         assert_eq!(command.args[0], "run");
         // Should have optimization flag
         assert!(command.args.contains(&"-c".to_string()));
@@ -86,7 +86,7 @@ mod tests {
         .unwrap();
 
         // Should include --nocapture in test args
-        assert_eq!(command.command_type, CommandType::Bazel);
+        assert_eq!(command.strategy, CommandStrategy::Bazel);
         assert_eq!(command.args[0], "test");
 
         // Find --test_arg --nocapture sequence
@@ -121,7 +121,7 @@ mod tests {
         .unwrap();
 
         // Should include the module name as filter
-        assert_eq!(command.command_type, CommandType::Bazel);
+        assert_eq!(command.strategy, CommandStrategy::Bazel);
         assert_eq!(command.args[0], "test");
 
         // Find --test_arg tests sequence
@@ -158,7 +158,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(command.command_type, CommandType::Bazel);
+        assert_eq!(command.strategy, CommandStrategy::Bazel);
         assert_eq!(command.args[0], "test");
         assert!(
             !command.args.iter().any(|arg| arg == "--exact"),
@@ -224,7 +224,7 @@ mod tests {
         .unwrap();
 
         // Should use 'bazel build' for build.rs files
-        assert_eq!(command.command_type, CommandType::Bazel);
+        assert_eq!(command.strategy, CommandStrategy::Bazel);
         assert_eq!(command.args[0], "build");
     }
 
@@ -262,8 +262,8 @@ mod tests {
         .unwrap();
 
         // Should use custom command
-        assert_eq!(command.command_type, CommandType::Shell);
-        assert_eq!(command.args[0], "bazelisk");
+        assert_eq!(command.strategy, CommandStrategy::Shell);
+        assert_eq!(command.program, "bazelisk");
         assert!(command.args.contains(&"--test_output".to_string()));
         assert!(command.args.contains(&"all".to_string()));
 

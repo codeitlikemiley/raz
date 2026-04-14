@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::{
-    command::CargoCommand,
+    command::Command,
     config::Config,
     error::Result,
     patterns::RunnableDetector,
@@ -23,7 +23,7 @@ impl BazelRunner {
 
 impl CommandRunner for BazelRunner {
     type Config = Config;
-    type Command = CargoCommand; // Reusing CargoCommand for now
+    type Command = Command; // Reusing Command for now
 
     fn detect_runnables(&self, file_path: &Path) -> Result<Vec<Runnable>> {
         // For Bazel, we still parse Rust files the same way
@@ -75,8 +75,8 @@ impl CommandRunner for BazelRunner {
         }
 
         // Ensure it's a bazel command
-        match &command.command_type {
-            crate::command::CommandType::Bazel => Ok(()),
+        match &command.strategy {
+            crate::command::CommandStrategy::Bazel => Ok(()),
             _ => Err(crate::error::Error::Other(
                 "Expected Bazel command type".to_string(),
             )),

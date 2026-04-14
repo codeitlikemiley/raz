@@ -22,9 +22,9 @@ pub use error::{Error, Result};
 pub use types::*;
 
 // Re-export main API components
-pub use command::{CargoCommand, CommandType};
+pub use command::{Command, CommandStrategy};
 pub use config::Config;
-pub use plugins::{CommandSpec, CommandStrategy, PluginRegistry, ProjectContext, TargetRef};
+pub use plugins::{CommandSpec, PluginRegistry, ProjectContext, TargetRef};
 
 // Export the unified runner
 pub use runners::UnifiedRunner;

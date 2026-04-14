@@ -2,7 +2,7 @@
 
 use crate::{
     command::{
-        CargoCommand,
+        Command,
         builder::{CommandBuilderImpl, ConfigAccess},
     },
     config::Config,
@@ -72,7 +72,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
         _package: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         let builder = SingleFileScriptBuilder;
 
         match &runnable.kind {
@@ -102,9 +102,9 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 builder.apply_args(&mut args, runnable, config, file_type);
 
                 let mut command = if command_name == "rust-script" {
-                    CargoCommand::new_shell(command_name, args)
+                    Command::shell(command_name, args)
                 } else {
-                    CargoCommand::new_rust_sf_script(args)
+                    Command::cargo_script(args)
                 };
 
                 // Apply env vars
@@ -144,7 +144,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 // Apply test binary args
                 builder.apply_test_binary_args(&mut args, runnable, config, file_type);
 
-                let mut command = CargoCommand::new(args);
+                let mut command = Command::cargo(args);
 
                 // Apply env vars
                 builder.apply_common_config(&mut command, config, file_type);
@@ -179,7 +179,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 // Apply test binary args (but NOT --exact for module tests)
                 builder.apply_test_binary_args(&mut args, runnable, config, file_type);
 
-                let mut command = CargoCommand::new(args);
+                let mut command = Command::cargo(args);
 
                 // Apply env vars
                 builder.apply_common_config(&mut command, config, file_type);
@@ -202,9 +202,9 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 builder.apply_args(&mut args, runnable, config, file_type);
 
                 let mut command = if command_name == "rust-script" {
-                    CargoCommand::new_shell(command_name, args)
+                    Command::shell(command_name, args)
                 } else {
-                    CargoCommand::new_rust_sf_script(args)
+                    Command::cargo_script(args)
                 };
 
                 // Apply env vars
@@ -235,9 +235,9 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
                 args.push(bench_name.clone());
 
                 let mut command = if command_name == "rust-script" {
-                    CargoCommand::new_shell(command_name, args)
+                    Command::shell(command_name, args)
                 } else {
-                    CargoCommand::new_rust_sf_script(args)
+                    Command::cargo_script(args)
                 };
 
                 // Apply env vars
@@ -292,7 +292,7 @@ impl SingleFileScriptBuilder {
 
     fn apply_env(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         runnable: &Runnable,
         config: &Config,
         file_type: FileType,
@@ -302,7 +302,7 @@ impl SingleFileScriptBuilder {
             if let Some(override_sfs) = &override_config.single_file_script {
                 if let Some(extra_env) = &override_sfs.extra_env {
                     for (key, value) in extra_env {
-                        command.env.push((key.clone(), value.clone()));
+                        command.env.insert(key.clone(), value.clone());
                     }
                 }
             }
@@ -358,14 +358,14 @@ impl SingleFileScriptBuilder {
 
     fn apply_common_config(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         config: &Config,
         file_type: FileType,
     ) {
         // Apply environment variables based on file type
         if let Some(extra_env) = self.get_extra_env(config, file_type) {
             for (key, value) in extra_env {
-                command.env.push((key.clone(), value.clone()));
+                command.env.insert(key.clone(), value.clone());
             }
         }
     }

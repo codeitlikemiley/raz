@@ -16,7 +16,7 @@ pub use self::config_resolver::ConfigResolver;
 pub use self::rustc::{RustcCommandBuilder, SingleFileScriptBuilder};
 
 use crate::{
-    command::CargoCommand,
+    command::Command,
     config::Config,
     error::Result,
     types::{FileType, FunctionIdentity, Runnable, RunnableKind},
@@ -95,7 +95,7 @@ impl<'a> CommandBuilder<'a> {
 
 
     /// Build the command
-    pub fn build(self) -> Result<CargoCommand> {
+    pub fn build(self) -> Result<Command> {
         let file_type = self.file_type;
         tracing::debug!(
             "CommandBuilder::build: file_type={:?}, runnable.kind={:?}, file_path={:?}",
@@ -229,5 +229,5 @@ pub trait CommandBuilderImpl: ConfigAccess {
         package: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand>;
+    ) -> Result<Command>;
 }

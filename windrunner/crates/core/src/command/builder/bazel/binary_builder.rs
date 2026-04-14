@@ -1,5 +1,5 @@
 use super::*;
-use crate::command::CargoCommand;
+use crate::command::Command;
 use crate::config::{BazelConfig, Config};
 use crate::error::Result;
 use crate::types::{FileType, Runnable};
@@ -12,7 +12,7 @@ impl BazelCommandBuilder {
         bazel_config: Option<&BazelConfig>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!("build_binary_command called for binary: {:?}", bin_name);
 
         // Check if this is a build.rs file

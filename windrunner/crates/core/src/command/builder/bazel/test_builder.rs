@@ -1,5 +1,5 @@
 use super::*;
-use crate::command::CargoCommand;
+use crate::command::Command;
 use crate::config::{BazelConfig, Config};
 use crate::error::Result;
 use crate::types::{FileType, Runnable};
@@ -13,7 +13,7 @@ impl BazelCommandBuilder {
         bazel_config: Option<&BazelConfig>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!("build_test_command called for test: {}", test_name);
 
         // Get the test framework or use defaults
@@ -72,7 +72,7 @@ impl BazelCommandBuilder {
         bazel_config: Option<&BazelConfig>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!("build_module_tests_command called");
 
         // Check if this is a benchmark file - if so, we should run the binary instead

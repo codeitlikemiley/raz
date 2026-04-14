@@ -3,7 +3,7 @@
 use crate::{
     bazel::{BazelTargetFinder, BazelTargetKind},
     command::{
-        CargoCommand,
+        Command,
         builder::{CommandBuilderImpl, ConfigAccess},
         template::CommandTemplate,
     },
@@ -36,7 +36,7 @@ impl CommandBuilderImpl for BazelCommandBuilder {
         _package: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!("BazelCommandBuilder::build called for {:?}", runnable.kind);
         let builder = BazelCommandBuilder;
         let bazel_config = config.bazel.as_ref();
@@ -80,7 +80,7 @@ impl BazelCommandBuilder {
         target: Option<&str>,
         test_filter: Option<&str>,
         binary_name: Option<&str>,
-    ) -> CargoCommand {
+    ) -> Command {
         let command_name = framework.command.as_deref().unwrap_or("bazel");
         let subcommand = framework.subcommand.as_deref().unwrap_or("test");
 
@@ -173,10 +173,10 @@ impl BazelCommandBuilder {
         }
 
         let mut command = if command_name == "bazel" {
-            CargoCommand::new_bazel(args)
+            Command::bazel(args)
         } else {
             // Support custom commands (like bazelisk)
-            CargoCommand::new_shell(command_name.to_string(), args)
+            Command::shell(command_name.to_string(), args)
         };
 
         // Set working directory to workspace root for Bazel
@@ -193,7 +193,7 @@ impl BazelCommandBuilder {
             .ancestors()
             .find(|p| p.join("MODULE.bazel").exists() || p.join("WORKSPACE").exists())
         {
-            command.working_dir = Some(workspace_root.to_string_lossy().to_string());
+            command.working_dir = Some(workspace_root.to_path_buf());
             tracing::debug!(
                 "Set working directory for Bazel command: {:?}",
                 workspace_root
@@ -203,7 +203,7 @@ impl BazelCommandBuilder {
         // Apply environment variables
         if let Some(env) = &framework.extra_env {
             for (key, value) in env {
-                command.env.push((key.clone(), value.clone()));
+                command.env.insert(key.clone(), value.clone());
             }
         }
 
@@ -697,7 +697,7 @@ impl BazelCommandBuilder {
     /// and applied incrementally on top of the already-built command.
     pub(crate) fn apply_overrides(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         runnable: &Runnable,
         config: &Config,
         file_type: FileType,
@@ -707,8 +707,8 @@ impl BazelCommandBuilder {
         if let Some(override_) = override_config {
             if let Some(ov) = &override_.bazel {
                 // Note: `ov.command` (e.g. "bazelisk") is stored for tooling/display
-                // but cannot be mutated here — the binary is encoded in CommandType::Bazel.
-                // Future: convert to CommandType::Shell when command != "bazel".
+                // but cannot be mutated here — the binary is encoded in CommandStrategy::Bazel.
+                // Future: convert to CommandStrategy::Shell when command != "bazel".
 
                 // Override subcommand (first arg is always the subcommand)
                 if let Some(subcmd) = &ov.subcommand {
@@ -758,7 +758,7 @@ impl BazelCommandBuilder {
                     let mut flags_to_insert = Vec::new();
                     let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
                     for (key, value) in env {
-                        command.env.push((key.clone(), value.clone()));
+                        command.env.insert(key.clone(), value.clone());
                         flags_to_insert.push(format!("--action_env={key}={value}"));
                         if subcommand == "test" || subcommand == "run" {
                             flags_to_insert.push(format!("--test_env={key}={value}"));
@@ -779,7 +779,7 @@ impl BazelCommandBuilder {
                         let mut flags_to_insert = Vec::new();
                         let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
                         for (key, value) in env {
-                            command.env.push((key.clone(), value.clone()));
+                            command.env.insert(key.clone(), value.clone());
                             flags_to_insert.push(format!("--action_env={key}={value}"));
                             if subcommand == "test" || subcommand == "run" {
                                 flags_to_insert.push(format!("--test_env={key}={value}"));

@@ -185,7 +185,7 @@ pub trait CargoBuilderHelper {
 
     fn apply_common_config(
         &self,
-        command: &mut crate::command::CargoCommand,
+        command: &mut crate::command::Command,
         _config: &Config,
         _file_type: FileType,
         extra_env: Option<&std::collections::HashMap<String, String>>,
@@ -193,7 +193,7 @@ pub trait CargoBuilderHelper {
         // Apply environment variables based on file type
         if let Some(extra_env) = extra_env {
             for (key, value) in extra_env {
-                command.env.push((key.clone(), value.clone()));
+                command.env.insert(key.clone(), value.clone());
             }
         }
     }

@@ -3,7 +3,7 @@
 use super::common::CargoBuilderHelper;
 use crate::{
     command::{
-        CargoCommand, CommandType,
+        Command, CommandStrategy,
         builder::{CommandBuilderImpl, ConfigAccess},
     },
     config::Config,
@@ -23,7 +23,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         package: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!(
             "BinaryCommandBuilder::build called for {:?}, package={:?}",
             runnable.file_path,
@@ -31,7 +31,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         );
         let builder = BinaryCommandBuilder;
         let mut args = vec![];
-        let mut command_type = CommandType::Cargo;
+        let mut strategy = CommandStrategy::Cargo;
 
         // Get binary framework for later use
         let binary_framework = builder.get_binary_framework(config, file_type);
@@ -50,7 +50,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
             if let Some(override_cargo) = &override_config.cargo {
                 if let Some(cmd) = &override_cargo.command {
                     if cmd != "cargo" {
-                        command_type = CommandType::Shell;
+                        strategy = CommandStrategy::Shell;
                         args.push(cmd.clone());
 
                         // Add subcommand if specified
@@ -81,7 +81,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
                 // Handle custom command
                 if let Some(cmd) = &binary_framework.command {
                     if cmd != "cargo" {
-                        command_type = CommandType::Shell;
+                        strategy = CommandStrategy::Shell;
                         args.push(cmd.clone());
 
                         // Add subcommand if specified
@@ -119,7 +119,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
                 }
 
                 // Add framework features (only for cargo commands)
-                if command_type == CommandType::Cargo {
+                if strategy == CommandStrategy::Cargo {
                     if let Some(features) = &binary_framework.features {
                         args.extend(features.to_args());
                     }
@@ -139,7 +139,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         }
 
         // Add package (only for cargo commands)
-        if command_type == CommandType::Cargo {
+        if strategy == CommandStrategy::Cargo {
             if let Some(pkg) = package {
                 if !pkg.is_empty() {
                     args.push("--package".to_string());
@@ -180,14 +180,14 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         // Apply configuration
         builder.apply_args(&mut args, runnable, config, file_type);
 
-        let mut command = match command_type {
-            CommandType::Shell => {
+        let mut command = match strategy {
+            CommandStrategy::Shell => {
                 // Extract the command from args[0]
                 let cmd = args[0].clone();
                 let cmd_args = args[1..].to_vec();
-                CargoCommand::new_shell(cmd, cmd_args)
+                Command::shell(cmd, cmd_args)
             }
-            _ => CargoCommand::new(args),
+            _ => Command::cargo(args),
         };
 
         // Set working directory to cargo root for all commands
@@ -199,7 +199,7 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         if let Some(binary_framework) = binary_framework {
             if let Some(extra_env) = &binary_framework.extra_env {
                 for (key, value) in extra_env {
-                    command.env.push((key.clone(), value.clone()));
+                    command.env.insert(key.clone(), value.clone());
                 }
             }
         }
@@ -344,7 +344,7 @@ impl BinaryCommandBuilder {
 
     fn apply_env(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         runnable: &Runnable,
         config: &Config,
         file_type: FileType,
@@ -354,7 +354,7 @@ impl BinaryCommandBuilder {
             if let Some(override_cargo) = &override_config.cargo {
                 if let Some(extra_env) = &override_cargo.extra_env {
                     for (key, value) in extra_env {
-                        command.env.push((key.clone(), value.clone()));
+                        command.env.insert(key.clone(), value.clone());
                     }
                 }
             }

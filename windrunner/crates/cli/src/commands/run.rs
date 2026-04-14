@@ -49,7 +49,7 @@ pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
     if dry_run {
         println!("{}", command.to_shell_command());
         if let Some(ref dir) = command.working_dir {
-            println!("Working directory: {dir}");
+            println!("Working directory: {}", dir.display());
         }
         if !command.env.is_empty() {
             println!("Environment variables:");
@@ -62,7 +62,7 @@ pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
         if let Some((_, msg)) = command
             .env
             .iter()
-            .find(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION")
+            .find(|(k, _)| k.as_str() == "_BAZEL_DOC_TEST_LIMITATION")
         {
             eprintln!("Note: {msg}");
             eprintln!("Running all doc tests for the crate instead.");
@@ -71,10 +71,10 @@ pub fn run_command(filepath_arg: &str, dry_run: bool) -> Result<()> {
         let shell_cmd = command.to_shell_command();
         info!("Running: {}", shell_cmd);
         if let Some(ref dir) = command.working_dir {
-            info!("Working directory: {}", dir);
+            info!("Working directory: {}", dir.display());
         }
 
-        // Execute using the CargoCommand's execute method which handles working_dir
+        // Execute using the Command's execute method which handles working_dir
         let status = command
             .execute()
             .with_context(|| format!("Failed to execute: {shell_cmd}"))?;

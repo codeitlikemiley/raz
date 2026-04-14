@@ -460,7 +460,7 @@ mod tests {
         let cmd = command.unwrap();
 
         println!("\nGenerated command:");
-        println!("  Type: {:?}", cmd.command_type);
+        println!("  Type: {:?}", cmd.strategy);
         println!("  Args: {:?}", cmd.args);
         println!("  Shell: {}", cmd.to_shell_command());
 
@@ -670,7 +670,7 @@ fn main() {
         let cmd = command.unwrap();
 
         println!("\nGenerated command for build.rs:");
-        println!("  Type: {:?}", cmd.command_type);
+        println!("  Type: {:?}", cmd.strategy);
         println!("  Args: {:?}", cmd.args);
         println!("  Shell: {}", cmd.to_shell_command());
 
@@ -795,7 +795,7 @@ mod tests {
         if let Ok(cmd) = &command {
             println!(
                 "Generated command: {:?} {}",
-                cmd.command_type,
+                cmd.strategy,
                 cmd.args.join(" ")
             );
         }

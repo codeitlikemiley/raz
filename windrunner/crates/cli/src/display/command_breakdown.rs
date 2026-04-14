@@ -1,12 +1,12 @@
-use cargo_runner_core::CargoCommand;
+use cargo_runner_core::Command;
 
-pub fn print_command_breakdown(command: &CargoCommand) {
-    use cargo_runner_core::CommandType;
+pub fn print_command_breakdown(command: &Command) {
+    use cargo_runner_core::CommandStrategy;
 
     println!("   🔧 Command breakdown:");
 
-    match command.command_type {
-        CommandType::Rustc => {
+    match command.strategy {
+        CommandStrategy::Rustc => {
             println!("      • command: rustc");
 
             // Parse rustc-specific arguments
@@ -71,7 +71,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
             let has_test_extra_args = command
                 .env
                 .iter()
-                .find(|(k, _)| k == "_RUSTC_TEST_EXTRA_ARGS");
+                .find(|(k, _)| k.as_str() == "_RUSTC_TEST_EXTRA_ARGS");
             if let Some((_, extra_args)) = has_test_extra_args {
                 let args: Vec<&str> = extra_args.split_whitespace().collect();
                 if !args.is_empty() {
@@ -79,7 +79,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
                 }
             }
         }
-        CommandType::Bazel => {
+        CommandStrategy::Bazel => {
             println!("      • command: bazel");
 
             // Parse Bazel-specific arguments
@@ -102,7 +102,7 @@ pub fn print_command_breakdown(command: &CargoCommand) {
                 if let Some((_, msg)) = command
                     .env
                     .iter()
-                    .find(|(k, _)| k == "_BAZEL_DOC_TEST_LIMITATION")
+                    .find(|(k, _)| k.as_str() == "_BAZEL_DOC_TEST_LIMITATION")
                 {
                     println!("      • ⚠️  Note: {msg}");
                 }

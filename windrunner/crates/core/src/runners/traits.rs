@@ -47,7 +47,7 @@ pub trait RunnerCommand: Send + Sync {
     fn working_dir(&self) -> Option<&Path>;
 
     /// Get environment variables for this command
-    fn env_vars(&self) -> &[(String, String)];
+    fn env_vars(&self) -> &std::collections::BTreeMap<String, String>;
 
     /// Get the command arguments
     fn args(&self) -> &[String];

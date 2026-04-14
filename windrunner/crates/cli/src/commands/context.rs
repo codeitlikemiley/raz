@@ -383,7 +383,7 @@ fn detect_script_engine(file_path: &Path) -> Option<String> {
 fn detect_file_kind(
     file_path: Option<&Path>,
     script_engine: Option<&str>,
-    command: Option<&cargo_runner_core::CargoCommand>,
+    command: Option<&cargo_runner_core::Command>,
     cargo_ctx: Option<&CargoProjectContext>,
 ) -> String {
     if script_engine.is_some() {
@@ -391,7 +391,7 @@ fn detect_file_kind(
     }
 
     if let Some(command) = command {
-        if matches!(command.command_type, cargo_runner_core::CommandType::Rustc) {
+        if matches!(command.strategy, cargo_runner_core::CommandStrategy::Rustc) {
             return "standalone".to_string();
         }
     }
@@ -425,7 +425,7 @@ fn detect_file_kind(
 fn detect_build_system(
     file_path: Option<&Path>,
     script_engine: Option<&str>,
-    command: Option<&cargo_runner_core::CargoCommand>,
+    command: Option<&cargo_runner_core::Command>,
     file_kind: &str,
     runner: &cargo_runner_core::UnifiedRunner,
 ) -> String {
@@ -438,10 +438,10 @@ fn detect_build_system(
     }
 
     if let Some(command) = command {
-        return match command.command_type {
-            cargo_runner_core::CommandType::Rustc => "rustc".to_string(),
-            cargo_runner_core::CommandType::RustSFScript => "cargo".to_string(),
-            cargo_runner_core::CommandType::Shell => {
+        return match command.strategy {
+            cargo_runner_core::CommandStrategy::Rustc => "rustc".to_string(),
+            cargo_runner_core::CommandStrategy::CargoScript => "cargo".to_string(),
+            cargo_runner_core::CommandStrategy::Shell => {
                 if command
                     .args
                     .first()
@@ -453,8 +453,8 @@ fn detect_build_system(
                     "shell".to_string()
                 }
             }
-            cargo_runner_core::CommandType::Bazel => "bazel".to_string(),
-            cargo_runner_core::CommandType::Cargo => "cargo".to_string(),
+            cargo_runner_core::CommandStrategy::Bazel => "bazel".to_string(),
+            cargo_runner_core::CommandStrategy::Cargo => "cargo".to_string(),
         };
     }
 
@@ -475,7 +475,7 @@ fn detect_build_system(
 fn detect_runnable_kind(
     file_path: Option<&Path>,
     script_engine: Option<&str>,
-    command: Option<&cargo_runner_core::CargoCommand>,
+    command: Option<&cargo_runner_core::Command>,
     cargo_ctx: Option<&CargoProjectContext>,
 ) -> Option<String> {
     if script_engine.is_some() {
@@ -483,12 +483,12 @@ fn detect_runnable_kind(
     }
 
     if let Some(command) = command {
-        match command.command_type {
-            cargo_runner_core::CommandType::Rustc => return Some("standalone".to_string()),
-            cargo_runner_core::CommandType::RustSFScript => {
+        match command.strategy {
+            cargo_runner_core::CommandStrategy::Rustc => return Some("standalone".to_string()),
+            cargo_runner_core::CommandStrategy::CargoScript => {
                 return Some("single_file_script".to_string());
             }
-            cargo_runner_core::CommandType::Shell => {
+            cargo_runner_core::CommandStrategy::Shell => {
                 if command
                     .args
                     .first()
@@ -498,8 +498,8 @@ fn detect_runnable_kind(
                     return Some("single_file_script".to_string());
                 }
             }
-            cargo_runner_core::CommandType::Bazel => return Some("cargo_project".to_string()),
-            cargo_runner_core::CommandType::Cargo => {}
+            cargo_runner_core::CommandStrategy::Bazel => return Some("cargo_project".to_string()),
+            cargo_runner_core::CommandStrategy::Cargo => {}
         }
 
         if let Some(subcommand) = command.args.first() {
@@ -550,7 +550,7 @@ fn detect_runnable_kind(
 fn detect_recommended_target(
     file_path: Option<&Path>,
     script_engine: Option<&str>,
-    command: Option<&cargo_runner_core::CargoCommand>,
+    command: Option<&cargo_runner_core::Command>,
     cargo_ctx: Option<&CargoProjectContext>,
 ) -> Option<String> {
     if script_engine.is_some() {

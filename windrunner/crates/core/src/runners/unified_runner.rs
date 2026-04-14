@@ -23,7 +23,7 @@ use super::traits::CommandRunner;
 pub struct UnifiedRunner {
     runners: HashMap<
         BuildSystem,
-        Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
+        Box<dyn CommandRunner<Config = Config, Command = crate::command::Command>>,
     >,
     plugins: PluginRegistry,
     config: Arc<Config>,
@@ -176,7 +176,7 @@ impl UnifiedRunner {
     pub fn get_runner(
         &self,
         build_system: &BuildSystem,
-    ) -> Result<&dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>> {
+    ) -> Result<&dyn CommandRunner<Config = Config, Command = crate::command::Command>> {
         self.runners
             .get(build_system)
             .map(|r| r.as_ref())
@@ -205,7 +205,7 @@ impl UnifiedRunner {
     }
 
     /// Build a command for a runnable
-    pub fn build_command(&self, runnable: &Runnable) -> Result<crate::command::CargoCommand> {
+    pub fn build_command(&self, runnable: &Runnable) -> Result<crate::command::Command> {
         tracing::debug!(
             "UnifiedRunner::build_command called: kind={:?}, file_path={:?}",
             runnable.kind,
@@ -216,8 +216,7 @@ impl UnifiedRunner {
         let target = TargetRef::from_runnable("rust", runnable.clone());
         let command = self
             .plugins
-            .build_command_for_target(&ctx, &target)?
-            .into_cargo_command();
+            .build_command_for_target(&ctx, &target)?;
 
         tracing::debug!(
             "UnifiedRunner::build_command: final command={}",
@@ -245,7 +244,7 @@ impl UnifiedRunner {
         &self,
         file_path: &Path,
         line: Option<u32>,
-    ) -> Result<crate::command::CargoCommand> {
+    ) -> Result<crate::command::Command> {
         tracing::debug!(
             "UnifiedRunner::build_command_at_position: file_path={:?}, line={:?}",
             file_path,
@@ -353,15 +352,15 @@ impl UnifiedRunner {
 }
 
 // Convenience methods that mirror the old CargoRunner API for backward compatibility
-fn init_runners() -> Result<HashMap<BuildSystem, Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>>> {
+fn init_runners() -> Result<HashMap<BuildSystem, Box<dyn CommandRunner<Config = Config, Command = crate::command::Command>>>> {
     let mut runners = HashMap::new();
     runners.insert(
         BuildSystem::Cargo,
-        Box::new(CargoRunner::new()?) as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
+        Box::new(CargoRunner::new()?) as Box<dyn CommandRunner<Config = Config, Command = crate::command::Command>>,
     );
     runners.insert(
         BuildSystem::Bazel,
-        Box::new(BazelRunner::new()?) as Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
+        Box::new(BazelRunner::new()?) as Box<dyn CommandRunner<Config = Config, Command = crate::command::Command>>,
     );
     Ok(runners)
 }
@@ -377,7 +376,7 @@ impl UnifiedRunner {
         &mut self,
         filepath: &Path,
         line: Option<u32>,
-    ) -> Result<crate::command::CargoCommand> {
+    ) -> Result<crate::command::Command> {
         // Try to get command at the specific position
         match self.build_command_at_position(filepath, line) {
             Ok(cmd) => Ok(cmd),
@@ -401,7 +400,7 @@ impl UnifiedRunner {
     pub fn build_command_for_runnable(
         &self,
         runnable: &Runnable,
-    ) -> Result<Option<crate::command::CargoCommand>> {
+    ) -> Result<Option<crate::command::Command>> {
         Ok(Some(self.build_command(runnable)?))
     }
 
@@ -431,7 +430,7 @@ impl UnifiedRunner {
     pub fn get_file_command(
         &mut self,
         file_path: &Path,
-    ) -> Result<Option<crate::command::CargoCommand>> {
+    ) -> Result<Option<crate::command::Command>> {
         // Check if this is a lib.rs file
         let is_lib_rs = file_path
             .file_name()

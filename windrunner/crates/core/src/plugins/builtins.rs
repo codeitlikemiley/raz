@@ -1,5 +1,5 @@
 use crate::{
-    command::CargoCommand,
+    command::Command,
     error::{Error, Result},
     plugins::{
         CommandSpec, CommandStrategy, ProjectContext, RustSourceAnalyzer, SourceAnalyzer, TargetRef,
@@ -143,7 +143,7 @@ fn runnable_from_target(target: &TargetRef) -> Result<&Runnable> {
     })
 }
 
-fn to_spec(command: CargoCommand) -> CommandSpec {
+fn to_spec(command: Command) -> CommandSpec {
     CommandSpec::from(command)
 }
 
@@ -347,6 +347,9 @@ impl crate::plugins::registry::OverlayPlugin for DioxusOverlayPlugin {
             working_dir: command.working_dir,
             env,
             test_filter: command.test_filter,
+            exec_args: command.exec_args,
+            pipe_command: command.pipe_command,
+            test_binary_args: command.test_binary_args,
         })
     }
 }
@@ -429,6 +432,9 @@ impl crate::plugins::registry::OverlayPlugin for LeptosOverlayPlugin {
             working_dir: command.working_dir,
             env,
             test_filter: command.test_filter,
+            exec_args: command.exec_args,
+            pipe_command: command.pipe_command,
+            test_binary_args: command.test_binary_args,
         })
     }
 }

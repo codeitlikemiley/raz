@@ -1,100 +1,87 @@
-use std::io;
-use std::process::{Command, ExitStatus};
+use std::{collections::BTreeMap, io, path::PathBuf, process::{self, ExitStatus}};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum CommandType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandStrategy {
     Cargo,
+    CargoScript,
     Rustc,
-    Shell,        // For dx, trunk, and other shell commands
-    RustSFScript, // For cargo script test execution
-    Bazel,        // For Bazel build system
+    Shell,
+    Bazel,
 }
 
-#[derive(Debug, Clone)]
-pub struct CargoCommand {
-    pub command_type: CommandType,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Command {
+    pub strategy: CommandStrategy,
+    pub program: String,
     pub args: Vec<String>,
-    pub working_dir: Option<String>,
-    pub env: Vec<(String, String)>,
-    /// For rustc test commands, the test name to filter
+    pub working_dir: Option<PathBuf>,
+    pub env: BTreeMap<String, String>,
     pub test_filter: Option<String>,
+    /// Rustc-specific: args to pass to the compiled binary during execution
+    pub exec_args: Option<Vec<String>>,
+    /// Rustc-specific: pipe output through this command
+    pub pipe_command: Option<String>,
+    /// Rustc-specific: extra args for test binary
+    pub test_binary_args: Option<Vec<String>>,
 }
 
-impl CargoCommand {
-    pub fn new(args: Vec<String>) -> Self {
+impl Command {
+    pub fn new(strategy: CommandStrategy, program: impl Into<String>, args: Vec<String>) -> Self {
         Self {
-            command_type: CommandType::Cargo,
+            strategy,
+            program: program.into(),
             args,
             working_dir: None,
-            env: Vec::new(),
+            env: BTreeMap::new(),
             test_filter: None,
+            exec_args: None,
+            pipe_command: None,
+            test_binary_args: None,
         }
     }
 
-    pub fn new_rustc(args: Vec<String>) -> Self {
-        Self {
-            command_type: CommandType::Rustc,
-            args,
-            working_dir: None,
-            env: Vec::new(),
-            test_filter: None,
-        }
+    pub fn cargo(args: Vec<String>) -> Self {
+        Self::new(CommandStrategy::Cargo, "cargo", args)
     }
 
-    pub fn new_shell(command: String, args: Vec<String>) -> Self {
-        let mut all_args = vec![command];
-        all_args.extend(args);
-        Self {
-            command_type: CommandType::Shell,
-            args: all_args,
-            working_dir: None,
-            env: Vec::new(),
-            test_filter: None,
-        }
+    pub fn rustc(args: Vec<String>) -> Self {
+        Self::new(CommandStrategy::Rustc, "rustc", args)
     }
 
-    pub fn new_rust_sf_script(args: Vec<String>) -> Self {
-        Self {
-            command_type: CommandType::RustSFScript,
-            args,
-            working_dir: None,
-            env: Vec::new(),
-            test_filter: None,
-        }
+    pub fn shell(program: impl Into<String>, args: Vec<String>) -> Self {
+        Self::new(CommandStrategy::Shell, program, args)
     }
 
-    pub fn new_bazel(args: Vec<String>) -> Self {
-        Self {
-            command_type: CommandType::Bazel,
-            args,
-            working_dir: None,
-            env: Vec::new(),
-            test_filter: None,
-        }
+    pub fn cargo_script(args: Vec<String>) -> Self {
+        Self::new(CommandStrategy::CargoScript, "cargo", args)
     }
 
-    pub fn with_working_dir(mut self, dir: String) -> Self {
-        self.working_dir = Some(dir);
+    pub fn bazel(args: Vec<String>) -> Self {
+        Self::new(CommandStrategy::Bazel, "bazel", args)
+    }
+
+    pub fn with_working_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.working_dir = Some(dir.into());
         self
     }
 
-    pub fn with_env(mut self, key: String, value: String) -> Self {
-        self.env.push((key, value));
+    pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env.insert(key.into(), value.into());
         self
     }
 
-    pub fn with_test_filter(mut self, filter: String) -> Self {
-        self.test_filter = Some(filter);
+    pub fn with_test_filter(mut self, filter: impl Into<String>) -> Self {
+        self.test_filter = Some(filter.into());
         self
     }
 
     pub fn to_shell_command(&self) -> String {
-        match self.command_type {
-            CommandType::Rustc => {
+        match self.strategy {
+            CommandStrategy::Rustc => {
                 let mut cmd = String::from("rustc");
                 for arg in &self.args {
                     cmd.push(' ');
-                    if arg.contains(' ') {
+                    if arg.contains(' ') && !arg.starts_with('\'') {
                         cmd.push_str(&format!("'{arg}'"));
                     } else {
                         cmd.push_str(arg);
@@ -116,11 +103,9 @@ impl CargoCommand {
                         // If this is a test command with a filter, add it
                         if self.args.contains(&"--test".to_string()) {
                             // Check if we have exec phase args (like --bench)
-                            if let Some((_, exec_args)) =
-                                self.env.iter().find(|(k, _)| k == "_RUSTC_EXEC_ARGS")
-                            {
+                            if let Some(exec_args) = &self.exec_args {
                                 // Add exec args BEFORE the test filter
-                                for arg in exec_args.split_whitespace() {
+                                for arg in exec_args {
                                     if arg != "{bench_name}" && arg != "{test_name}" {
                                         cmd.push_str(&format!(" {arg}"));
                                     }
@@ -132,20 +117,16 @@ impl CargoCommand {
                             }
 
                             // Add extra test binary args if present
-                            if let Some((_, extra_args)) =
-                                self.env.iter().find(|(k, _)| k == "_RUSTC_TEST_EXTRA_ARGS")
-                            {
+                            if let Some(extra_args) = &self.test_binary_args {
                                 // No separator for test binaries - args are mixed with test names
-                                for arg in extra_args.split_whitespace() {
+                                for arg in extra_args {
                                     cmd.push_str(&format!(" {arg}"));
                                 }
                             }
                         }
 
                         // Add pipe command if present
-                        if let Some((_, pipe_cmd)) =
-                            self.env.iter().find(|(k, _)| k == "_RUSTC_PIPE_COMMAND")
-                        {
+                        if let Some(pipe_cmd) = &self.pipe_command {
                             cmd.push_str(&format!(" | {pipe_cmd}"));
                         }
 
@@ -154,30 +135,12 @@ impl CargoCommand {
                 }
                 cmd
             }
-            CommandType::Shell => {
+            CommandStrategy::Shell => {
                 // For shell commands, first arg is the command itself
-                if self.args.is_empty() {
-                    String::new()
-                } else {
-                    let mut cmd = String::new();
-                    for (i, arg) in self.args.iter().enumerate() {
-                        if i > 0 {
-                            cmd.push(' ');
-                        }
-                        if arg.contains(' ') {
-                            cmd.push_str(&format!("'{arg}'"));
-                        } else {
-                            cmd.push_str(arg);
-                        }
-                    }
-                    cmd
-                }
-            }
-            CommandType::RustSFScript | CommandType::Cargo => {
-                let mut cmd = String::from("cargo");
+                let mut cmd = self.program.clone();
                 for arg in &self.args {
                     cmd.push(' ');
-                    if arg.contains(' ') {
+                    if arg.contains(' ') && !arg.starts_with('\'') {
                         cmd.push_str(&format!("'{arg}'"));
                     } else {
                         cmd.push_str(arg);
@@ -185,11 +148,23 @@ impl CargoCommand {
                 }
                 cmd
             }
-            CommandType::Bazel => {
+            CommandStrategy::CargoScript | CommandStrategy::Cargo => {
+                let mut cmd = String::from("cargo");
+                for arg in &self.args {
+                    cmd.push(' ');
+                    if arg.contains(' ') && !arg.starts_with('\'') {
+                        cmd.push_str(&format!("'{arg}'"));
+                    } else {
+                        cmd.push_str(arg);
+                    }
+                }
+                cmd
+            }
+            CommandStrategy::Bazel => {
                 let mut cmd = String::from("bazel");
                 for arg in &self.args {
                     cmd.push(' ');
-                    if arg.contains(' ') {
+                    if arg.contains(' ') && !arg.starts_with('\'') {
                         cmd.push_str(&format!("'{arg}'"));
                     } else {
                         cmd.push_str(arg);
@@ -201,8 +176,8 @@ impl CargoCommand {
     }
 
     pub fn execute(&self) -> io::Result<ExitStatus> {
-        match self.command_type {
-            CommandType::Rustc => {
+        match self.strategy {
+            CommandStrategy::Rustc => {
                 // Extract the output filename from args (after -o flag)
                 let mut output_name = None;
                 for i in 0..self.args.len() {
@@ -213,7 +188,7 @@ impl CargoCommand {
                 }
 
                 // First compile with rustc
-                let mut rustc_cmd = Command::new("rustc");
+                let mut rustc_cmd = process::Command::new("rustc");
                 rustc_cmd.args(&self.args);
 
                 // Set working directory if specified
@@ -235,13 +210,6 @@ impl CargoCommand {
 
                 // If compilation succeeded and we have an output name, run it
                 if let Some(output) = output_name {
-                    // Check if we need to pipe the output
-                    let pipe_cmd = self
-                        .env
-                        .iter()
-                        .find(|(k, _)| k == "_RUSTC_PIPE_COMMAND")
-                        .map(|(_, v)| v.clone());
-
                     // Check if output is an absolute path
                     let exec_path = if output.starts_with('/') || output.starts_with("./") {
                         output.to_string()
@@ -249,28 +217,26 @@ impl CargoCommand {
                         format!("./{output}")
                     };
 
-                    let mut run_cmd = if pipe_cmd.is_some() {
+                    let mut run_cmd = if self.pipe_command.is_some() {
                         // If we have a pipe command, we need to use shell
-                        let mut cmd = Command::new("sh");
+                        let mut cmd = process::Command::new("sh");
                         cmd.arg("-c");
                         cmd
                     } else {
-                        Command::new(exec_path.clone())
+                        process::Command::new(exec_path.clone())
                     };
 
                     // Build args based on whether we're using shell or not
-                    if let Some(ref pipe_to) = pipe_cmd {
+                    if let Some(pipe_to) = &self.pipe_command {
                         // Build the full shell command
                         let mut shell_cmd = exec_path;
 
                         // Add test args if this is a test command
                         if self.args.contains(&"--test".to_string()) {
                             // Check if we have exec phase args (like --bench)
-                            if let Some((_, exec_args)) =
-                                self.env.iter().find(|(k, _)| k == "_RUSTC_EXEC_ARGS")
-                            {
+                            if let Some(exec_args) = &self.exec_args {
                                 // Add exec args BEFORE the test filter
-                                for arg in exec_args.split_whitespace() {
+                                for arg in exec_args {
                                     if arg != "{bench_name}" && arg != "{test_name}" {
                                         shell_cmd.push_str(&format!(" {arg}"));
                                     }
@@ -282,11 +248,9 @@ impl CargoCommand {
                             }
 
                             // Add extra test binary args if present
-                            if let Some((_, extra_args)) =
-                                self.env.iter().find(|(k, _)| k == "_RUSTC_TEST_EXTRA_ARGS")
-                            {
+                            if let Some(extra_args) = &self.test_binary_args {
                                 // No separator needed for test binaries - args are mixed with test names
-                                for arg in extra_args.split_whitespace() {
+                                for arg in extra_args {
                                     shell_cmd.push_str(&format!(" {arg}"));
                                 }
                             }
@@ -301,11 +265,9 @@ impl CargoCommand {
                         // Normal execution without shell
                         if self.args.contains(&"--test".to_string()) {
                             // Check if we have exec phase args (like --bench)
-                            if let Some((_, exec_args)) =
-                                self.env.iter().find(|(k, _)| k == "_RUSTC_EXEC_ARGS")
-                            {
+                            if let Some(exec_args) = &self.exec_args {
                                 // Add exec args BEFORE the test filter
-                                for arg in exec_args.split_whitespace() {
+                                for arg in exec_args {
                                     if arg != "{bench_name}" && arg != "{test_name}" {
                                         run_cmd.arg(arg);
                                     }
@@ -317,11 +279,9 @@ impl CargoCommand {
                             }
 
                             // Add extra test binary args if present
-                            if let Some((_, extra_args)) =
-                                self.env.iter().find(|(k, _)| k == "_RUSTC_TEST_EXTRA_ARGS")
-                            {
+                            if let Some(extra_args) = &self.test_binary_args {
                                 // No separator needed for test binaries - args are mixed with test names
-                                for arg in extra_args.split_whitespace() {
+                                for arg in extra_args {
                                     run_cmd.arg(arg);
                                 }
                             }
@@ -333,11 +293,9 @@ impl CargoCommand {
                         run_cmd.current_dir(dir);
                     }
 
-                    // Set environment variables (but skip internal ones)
+                    // Set environment variables
                     for (key, value) in &self.env {
-                        if !key.starts_with("_RUSTC_") {
-                            run_cmd.env(key, value);
-                        }
+                        run_cmd.env(key, value);
                     }
 
                     run_cmd.status()
@@ -345,35 +303,8 @@ impl CargoCommand {
                     Ok(compile_status)
                 }
             }
-            CommandType::Shell => {
-                // For shell commands, first arg is the command
-                if self.args.is_empty() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "No command specified",
-                    ));
-                }
-
-                let mut cmd = Command::new(&self.args[0]);
-                if self.args.len() > 1 {
-                    cmd.args(&self.args[1..]);
-                }
-
-                // Set working directory if specified
-                if let Some(ref dir) = self.working_dir {
-                    cmd.current_dir(dir);
-                }
-
-                // Set environment variables
-                for (key, value) in &self.env {
-                    tracing::debug!("Setting env: {}={}", key, value);
-                    cmd.env(key, value);
-                }
-
-                cmd.status()
-            }
-            CommandType::RustSFScript | CommandType::Cargo => {
-                let mut cmd = Command::new("cargo");
+            CommandStrategy::Shell => {
+                let mut cmd = process::Command::new(&self.program);
                 cmd.args(&self.args);
 
                 // Set working directory if specified
@@ -389,8 +320,25 @@ impl CargoCommand {
 
                 cmd.status()
             }
-            CommandType::Bazel => {
-                let mut cmd = Command::new("bazel");
+            CommandStrategy::CargoScript | CommandStrategy::Cargo => {
+                let mut cmd = process::Command::new("cargo");
+                cmd.args(&self.args);
+
+                // Set working directory if specified
+                if let Some(ref dir) = self.working_dir {
+                    cmd.current_dir(dir);
+                }
+
+                // Set environment variables
+                for (key, value) in &self.env {
+                    tracing::debug!("Setting env: {}={}", key, value);
+                    cmd.env(key, value);
+                }
+
+                cmd.status()
+            }
+            CommandStrategy::Bazel => {
+                let mut cmd = process::Command::new("bazel");
                 cmd.args(&self.args);
 
                 // Set working directory if specified

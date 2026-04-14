@@ -5,4 +5,4 @@ pub mod display;
 pub mod utils;
 
 // Re-export commonly used items
-pub use cli::{Cargo, CargoCommand, Commands, Runner};
+pub use cli::{Cargo, Command, Commands, Runner};

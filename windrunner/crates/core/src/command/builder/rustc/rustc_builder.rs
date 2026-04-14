@@ -2,7 +2,7 @@
 
 use crate::{
     command::{
-        CargoCommand,
+        Command,
         builder::{CommandBuilderImpl, ConfigAccess},
     },
     config::{Config, RustcFramework, RustcPhaseConfig},
@@ -21,7 +21,7 @@ impl CommandBuilderImpl for RustcCommandBuilder {
         _package: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!("RustcCommandBuilder::build called for {:?}", runnable.kind);
         let builder = RustcCommandBuilder;
 
@@ -60,7 +60,7 @@ impl RustcCommandBuilder {
         test_name: &str,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         tracing::debug!("build_test_command called for test: {}", test_name);
         let framework = self.get_test_framework(config);
         let file_name = self.get_file_name(runnable)?;
@@ -80,7 +80,7 @@ impl RustcCommandBuilder {
         self.apply_build_config(&mut build_args, runnable, config, file_type, &framework);
 
         // Create the command
-        let mut command = CargoCommand::new_rustc(build_args);
+        let mut command = Command::rustc(build_args);
 
         // Build the full test path with module
         let test_path = if runnable.module_path.is_empty() {
@@ -105,9 +105,7 @@ impl RustcCommandBuilder {
         exec_args.push("--exact".to_string());
 
         if !exec_args.is_empty() {
-            command
-                .env
-                .push(("_RUSTC_EXEC_ARGS".to_string(), exec_args.join(" ")));
+                command.exec_args = Some(exec_args);
         }
 
         // Apply exec configuration (stored in env for later use)
@@ -124,7 +122,7 @@ impl RustcCommandBuilder {
         runnable: &Runnable,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         let framework = self.get_test_framework(config);
         let file_name = self.get_file_name(runnable)?;
         // Convert to snake_case for consistency
@@ -143,7 +141,7 @@ impl RustcCommandBuilder {
         self.apply_build_config(&mut build_args, runnable, config, file_type, &framework);
 
         // Create the command (no test filter for module tests)
-        let mut command = CargoCommand::new_rustc(build_args);
+        let mut command = Command::rustc(build_args);
 
         // Apply exec configuration
         self.apply_exec_config(&mut command, runnable, config, file_type, &framework);
@@ -160,7 +158,7 @@ impl RustcCommandBuilder {
         bin_name: Option<&str>,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         let framework = self.get_binary_framework(config);
         let file_name = self.get_file_name(runnable)?;
         let original_name = bin_name.unwrap_or(&file_name);
@@ -181,7 +179,7 @@ impl RustcCommandBuilder {
         self.apply_build_config(&mut build_args, runnable, config, file_type, &framework);
 
         // Create the command
-        let mut command = CargoCommand::new_rustc(build_args);
+        let mut command = Command::rustc(build_args);
 
         // Apply exec configuration
         self.apply_exec_config(&mut command, runnable, config, file_type, &framework);
@@ -198,7 +196,7 @@ impl RustcCommandBuilder {
         bench_name: &str,
         config: &Config,
         file_type: FileType,
-    ) -> Result<CargoCommand> {
+    ) -> Result<Command> {
         let framework = self.get_benchmark_framework(config);
         let file_name = self.get_file_name(runnable)?;
         // Convert to snake_case for consistency
@@ -213,7 +211,7 @@ impl RustcCommandBuilder {
         self.apply_build_config(&mut build_args, runnable, config, file_type, &framework);
 
         // Create the command
-        let mut command = CargoCommand::new_rustc(build_args);
+        let mut command = Command::rustc(build_args);
 
         // Build the full benchmark path with module
         let bench_path = if runnable.module_path.is_empty() {
@@ -238,9 +236,7 @@ impl RustcCommandBuilder {
         exec_args.push("--exact".to_string());
 
         if !exec_args.is_empty() {
-            command
-                .env
-                .push(("_RUSTC_EXEC_ARGS".to_string(), exec_args.join(" ")));
+                command.exec_args = Some(exec_args);
         }
 
         // Apply exec configuration (stored in env for later use)
@@ -544,7 +540,7 @@ impl RustcCommandBuilder {
 
     fn apply_exec_config(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         runnable: &Runnable,
         config: &Config,
         file_type: FileType,
@@ -612,33 +608,25 @@ impl RustcCommandBuilder {
         // Store exec args in env for later use by execute()
         tracing::debug!("Final exec_args: {:?}", exec_args);
         if !exec_args.is_empty() {
-            command
-                .env
-                .push(("_RUSTC_TEST_EXTRA_ARGS".to_string(), exec_args.join(" ")));
+            command.test_binary_args = Some(exec_args);
         }
 
         // Store pipe command if present
         if let Some(exec) = &framework.exec {
             if let Some(pipe_cmd) = &exec.pipe {
-                command
-                    .env
-                    .push(("_RUSTC_PIPE_COMMAND".to_string(), pipe_cmd.clone()));
+                command.pipe_command = Some(pipe_cmd.clone());
             }
 
             // Store stderr suppression flag if present
-            if let Some(suppress) = &exec.suppress_stderr {
-                if *suppress {
-                    command
-                        .env
-                        .push(("_RUSTC_SUPPRESS_STDERR".to_string(), "true".to_string()));
-                }
+            if let Some(_suppress) = &exec.suppress_stderr {
+                // Not supported
             }
         }
     }
 
     fn apply_env(
         &self,
-        command: &mut CargoCommand,
+        command: &mut Command,
         runnable: &Runnable,
         config: &Config,
         _file_type: FileType,
@@ -666,7 +654,7 @@ impl RustcCommandBuilder {
                 tracing::debug!("apply_env: applying {} build env vars", env_map.len());
                 for (key, value) in env_map {
                     tracing::debug!("apply_env: build env {}={}", key, value);
-                    command.env.push((key.clone(), value.clone()));
+                    command.env.insert(key.clone(), value.clone());
                 }
             }
         }
@@ -677,7 +665,7 @@ impl RustcCommandBuilder {
                 tracing::debug!("apply_env: applying {} exec env vars", env_map.len());
                 for (key, value) in env_map {
                     tracing::debug!("apply_env: exec env {}={}", key, value);
-                    command.env.push((key.clone(), value.clone()));
+                    command.env.insert(key.clone(), value.clone());
                 }
             }
         }

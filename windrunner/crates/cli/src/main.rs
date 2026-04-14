@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::env;
 
-use cargo_runner::cli::{Cargo, CargoCommand, Commands, Runner};
+use cargo_runner::cli::{Cargo, Command, Commands, Runner};
 
 fn main() -> Result<()> {
     // Initialize tracing based on RUST_LOG env var
@@ -25,7 +25,7 @@ fn parse_commands() -> Commands {
     // and passes the subcommand name as the first argument
     if args.get(1).is_some_and(|arg| arg == "runner") {
         let cargo = Cargo::parse();
-        let CargoCommand::Runner(runner) = cargo.command;
+        let Command::Runner(runner) = cargo.command;
         runner.command
     } else {
         // Direct invocation as "cargo-runner"

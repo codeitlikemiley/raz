@@ -1,5 +1,5 @@
 use crate::{
-    command::CargoCommand,
+    command::Command,
     command::builder::rustc::single_file_script_builder::is_single_file_script_file,
     config::ConfigMerger,
     error::Result,
@@ -15,7 +15,7 @@ pub fn generate_fallback_command(
     package_name: Option<&str>,
     project_root: Option<&Path>,
     config: Option<crate::config::Config>,
-) -> Result<Option<CargoCommand>> {
+) -> Result<Option<Command>> {
     debug!("generate_fallback_command: package_name={:?}", package_name);
     debug!("generate_fallback_command: file_path={:?}", file_path);
     // Create a synthetic runnable based on file location
@@ -451,7 +451,7 @@ fn is_standalone_rust_file(file_path: &Path) -> bool {
 }
 
 /// Generate a rustc command for standalone Rust files
-fn generate_rustc_command(file_path: &Path) -> Result<Option<CargoCommand>> {
+fn generate_rustc_command(file_path: &Path) -> Result<Option<Command>> {
     // Read the file content to check for shebang and tests
     let content = std::fs::read_to_string(file_path).map_err(crate::Error::IoError)?;
 
@@ -536,7 +536,7 @@ fn generate_rustc_command(file_path: &Path) -> Result<Option<CargoCommand>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::CommandType;
+    use crate::command::CommandStrategy;
     use std::path::PathBuf;
 
     #[test]
@@ -652,7 +652,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(cmd.command_type, CommandType::Rustc);
+        assert_eq!(cmd.strategy, CommandStrategy::Rustc);
         // Should contain the file path somewhere in the args
         let path_str = path.to_str().unwrap();
         assert!(

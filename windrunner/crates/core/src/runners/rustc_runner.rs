@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::{
-    command::{CargoCommand, CommandType},
+    command::{Command, CommandStrategy},
     config::Config,
     error::Result,
     patterns::RunnableDetector,
@@ -23,7 +23,7 @@ impl RustcRunner {
 
 impl CommandRunner for RustcRunner {
     type Config = Config;
-    type Command = CargoCommand;
+    type Command = Command;
 
     fn detect_runnables(&self, file_path: &Path) -> Result<Vec<Runnable>> {
         // For single-file scripts, detect runnables the same way
@@ -94,8 +94,8 @@ impl CommandRunner for RustcRunner {
         }
 
         // Ensure it's a rustc command
-        match &command.command_type {
-            CommandType::Rustc => Ok(()),
+        match &command.strategy {
+            CommandStrategy::Rustc => Ok(()),
             _ => Err(crate::error::Error::Other(
                 "Expected Rustc command type".to_string(),
             )),
