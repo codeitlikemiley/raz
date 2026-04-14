@@ -6,7 +6,7 @@
 use super::{Config, Override};
 use crate::error::Result;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
 };
 use tracing::debug;
@@ -234,39 +234,13 @@ impl ConfigMerger {
         }
 
         // Merge extra_args with deduplication
-        if let Some(ref extra_args) = override_config.extra_args {
-            if force_replace || base.extra_args.is_none() {
-                base.extra_args = Some(extra_args.clone());
-            } else if let Some(ref mut base_args) = base.extra_args {
-                for arg in extra_args {
-                    if !base_args.contains(arg) {
-                        base_args.push(arg.clone());
-                    }
-                }
-            }
-        }
+        merge_vec_dedup(&mut base.extra_args, override_config.extra_args, force_replace);
 
         // Merge extra_test_binary_args with deduplication
-        if let Some(ref extra_test_args) = override_config.extra_test_binary_args {
-            if force_replace || base.extra_test_binary_args.is_none() {
-                base.extra_test_binary_args = Some(extra_test_args.clone());
-            } else if let Some(ref mut base_args) = base.extra_test_binary_args {
-                for arg in extra_test_args {
-                    if !base_args.contains(arg) {
-                        base_args.push(arg.clone());
-                    }
-                }
-            }
-        }
+        merge_vec_dedup(&mut base.extra_test_binary_args, override_config.extra_test_binary_args, force_replace);
 
         // Merge env
-        if let Some(ref env) = override_config.extra_env {
-            if force_replace || base.extra_env.is_none() {
-                base.extra_env = Some(env.clone());
-            } else if let Some(ref mut base_env) = base.extra_env {
-                base_env.extend(env.clone());
-            }
-        }
+        merge_env(&mut base.extra_env, override_config.extra_env, force_replace);
 
         // Merge test_framework
         if override_config.test_framework.is_some() {
@@ -365,30 +339,10 @@ impl ConfigMerger {
         }
 
         // Merge extra_args with deduplication
-        if let Some(ref extra_args) = override_phase.extra_args {
-            if base.extra_args.is_none() {
-                base.extra_args = Some(extra_args.clone());
-            } else if let Some(ref mut base_args) = base.extra_args {
-                for arg in extra_args {
-                    if !base_args.contains(arg) {
-                        base_args.push(arg.clone());
-                    }
-                }
-            }
-        }
+        merge_vec_dedup(&mut base.extra_args, override_phase.extra_args, false);
 
         // Merge extra_test_binary_args with deduplication
-        if let Some(ref extra_test_binary_args) = override_phase.extra_test_binary_args {
-            if base.extra_test_binary_args.is_none() {
-                base.extra_test_binary_args = Some(extra_test_binary_args.clone());
-            } else if let Some(ref mut base_args) = base.extra_test_binary_args {
-                for arg in extra_test_binary_args {
-                    if !base_args.contains(arg) {
-                        base_args.push(arg.clone());
-                    }
-                }
-            }
-        }
+        merge_vec_dedup(&mut base.extra_test_binary_args, override_phase.extra_test_binary_args, false);
     }
 
     fn merge_single_file_script_config(
@@ -398,39 +352,13 @@ impl ConfigMerger {
         force_replace: bool,
     ) {
         // Merge extra_args with deduplication
-        if let Some(ref extra_args) = override_config.extra_args {
-            if force_replace || base.extra_args.is_none() {
-                base.extra_args = Some(extra_args.clone());
-            } else if let Some(ref mut base_args) = base.extra_args {
-                for arg in extra_args {
-                    if !base_args.contains(arg) {
-                        base_args.push(arg.clone());
-                    }
-                }
-            }
-        }
+        merge_vec_dedup(&mut base.extra_args, override_config.extra_args, force_replace);
 
         // Merge env
-        if let Some(ref env) = override_config.extra_env {
-            if force_replace || base.extra_env.is_none() {
-                base.extra_env = Some(env.clone());
-            } else if let Some(ref mut base_env) = base.extra_env {
-                base_env.extend(env.clone());
-            }
-        }
+        merge_env(&mut base.extra_env, override_config.extra_env, force_replace);
 
         // Merge extra_test_binary_args with deduplication
-        if let Some(ref extra_test_binary_args) = override_config.extra_test_binary_args {
-            if force_replace || base.extra_test_binary_args.is_none() {
-                base.extra_test_binary_args = Some(extra_test_binary_args.clone());
-            } else if let Some(ref mut base_args) = base.extra_test_binary_args {
-                for arg in extra_test_binary_args {
-                    if !base_args.contains(arg) {
-                        base_args.push(arg.clone());
-                    }
-                }
-            }
-        }
+        merge_vec_dedup(&mut base.extra_test_binary_args, override_config.extra_test_binary_args, force_replace);
     }
 
     /// Merge override arrays, handling force_replace per override
@@ -539,6 +467,40 @@ impl ConfigMerger {
 
             // If we've passed a package root and still looking, we might find workspace
             current = current.parent()?;
+        }
+    }
+}
+
+/// Merge `incoming` into `base` with deduplication. If `force`, replace entirely.
+fn merge_vec_dedup(
+    base: &mut Option<Vec<String>>,
+    incoming: Option<Vec<String>>,
+    force: bool,
+) {
+    let Some(new_items) = incoming else { return };
+    match (force, base.as_mut()) {
+        (true, _) | (_, None) => *base = Some(new_items),
+        (false, Some(existing)) => {
+            for arg in new_items {
+                if !existing.contains(&arg) {
+                    existing.push(arg);
+                }
+            }
+        }
+    }
+}
+
+/// Merge `incoming` env map into `base`. If `force`, replace entirely.
+fn merge_env(
+    base: &mut Option<std::collections::HashMap<String, String>>,
+    incoming: Option<std::collections::HashMap<String, String>>,
+    force: bool,
+) {
+    let Some(new_env) = incoming else { return };
+    match (force, base.as_mut()) {
+        (true, _) | (_, None) => *base = Some(new_env),
+        (false, Some(existing)) => {
+            existing.extend(new_env);
         }
     }
 }
