@@ -380,7 +380,8 @@ fn deps_expr(local_deps: &[String]) -> String {
 /// This ensures `build-sync` is idempotent — targets already in the managed
 /// block are treated the same as hand-authored ones and are never duplicated.
 fn names_outside_managed_block(content: &str) -> std::collections::HashSet<String> {
-    let re = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap();
+    let re = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#)
+        .expect("Valid regex");
     re.captures_iter(content)
         .map(|c| c[1].to_string())
         .collect()
@@ -479,7 +480,10 @@ pub(crate) fn infer_targets(
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() && path.join("main.rs").exists() {
-                    let stem = path.file_name().unwrap().to_string_lossy().to_string();
+                    let stem = path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
                     candidates.push(BazelTarget::Binary {
                         name: stem.clone(),
                         src: format!("src/bin/{stem}/main.rs"),
@@ -554,7 +558,10 @@ pub(crate) fn infer_targets(
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() && path.join("main.rs").exists() {
-                    let stem = path.file_name().unwrap().to_string_lossy().to_string();
+                    let stem = path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
                     candidates.push(BazelTarget::Example {
                         name: stem.clone(),
                         src: format!("examples/{stem}/main.rs"),
@@ -742,7 +749,10 @@ fn scan_rs_dir_with_main_check<F>(
             continue;
         }
 
-        let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+        let stem = path.file_stem()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
         let src = format!("{rel_dir}/{stem}.rs");
         candidates.push(make_target(stem, src));
     }

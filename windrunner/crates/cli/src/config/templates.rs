@@ -208,7 +208,7 @@ pub fn create_single_file_script_config() -> String {
     config.insert("overrides".to_string(), json!([]));
 
     // Pretty print the JSON
-    serde_json::to_string_pretty(&config).unwrap()
+    serde_json::to_string_pretty(&config).expect("Failed to serialize Dioxus override template")
 }
 
 /// Generate a `.cargo-runner.json` for a Bazel + Rust project.
@@ -260,5 +260,5 @@ pub fn create_bazel_config(workspace_name: &str) -> String {
         "overrides": []
     });
 
-    serde_json::to_string_pretty(&config).unwrap()
+    serde_json::to_string_pretty(&config).expect("Failed to serialize Leptos override template")
 }

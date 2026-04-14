@@ -76,65 +76,66 @@ impl CommandBuilderImpl for BinaryCommandBuilder {
         }
 
         // Only use binary framework if no override command was found
-        if !has_override_command && binary_framework.is_some() {
-            let binary_framework = binary_framework.as_ref().unwrap();
-            // Handle custom command
-            if let Some(cmd) = &binary_framework.command {
-                if cmd != "cargo" {
-                    command_type = CommandType::Shell;
-                    args.push(cmd.clone());
+        if !has_override_command {
+            if let Some(binary_framework) = binary_framework.as_ref() {
+                // Handle custom command
+                if let Some(cmd) = &binary_framework.command {
+                    if cmd != "cargo" {
+                        command_type = CommandType::Shell;
+                        args.push(cmd.clone());
 
-                    // Add subcommand if specified
-                    if let Some(subcommand) = &binary_framework.subcommand {
-                        args.extend(subcommand.split_whitespace().map(String::from));
+                        // Add subcommand if specified
+                        if let Some(subcommand) = &binary_framework.subcommand {
+                            args.extend(subcommand.split_whitespace().map(String::from));
+                        }
+                    } else {
+                        // Standard cargo with channel
+                        if let Some(channel) = &binary_framework.channel {
+                            args.push(format!("+{channel}"));
+                        } else if let Some(channel) = builder.get_channel(config, file_type) {
+                            args.push(format!("+{channel}"));
+                        }
+
+                        // Add subcommand
+                        if let Some(subcommand) = &binary_framework.subcommand {
+                            args.extend(subcommand.split_whitespace().map(String::from));
+                        } else {
+                            args.push("run".to_string());
+                        }
                     }
                 } else {
-                    // Standard cargo with channel
+                    // No custom command, use standard cargo
                     if let Some(channel) = &binary_framework.channel {
                         args.push(format!("+{channel}"));
                     } else if let Some(channel) = builder.get_channel(config, file_type) {
                         args.push(format!("+{channel}"));
                     }
 
-                    // Add subcommand
                     if let Some(subcommand) = &binary_framework.subcommand {
                         args.extend(subcommand.split_whitespace().map(String::from));
                     } else {
                         args.push("run".to_string());
                     }
                 }
+
+                // Add framework features (only for cargo commands)
+                if command_type == CommandType::Cargo {
+                    if let Some(features) = &binary_framework.features {
+                        args.extend(features.to_args());
+                    }
+                }
+
+                // Add framework args
+                if let Some(framework_args) = &binary_framework.extra_args {
+                    args.extend(framework_args.clone());
+                }
             } else {
-                // No custom command, use standard cargo
-                if let Some(channel) = &binary_framework.channel {
-                    args.push(format!("+{channel}"));
-                } else if let Some(channel) = builder.get_channel(config, file_type) {
+                // Standard binary command (only if no override was applied)
+                if let Some(channel) = builder.get_channel(config, file_type) {
                     args.push(format!("+{channel}"));
                 }
-
-                if let Some(subcommand) = &binary_framework.subcommand {
-                    args.extend(subcommand.split_whitespace().map(String::from));
-                } else {
-                    args.push("run".to_string());
-                }
+                args.push("run".to_string());
             }
-
-            // Add framework features (only for cargo commands)
-            if command_type == CommandType::Cargo {
-                if let Some(features) = &binary_framework.features {
-                    args.extend(features.to_args());
-                }
-            }
-
-            // Add framework args
-            if let Some(framework_args) = &binary_framework.extra_args {
-                args.extend(framework_args.clone());
-            }
-        } else if !has_override_command {
-            // Standard binary command (only if no override was applied)
-            if let Some(channel) = builder.get_channel(config, file_type) {
-                args.push(format!("+{channel}"));
-            }
-            args.push("run".to_string());
         }
 
         // Add package (only for cargo commands)
@@ -283,13 +284,21 @@ impl BinaryCommandBuilder {
             } else {
                 // For main.rs with default cargo run command, use the package name as the binary name
                 // This handles the case where there are multiple binaries in the project
-                if is_default_run && package.is_some() {
-                    tracing::debug!(
-                        "Adding --bin {} (main.rs with package name)",
-                        package.unwrap()
-                    );
-                    args.push("--bin".to_string());
-                    args.push(package.unwrap().to_string());
+                if is_default_run {
+                    if let Some(pkg) = package {
+                        tracing::debug!(
+                            "Adding --bin {} (main.rs with package name)",
+                            pkg
+                        );
+                        args.push("--bin".to_string());
+                        args.push(pkg.to_string());
+                    } else {
+                        tracing::debug!(
+                            "Not adding --bin: is_default_run={}, package={:?}",
+                            is_default_run,
+                            package
+                        );
+                    }
                 } else {
                     tracing::debug!(
                         "Not adding --bin: is_default_run={}, package={:?}",

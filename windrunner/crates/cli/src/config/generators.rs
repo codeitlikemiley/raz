@@ -21,7 +21,7 @@ pub fn create_workspace_config() -> String {
     config.insert("overrides".to_string(), json!([]));
 
     // Pretty print the JSON
-    serde_json::to_string_pretty(&config).unwrap()
+    serde_json::to_string_pretty(&config).expect("Failed to serialize default root config")
 }
 
 pub fn create_default_config(package_name: &str) -> String {
@@ -55,7 +55,7 @@ pub fn create_default_config(package_name: &str) -> String {
     */
 
     let config_value = Value::Object(config);
-    serde_json::to_string_pretty(&config_value).unwrap()
+    serde_json::to_string_pretty(&config_value).expect("Failed to serialize default local config")
 }
 
 pub fn create_root_config(project_root: &Path, cargo_tomls: &[PathBuf]) -> Result<String> {
@@ -132,5 +132,5 @@ pub fn create_root_config(project_root: &Path, cargo_tomls: &[PathBuf]) -> Resul
     */
 
     let config_value = Value::Object(config);
-    Ok(serde_json::to_string_pretty(&config_value).unwrap())
+    Ok(serde_json::to_string_pretty(&config_value).expect("Failed to serialize workspace config"))
 }
