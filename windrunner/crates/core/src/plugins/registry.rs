@@ -4,7 +4,7 @@ use crate::{
     plugins::{CommandSpec, ProjectContext, TargetRef},
     types::Runnable,
 };
-use std::{cmp::Reverse, path::Path};
+use std::{cmp::Reverse, path::Path, sync::Arc};
 
 pub trait PrimaryPlugin: Send + Sync {
     fn id(&self) -> &'static str;
@@ -137,7 +137,7 @@ impl PluginRegistry {
 
     pub fn build_command_for_runnable(
         &self,
-        config: Config,
+        config: Arc<Config>,
         runnable: &Runnable,
     ) -> Result<CommandSpec> {
         let ctx = ProjectContext::from_path(&runnable.file_path, config);
@@ -159,7 +159,7 @@ impl PluginRegistry {
     pub fn detect_primary_build_system_for_path(
         &self,
         path: &Path,
-        config: Config,
+        config: Arc<Config>,
     ) -> Result<crate::build_system::BuildSystem> {
         let ctx = ProjectContext::from_path(path, config);
         self.detect_primary_build_system(&ctx)

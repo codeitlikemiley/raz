@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::runners::cargo_runner::CargoRunner;
 use crate::runners::bazel_runner::BazelRunner;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::{
     build_system::BuildSystem,
@@ -25,7 +26,7 @@ pub struct UnifiedRunner {
         Box<dyn CommandRunner<Config = Config, Command = crate::command::CargoCommand>>,
     >,
     plugins: PluginRegistry,
-    config: Config,
+    config: Arc<Config>,
 }
 
 
@@ -39,7 +40,7 @@ impl UnifiedRunner {
         Ok(Self {
             runners,
             plugins,
-            config,
+            config: Arc::new(config),
         })
     }
 
@@ -51,7 +52,7 @@ impl UnifiedRunner {
         Ok(Self {
             runners,
             plugins,
-            config,
+            config: Arc::new(config),
         })
     }
 
@@ -129,7 +130,7 @@ impl UnifiedRunner {
 
             tracing::debug!("detect_build_system: checking directory {:?}", check_path);
 
-            let ctx = ProjectContext::from_path(check_path, self.config.clone());
+            let ctx = ProjectContext::from_path(check_path, Arc::clone(&self.config));
             if let Ok(build_system) = self.plugins.detect_primary_build_system(&ctx) {
                 tracing::info!(
                     "detect_build_system: found {:?} at {:?}",
@@ -188,7 +189,7 @@ impl UnifiedRunner {
 
     /// Detect all runnables in a file
     pub fn detect_runnables(&self, file_path: &Path) -> Result<Vec<Runnable>> {
-        let ctx = ProjectContext::from_path(file_path, self.config.clone());
+        let ctx = ProjectContext::from_path(file_path, Arc::clone(&self.config));
         let targets = self.plugins.discover_targets(&ctx, None)?;
         Ok(targets
             .into_iter()
@@ -198,7 +199,7 @@ impl UnifiedRunner {
 
     /// Get the best runnable at a specific line
     pub fn get_runnable_at_line(&self, file_path: &Path, line: u32) -> Result<Option<Runnable>> {
-        let ctx = ProjectContext::from_path(file_path, self.config.clone());
+        let ctx = ProjectContext::from_path(file_path, Arc::clone(&self.config));
         let targets = self.plugins.discover_targets(&ctx, Some(line))?;
         Ok(targets.into_iter().find_map(TargetRef::into_runnable))
     }
@@ -211,7 +212,7 @@ impl UnifiedRunner {
             runnable.file_path
         );
 
-        let ctx = ProjectContext::from_path(&runnable.file_path, self.config.clone());
+        let ctx = ProjectContext::from_path(&runnable.file_path, Arc::clone(&self.config));
         let target = TargetRef::from_runnable("rust", runnable.clone());
         let command = self
             .plugins
@@ -265,7 +266,7 @@ impl UnifiedRunner {
                 file_path,
                 package_name.as_deref(),
                 cargo_root.as_deref(),
-                Some(self.config.clone()),
+                Some((*self.config).clone()),
             )?
             .ok_or(crate::error::Error::NoRunnableFound);
         }
@@ -339,7 +340,7 @@ impl UnifiedRunner {
 
     /// Update the configuration
     pub fn set_config(&mut self, config: Config) {
-        self.config = config;
+        self.config = Arc::new(config);
     }
 
     /// Get the name of the currently detected build system
@@ -526,7 +527,7 @@ impl UnifiedRunner {
                 file_path,
                 package_name.as_deref(),
                 cargo_root.as_deref(),
-                Some(self.config.clone()),
+                Some((*self.config).clone()),
             )? {
                 return Ok(Some(command));
             }
@@ -634,7 +635,7 @@ impl UnifiedRunner {
                 file_path,
                 package_name.as_deref(),
                 cargo_root.as_deref(),
-                Some(self.config.clone()),
+                Some((*self.config).clone()),
             )? {
                 return Ok(Some(command));
             }

@@ -3,19 +3,20 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectContext {
     pub file_path: PathBuf,
     pub project_root: PathBuf,
-    pub config: Config,
+    pub config: Arc<Config>,
     #[serde(default)]
     pub manifests: BTreeMap<String, PathBuf>,
 }
 
 impl ProjectContext {
-    pub fn from_path(file_path: &Path, config: Config) -> Self {
+    pub fn from_path(file_path: &Path, config: Arc<Config>) -> Self {
         let file_path = if file_path.is_absolute() {
             file_path.to_path_buf()
         } else {
