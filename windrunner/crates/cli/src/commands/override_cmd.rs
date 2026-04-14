@@ -54,7 +54,7 @@ pub fn override_command(
         );
     }
 
-    let runnable = runnable.unwrap();
+    let runnable = runnable.ok_or_else(|| anyhow::anyhow!("Runnable is expected here"))?;
 
     // Detect file type based on the runnable
     let file_type = runner.detect_file_type(&resolved_path)?;
@@ -149,13 +149,13 @@ pub fn override_command(
     // Always add file_path for precise matching
     matcher.insert(
         "file_path".to_string(),
-        json!(resolved_path.to_str().unwrap()),
+        json!(resolved_path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid file path string"))?),
     );
 
     override_config.insert("match".to_string(), Value::Object(matcher));
 
     // Parse override arguments (token-based: @dx.serve, +nightly, etc.)
-    let mut parsed_args = parse_override_args(&override_args);
+    let mut parsed_args = cargo_runner_core::config::override_manager::OverrideManager::parse_override_args(&override_args);
 
     // Named flags (--command, --subcommand, --channel) take precedence
     if let Some(cmd) = &flag_command {
@@ -174,7 +174,7 @@ pub fn override_command(
         let config_path = if root {
             let root_path = env::var("PROJECT_ROOT")
                 .map(PathBuf::from)
-                .unwrap_or_else(|_| env::current_dir().unwrap());
+                .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
             root_path.join(".cargo-runner.json")
         } else {
             runner
@@ -195,7 +195,7 @@ pub fn override_command(
                             let matches = match_obj
                                 .get("file_path")
                                 .and_then(|v| v.as_str())
-                                .map(|p| p == resolved_path.to_str().unwrap())
+                                .map(|p| Some(p) == resolved_path.to_str())
                                 .unwrap_or(false);
 
                             if matches && identity.function_name.is_some() {
@@ -382,7 +382,7 @@ pub fn override_command(
         // Use PROJECT_ROOT or current directory for root config
         let root_path = env::var("PROJECT_ROOT")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| env::current_dir().unwrap());
+            .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
         root_path.join(".cargo-runner.json")
     } else {
         // Find the closest project config
@@ -419,7 +419,7 @@ pub fn override_command(
                 let file_matches = match_obj
                     .get("file_path")
                     .and_then(|v| v.as_str())
-                    .map(|p| p == resolved_path.to_str().unwrap())
+                    .map(|p| Some(p) == resolved_path.to_str())
                     .unwrap_or(false);
 
                 if file_matches && identity.function_name.is_some() {
@@ -662,7 +662,7 @@ fn create_file_level_override(
     override_args: Vec<String>,
 ) -> Result<()> {
     // Parse the override arguments - this returns a Map with the parsed configuration
-    let mut override_config = parse_override_args(&override_args);
+    let mut override_config = cargo_runner_core::config::override_manager::OverrideManager::parse_override_args(&override_args);
 
     // Named flags take precedence
     if let Some(cmd) = &flag_command {
@@ -742,7 +742,7 @@ fn create_file_level_override(
             let config_path = dir.join(".cargo-runner.json");
             if config_path.exists() {
                 println!("   📂 Found config at: {}", config_path.display());
-                add_override_to_existing_config(&config_path, override_entry)?;
+                cargo_runner_core::config::override_manager::OverrideManager::add_override_to_existing_config(&config_path, override_entry)?;
 
                 println!("\n✅ File-level override created successfully!");
                 println!("   📍 Config: {}", config_path.display());
@@ -759,7 +759,7 @@ fn create_file_level_override(
     };
 
     // Add the override to the config
-    add_override_to_existing_config(&config_path, override_entry.clone())?;
+    cargo_runner_core::config::override_manager::OverrideManager::add_override_to_existing_config(&config_path, override_entry.clone())?;
 
     println!("\n✅ File-level override created successfully!");
     println!("   📍 Config: {}", config_path.display());
@@ -818,420 +818,3 @@ fn create_file_level_override(
     Ok(())
 }
 
-fn add_override_to_existing_config(
-    config_path: &Path,
-    override_entry: Map<String, Value>,
-) -> Result<()> {
-    println!("   🔧 Adding override to config...");
-    println!("   📝 Override entry: {override_entry:?}");
-
-    // Read existing config or create new one
-    let mut config: Map<String, Value> = if config_path.exists() {
-        let content = fs::read_to_string(config_path)
-            .with_context(|| format!("Failed to read config from {}", config_path.display()))?;
-        serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse config from {}", config_path.display()))?
-    } else {
-        let mut new_config = Map::new();
-        new_config.insert(
-            "cargo".to_string(),
-            json!({
-                "extra_args": [],
-                "extra_env": {},
-                "extra_test_binary_args": []
-            }),
-        );
-        new_config.insert("overrides".to_string(), json!([]));
-        new_config
-    };
-
-    // Get or create overrides array
-    let overrides = config
-        .entry("overrides".to_string())
-        .or_insert(json!([]))
-        .as_array_mut()
-        .ok_or_else(|| anyhow::anyhow!("overrides is not an array"))?;
-
-    // Add the new override
-    overrides.push(Value::Object(override_entry));
-
-    // Write back the config
-    let json_string = serde_json::to_string_pretty(&config)?;
-    fs::write(config_path, json_string)
-        .with_context(|| format!("Failed to write config to {}", config_path.display()))?;
-
-    Ok(())
-}
-
-fn parse_override_args(args: &[String]) -> Map<String, Value> {
-    let mut result = Map::new();
-    let mut extra_args = Vec::new();
-    let mut extra_env = Map::new();
-    let mut extra_test_binary_args = Vec::new();
-    let mut command = None;
-    let mut subcommand = None;
-    let mut channel = None;
-
-    // Fields to remove
-    let mut remove_command = false;
-    let mut remove_subcommand = false;
-    let mut remove_channel = false;
-    let mut remove_args = false;
-    let mut remove_env = false;
-    let mut remove_test_args = false;
-    let mut env_to_remove = Vec::new();
-
-    let mut i = 0;
-    while i < args.len() {
-        let arg = &args[i];
-
-        // Check for removal tokens
-        if arg.starts_with('-') && !arg.starts_with("--") {
-            match arg.as_str() {
-                "-command" | "-cmd" => remove_command = true,
-                "-subcommand" | "-sub" => remove_subcommand = true,
-                "-channel" | "-ch" => remove_channel = true,
-                "-arg" => remove_args = true,
-                "-env" => remove_env = true,
-                "-test" | "-/" => remove_test_args = true,
-                _ => {
-                    // Check if it's an env var removal like -RUST_LOG
-                    let env_name = &arg[1..];
-                    if env_name.chars().all(|c| c.is_uppercase() || c == '_')
-                        && !env_name.is_empty()
-                    {
-                        env_to_remove.push(env_name.to_string());
-                    }
-                }
-            }
-        }
-        // Check for command token @command.subcommand
-        else if let Some(token) = arg.strip_prefix('@') {
-            let parts: Vec<&str> = token.split('.').collect();
-
-            if !parts.is_empty() {
-                let cmd = parts[0];
-
-                // Special handling for @cargo.subcommand format
-                if cmd == "cargo" && parts.len() > 1 {
-                    // Don't set command to cargo (it's the default)
-                    // Just set the subcommand
-                    subcommand = Some(parts[1..].join(" "));
-                } else {
-                    // For other commands like @dx, @trunk, @bazel, etc.
-                    command = Some(cmd.to_string());
-                    if parts.len() > 1 {
-                        subcommand = Some(parts[1..].join(" "));
-                    }
-                }
-            }
-        }
-        // Check for channel token +channel
-        else if arg.starts_with('+') && arg.len() > 1 {
-            channel = Some(arg[1..].to_string());
-        }
-        // Check for test binary args starting with /
-        else if arg == "/" || arg.starts_with('/') {
-            // The / acts like -- in cargo test, everything after goes to test binary
-
-            // If there's content immediately after / (like /--show-output), add it
-            if arg.len() > 1 {
-                let arg_content = &arg[1..];
-                extra_test_binary_args.push(arg_content.to_string());
-            }
-
-            // Collect ALL remaining args as test binary args
-            while i + 1 < args.len() {
-                i += 1;
-                extra_test_binary_args.push(args[i].clone());
-            }
-        }
-        // Check for environment variables (SCREAMING_CASE=value)
-        else if arg
-            .chars()
-            .take_while(|&c| c != '=')
-            .all(|c| c.is_uppercase() || c == '_')
-            && arg.contains('=')
-        {
-            let parts: Vec<&str> = arg.splitn(2, '=').collect();
-            if parts.len() == 2 && !parts[0].is_empty() {
-                extra_env.insert(parts[0].to_string(), json!(parts[1]));
-            }
-        }
-        // Everything else goes to extra_args
-        else {
-            extra_args.push(arg.clone());
-        }
-
-        i += 1;
-    }
-
-    // Build result based on what was parsed and removal flags
-    if let Some(cmd) = command {
-        if !remove_command {
-            result.insert("command".to_string(), json!(cmd));
-        }
-    } else if remove_command {
-        result.insert("remove_command".to_string(), json!(true));
-    }
-
-    if let Some(sub) = subcommand {
-        if !remove_subcommand {
-            result.insert("subcommand".to_string(), json!(sub));
-        }
-    } else if remove_subcommand {
-        result.insert("remove_subcommand".to_string(), json!(true));
-    }
-
-    if let Some(ch) = channel {
-        if !remove_channel {
-            result.insert("channel".to_string(), json!(ch));
-        }
-    } else if remove_channel {
-        result.insert("remove_channel".to_string(), json!(true));
-    }
-
-    if !extra_args.is_empty() && !remove_args {
-        result.insert("extra_args".to_string(), json!(extra_args));
-    } else if remove_args {
-        result.insert("remove_args".to_string(), json!(true));
-    }
-
-    if !extra_env.is_empty() && !remove_env {
-        result.insert("extra_env".to_string(), Value::Object(extra_env));
-    } else if remove_env {
-        result.insert("remove_env".to_string(), json!(true));
-    }
-
-    if !env_to_remove.is_empty() {
-        result.insert("remove_env_keys".to_string(), json!(env_to_remove));
-    }
-
-    if !extra_test_binary_args.is_empty() && !remove_test_args {
-        result.insert(
-            "extra_test_binary_args".to_string(),
-            json!(extra_test_binary_args),
-        );
-    } else if remove_test_args {
-        result.insert("remove_test_args".to_string(), json!(true));
-    }
-
-    result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn args(s: &str) -> Vec<String> {
-        s.split_whitespace().map(String::from).collect()
-    }
-
-    // ── @command.subcommand tokens ────────────────────────────────
-
-    #[test]
-    fn at_dx_run() {
-        let r = parse_override_args(&args("@dx.run"));
-        assert_eq!(r.get("command").unwrap(), "dx");
-        assert_eq!(r.get("subcommand").unwrap(), "run");
-    }
-
-    #[test]
-    fn at_dx_serve() {
-        let r = parse_override_args(&args("@dx.serve"));
-        assert_eq!(r.get("command").unwrap(), "dx");
-        assert_eq!(r.get("subcommand").unwrap(), "serve");
-    }
-
-    #[test]
-    fn at_cargo_subcommand_does_not_set_command() {
-        // @cargo.test → only subcommand, no command (cargo is the default)
-        let r = parse_override_args(&args("@cargo.test"));
-        assert!(
-            r.get("command").is_none(),
-            "cargo should not be set as command"
-        );
-        assert_eq!(r.get("subcommand").unwrap(), "test");
-    }
-
-    #[test]
-    fn at_cargo_leptos_watch_joins_subcommand() {
-        let r = parse_override_args(&args("@cargo.leptos.watch"));
-        assert!(r.get("command").is_none());
-        assert_eq!(r.get("subcommand").unwrap(), "leptos watch");
-    }
-
-    #[test]
-    fn at_cargo_leptos_serve() {
-        let r = parse_override_args(&args("@cargo.leptos.serve"));
-        assert!(r.get("command").is_none());
-        assert_eq!(r.get("subcommand").unwrap(), "leptos serve");
-    }
-
-    #[test]
-    fn at_bazel_run() {
-        let r = parse_override_args(&args("@bazel.run"));
-        assert_eq!(r.get("command").unwrap(), "bazel");
-        assert_eq!(r.get("subcommand").unwrap(), "run");
-    }
-
-    #[test]
-    fn at_command_without_subcommand() {
-        let r = parse_override_args(&args("@trunk"));
-        assert_eq!(r.get("command").unwrap(), "trunk");
-        assert!(r.get("subcommand").is_none());
-    }
-
-    // ── +channel token ────────────────────────────────────────────
-
-    #[test]
-    fn plus_nightly() {
-        let r = parse_override_args(&args("+nightly"));
-        assert_eq!(r.get("channel").unwrap(), "nightly");
-    }
-
-    #[test]
-    fn plus_stable() {
-        let r = parse_override_args(&args("+stable"));
-        assert_eq!(r.get("channel").unwrap(), "stable");
-    }
-
-    // ── ENV=value token ───────────────────────────────────────────
-
-    #[test]
-    fn env_var_simple() {
-        let r = parse_override_args(&args("RUST_LOG=debug"));
-        let env = r.get("extra_env").unwrap().as_object().unwrap();
-        assert_eq!(env.get("RUST_LOG").unwrap(), "debug");
-    }
-
-    #[test]
-    fn env_var_with_equals_in_value() {
-        let r = parse_override_args(&["RUST_LOG=key=val".to_string()]);
-        let env = r.get("extra_env").unwrap().as_object().unwrap();
-        assert_eq!(env.get("RUST_LOG").unwrap(), "key=val");
-    }
-
-    #[test]
-    fn multiple_env_vars() {
-        let r = parse_override_args(&args("RUST_LOG=debug RUST_BACKTRACE=1"));
-        let env = r.get("extra_env").unwrap().as_object().unwrap();
-        assert_eq!(env.get("RUST_LOG").unwrap(), "debug");
-        assert_eq!(env.get("RUST_BACKTRACE").unwrap(), "1");
-    }
-
-    // ── /test binary args ─────────────────────────────────────────
-
-    #[test]
-    fn slash_test_args() {
-        let r = parse_override_args(&args("/--nocapture --show-output"));
-        let test_args = r.get("extra_test_binary_args").unwrap().as_array().unwrap();
-        assert_eq!(test_args, &["--nocapture", "--show-output"]);
-    }
-
-    #[test]
-    fn standalone_slash_then_args() {
-        let r = parse_override_args(&args("/ --nocapture"));
-        let test_args = r.get("extra_test_binary_args").unwrap().as_array().unwrap();
-        assert_eq!(test_args, &["--nocapture"]);
-    }
-
-    #[test]
-    fn slash_consumes_remaining_args() {
-        // Everything after / goes to test binary args, even @tokens
-        let r = parse_override_args(&args("/ --nocapture @dx.run"));
-        let test_args = r.get("extra_test_binary_args").unwrap().as_array().unwrap();
-        assert_eq!(test_args, &["--nocapture", "@dx.run"]);
-        assert!(r.get("command").is_none());
-    }
-
-    // ── Removal tokens ────────────────────────────────────────────
-
-    #[test]
-    fn remove_command() {
-        let r = parse_override_args(&args("-command"));
-        assert_eq!(r.get("remove_command").unwrap(), true);
-    }
-
-    #[test]
-    fn remove_command_alias() {
-        let r = parse_override_args(&args("-cmd"));
-        assert_eq!(r.get("remove_command").unwrap(), true);
-    }
-
-    #[test]
-    fn remove_subcommand() {
-        let r = parse_override_args(&args("-subcommand"));
-        assert_eq!(r.get("remove_subcommand").unwrap(), true);
-    }
-
-    #[test]
-    fn remove_channel() {
-        let r = parse_override_args(&args("-channel"));
-        assert_eq!(r.get("remove_channel").unwrap(), true);
-    }
-
-    #[test]
-    fn remove_args() {
-        let r = parse_override_args(&args("-arg"));
-        assert_eq!(r.get("remove_args").unwrap(), true);
-    }
-
-    #[test]
-    fn remove_env() {
-        let r = parse_override_args(&args("-env"));
-        assert_eq!(r.get("remove_env").unwrap(), true);
-    }
-
-    #[test]
-    fn remove_test_args() {
-        let r = parse_override_args(&args("-test"));
-        assert_eq!(r.get("remove_test_args").unwrap(), true);
-    }
-
-    #[test]
-    fn remove_specific_env_key() {
-        let r = parse_override_args(&args("-RUST_LOG"));
-        let keys = r.get("remove_env_keys").unwrap().as_array().unwrap();
-        assert_eq!(keys, &["RUST_LOG"]);
-    }
-
-    // ── Extra args (passthrough) ──────────────────────────────────
-
-    #[test]
-    fn extra_args_passthrough() {
-        let r = parse_override_args(&args("--release --features=web"));
-        let extra = r.get("extra_args").unwrap().as_array().unwrap();
-        assert_eq!(extra, &["--release", "--features=web"]);
-    }
-
-    // ── Combined tokens ───────────────────────────────────────────
-
-    #[test]
-    fn combined_command_channel_env_args() {
-        let r = parse_override_args(&args("@dx.serve +nightly RUST_LOG=debug --release"));
-        assert_eq!(r.get("command").unwrap(), "dx");
-        assert_eq!(r.get("subcommand").unwrap(), "serve");
-        assert_eq!(r.get("channel").unwrap(), "nightly");
-        let env = r.get("extra_env").unwrap().as_object().unwrap();
-        assert_eq!(env.get("RUST_LOG").unwrap(), "debug");
-        let extra = r.get("extra_args").unwrap().as_array().unwrap();
-        assert_eq!(extra, &["--release"]);
-    }
-
-    #[test]
-    fn command_with_removal_flag_skips_it() {
-        // @dx.serve + -command → command is NOT set (removed)
-        let r = parse_override_args(&args("@dx.serve -command"));
-        assert!(r.get("command").is_none());
-        assert_eq!(r.get("subcommand").unwrap(), "serve");
-    }
-
-    // ── Empty input ───────────────────────────────────────────────
-
-    #[test]
-    fn empty_args() {
-        let r = parse_override_args(&[]);
-        assert!(r.is_empty());
-    }
-}
