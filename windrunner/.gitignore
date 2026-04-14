@@ -8,3 +8,4 @@ bazel-testlogs
 bazel-windrunner
 *.md
 !README.md
+*.py

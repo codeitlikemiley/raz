@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'cargo-runner-v*' # Trigger on tags like cargo-runner-v0.1.0
+
+env:
+  CARGO_TERM_COLOR: always
+  CRATE_NAME: cargo-runner
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            use-cross: true
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "windrunner"
+
+    # Install cross if building for a different architecture on linux
+    - name: Install cross
+      if: matrix.use-cross
+      uses: taiki-e/install-action@cross
+
+    - name: Build Binary
+      run: |
+        if [ "${{ matrix.use-cross }}" == "true" ]; then
+          cross build --release --target ${{ matrix.target }} -p cargo-runner
+        else
+          cargo build --release --target ${{ matrix.target }} -p cargo-runner
+        fi
+      working-directory: windrunner
+
+    - name: Package Release (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        VERSION=${GITHUB_REF_NAME#cargo-runner-v}
+        ARCHIVE_NAME="${CRATE_NAME}-${{ matrix.target }}-v${VERSION}"
+        mkdir -p "${ARCHIVE_NAME}"
+        cp windrunner/target/${{ matrix.target }}/release/cargo-runner "${ARCHIVE_NAME}/"
+        cp windrunner/README.md windrunner/LICENSE "${ARCHIVE_NAME}/"
+        tar -czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}"
+        echo "ASSET_NAME=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
+
+    - name: Package Release (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        $VERSION = $env:GITHUB_REF_NAME.Replace("cargo-runner-v", "")
+        $ARCHIVE_NAME = "${env:CRATE_NAME}-${{ matrix.target }}-v${VERSION}"
+        New-Item -ItemType Directory -Force -Path $ARCHIVE_NAME
+        Copy-Item -Path windrunner\target\${{ matrix.target }}\release\cargo-runner.exe -Destination $ARCHIVE_NAME\
+        Copy-Item -Path windrunner\README.md -Destination $ARCHIVE_NAME\
+        Copy-Item -Path windrunner\LICENSE -Destination $ARCHIVE_NAME\
+        Compress-Archive -Path $ARCHIVE_NAME -DestinationPath "${ARCHIVE_NAME}.zip"
+        echo "ASSET_NAME=${ARCHIVE_NAME}.zip" >> $env:GITHUB_ENV
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.target }}
+        path: ${{ env.ASSET_NAME }}
+
+  create-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: artifacts/**/*
+        generate_release_notes: true

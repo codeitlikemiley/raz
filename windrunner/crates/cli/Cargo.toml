@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
 
 [lib]
 name = "cargo_runner"
@@ -30,3 +36,8 @@ toml = "0.8"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/cargo-runner-v{ version }/{ name }-{ target }-v{ version }.{ archive-format }"
+bin-dir = "{ name }-{ target }-v{ version }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
