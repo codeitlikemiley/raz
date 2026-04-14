@@ -8,7 +8,8 @@ use crate::{
 };
 use std::path::{Path, PathBuf};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::time::SystemTime;
 
 struct CacheEntry {
@@ -19,7 +20,7 @@ struct CacheEntry {
 }
 
 thread_local! {
-    static PARSE_CACHE: RefCell<HashMap<PathBuf, CacheEntry>> = RefCell::new(HashMap::new());
+    static PARSE_CACHE: RefCell<LruCache<PathBuf, CacheEntry>> = RefCell::new(LruCache::new(NonZeroUsize::new(100).unwrap()));
 }
 
 pub struct RunnableDetector {
@@ -51,7 +52,7 @@ impl RunnableDetector {
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
         let cached = PARSE_CACHE.with(|c| {
-            if let Some(entry) = c.borrow().get(file_path) {
+            if let Some(entry) = c.borrow_mut().get(file_path) {
                 if entry.mtime == mtime {
                     return Some((entry.runnables.clone(), entry.source.clone(), entry.scopes.clone()));
                 }
@@ -261,7 +262,7 @@ impl RunnableDetector {
         runnables.sort_by_key(|r| (r.scope.start.line, r.scope.start.character));
 
         PARSE_CACHE.with(|c| {
-            c.borrow_mut().insert(
+            c.borrow_mut().put(
                 file_path.to_path_buf(),
                 CacheEntry {
                     mtime,
@@ -309,7 +310,7 @@ impl RunnableDetector {
         
         let mtime = std::fs::metadata(file_path).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
         let cached = PARSE_CACHE.with(|c| {
-            if let Some(entry) = c.borrow().get(file_path) {
+            if let Some(entry) = c.borrow_mut().get(file_path) {
                 if entry.mtime == mtime {
                     return Some(entry.scopes.clone());
                 }

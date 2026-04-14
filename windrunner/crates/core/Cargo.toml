@@ -24,6 +24,7 @@ cargo_toml = { workspace = true }
 tracing = { workspace = true }
 regex = "1.11"
 serde_starlark = "0.1.17"
+lru = "0.16.4"
 
 [dev-dependencies]
 insta = "1.43.1"
