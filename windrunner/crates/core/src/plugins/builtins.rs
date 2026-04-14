@@ -98,6 +98,34 @@ impl LeptosOverlayPlugin {
     }
 }
 
+/// Returns true when `file_path` is inside a Cargo *crate* (a directory that has
+/// its own `Cargo.toml` with a `[package]` section), as opposed to being a loose
+/// `.rs` file inside a workspace root whose `Cargo.toml` only has `[workspace]`.
+fn is_cargo_owned_rs(file_path: &std::path::Path) -> bool {
+    let start = if file_path.is_file() {
+        file_path.parent().unwrap_or(file_path)
+    } else {
+        file_path
+    };
+
+    for ancestor in start.ancestors() {
+        let candidate = ancestor.join("Cargo.toml");
+        if candidate.exists() {
+            // Read the Cargo.toml and check for [package]
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                if content.contains("[package]") {
+                    return true;
+                }
+                // It's a workspace-only manifest — keep walking up to see if
+                // there's a real crate above, but typically there won't be.
+                // Treat this as "not owned" and stop.
+                return false;
+            }
+        }
+    }
+    false
+}
+
 fn file_type_for_runnable(runnable: &Runnable) -> FileType {
     match runnable.kind {
         RunnableKind::SingleFileScript { .. } => FileType::SingleFileScript,
@@ -129,7 +157,39 @@ impl crate::plugins::registry::PrimaryPlugin for BazelPrimaryPlugin {
     }
 
     fn matches(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_manifest("BUILD.bazel") || ctx.has_manifest("BUILD")
+        if !ctx.has_manifest("BUILD.bazel") && !ctx.has_manifest("BUILD") {
+            return false;
+        }
+
+        let file_dir = if ctx.file_path.is_file() {
+            ctx.file_path.parent().unwrap_or(&ctx.file_path)
+        } else {
+            &ctx.file_path
+        };
+
+        for ancestor in file_dir.ancestors() {
+            let is_workspace_root = ancestor.join("MODULE.bazel").exists() || ancestor.join("WORKSPACE").exists();
+            let has_build_file = ancestor.join("BUILD.bazel").exists() || ancestor.join("BUILD").exists();
+
+            if is_workspace_root {
+                // If we reach the workspace root and it has a BUILD file, we only match
+                // if BazelTargetFinder actually finds a target for this file.
+                // Otherwise, it's likely an ad-hoc or standard rust file at the root.
+                if has_build_file {
+                    if let Ok(mut finder) = crate::bazel::BazelTargetFinder::new() {
+                        if let Ok(targets) = finder.find_targets_for_file(&ctx.file_path, ancestor) {
+                            return !targets.is_empty();
+                        }
+                    }
+                }
+                return false;
+            }
+
+            if has_build_file {
+                return true;
+            }
+        }
+        false
     }
 
     fn discover_targets(&self, ctx: &ProjectContext, line: Option<u32>) -> Result<Vec<TargetRef>> {
@@ -156,7 +216,20 @@ impl crate::plugins::registry::PrimaryPlugin for CargoPrimaryPlugin {
     }
 
     fn matches(&self, ctx: &ProjectContext) -> bool {
-        ctx.has_manifest("Cargo.toml")
+        if !ctx.has_manifest("Cargo.toml") {
+            return false;
+        }
+
+        // If the file is a .rs source file, verify it is actually owned by a Cargo
+        // crate (i.e., it lives inside a directory that contains, or whose ancestor
+        // contains, a Cargo.toml with [package] — not just the workspace root).
+        // Standalone scripts placed at the workspace root should fall through to
+        // the RustcPrimaryPlugin instead.
+        if ctx.file_path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            return is_cargo_owned_rs(&ctx.file_path);
+        }
+
+        true
     }
 
     fn discover_targets(&self, ctx: &ProjectContext, line: Option<u32>) -> Result<Vec<TargetRef>> {
