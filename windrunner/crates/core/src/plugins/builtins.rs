@@ -147,6 +147,20 @@ fn to_spec(command: Command) -> CommandSpec {
     CommandSpec::from(command)
 }
 
+fn identity_for_override(runnable: &Runnable, ctx: &ProjectContext) -> crate::types::FunctionIdentity {
+    crate::types::FunctionIdentity {
+        package: ctx.config.cargo.as_ref().and_then(|c| c.package.clone()),
+        module_path: if runnable.module_path.is_empty() {
+            None
+        } else {
+            Some(runnable.module_path.clone())
+        },
+        file_path: Some(runnable.file_path.clone()),
+        function_name: runnable.get_function_name(),
+        file_type: Some(file_type_for_runnable(runnable)),
+    }
+}
+
 impl crate::plugins::registry::PrimaryPlugin for BazelPrimaryPlugin {
     fn id(&self) -> &'static str {
         "bazel"
@@ -309,17 +323,7 @@ impl crate::plugins::registry::OverlayPlugin for DioxusOverlayPlugin {
 
         if let Some(override_config) = ctx
             .config
-            .get_override_for(&crate::types::FunctionIdentity {
-                package: ctx.config.cargo.as_ref().and_then(|c| c.package.clone()),
-                module_path: if runnable.module_path.is_empty() {
-                    None
-                } else {
-                    Some(runnable.module_path.clone())
-                },
-                file_path: Some(runnable.file_path.clone()),
-                function_name: runnable.get_function_name(),
-                file_type: Some(file_type_for_runnable(runnable)),
-            })
+            .get_override_for(&identity_for_override(runnable, ctx))
             .and_then(|o| o.cargo.as_ref())
         {
             if let Some(cmd) = &override_config.command {
@@ -389,17 +393,7 @@ impl crate::plugins::registry::OverlayPlugin for LeptosOverlayPlugin {
 
         let override_config = ctx
             .config
-            .get_override_for(&crate::types::FunctionIdentity {
-                package: ctx.config.cargo.as_ref().and_then(|c| c.package.clone()),
-                module_path: if runnable.module_path.is_empty() {
-                    None
-                } else {
-                    Some(runnable.module_path.clone())
-                },
-                file_path: Some(runnable.file_path.clone()),
-                function_name: runnable.get_function_name(),
-                file_type: Some(file_type_for_runnable(runnable)),
-            });
+            .get_override_for(&identity_for_override(runnable, ctx));
 
         let mut subcommand = "serve".to_string();
         let mut extra_args = Vec::new();

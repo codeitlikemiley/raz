@@ -52,25 +52,27 @@ impl ProjectContext {
     }
 }
 
+const MANIFEST_NAMES: &[&str] = &[
+    "MODULE.bazel",
+    "BUILD.bazel",
+    "BUILD",
+    "Cargo.toml",
+    "package.json",
+    "go.mod",
+    "Package.swift",
+    "build.gradle.kts",
+    "build.gradle",
+    "pom.xml",
+    "Dioxus.toml",
+];
+
 fn collect_manifests(start: &Path) -> BTreeMap<String, PathBuf> {
     let mut manifests = BTreeMap::new();
-    let names = [
-        "MODULE.bazel",
-        "BUILD.bazel",
-        "BUILD",
-        "Cargo.toml",
-        "package.json",
-        "go.mod",
-        "Package.swift",
-        "build.gradle.kts",
-        "build.gradle",
-        "pom.xml",
-        "Dioxus.toml",
-    ];
+
 
     for ancestor in start.ancestors() {
-        for name in names {
-            if manifests.contains_key(name) {
+        for name in MANIFEST_NAMES {
+            if manifests.contains_key(*name) {
                 continue;
             }
             let candidate = ancestor.join(name);
@@ -84,22 +86,8 @@ fn collect_manifests(start: &Path) -> BTreeMap<String, PathBuf> {
 }
 
 fn find_project_root(start: &Path) -> Option<PathBuf> {
-    let names = [
-        "MODULE.bazel",
-        "BUILD.bazel",
-        "BUILD",
-        "Cargo.toml",
-        "package.json",
-        "go.mod",
-        "Package.swift",
-        "build.gradle.kts",
-        "build.gradle",
-        "pom.xml",
-        "Dioxus.toml",
-    ];
-
     for ancestor in start.ancestors() {
-        if names.iter().any(|name| ancestor.join(name).exists()) {
+        if MANIFEST_NAMES.iter().any(|name| ancestor.join(name).exists()) {
             return Some(ancestor.to_path_buf());
         }
     }

@@ -94,39 +94,15 @@ impl UnifiedRunner {
 
     /// Get the package name for a file path
     pub fn get_package_name_str(&self, file_path: &Path) -> Result<String> {
-        // Find the Cargo.toml file
-        if let Some(cargo_toml_path) = ModuleResolver::find_cargo_toml(file_path) {
-            // Read and parse the Cargo.toml
-            let content = std::fs::read_to_string(&cargo_toml_path)
-                .map_err(crate::error::Error::IoError)?;
-
-            // Scoped TOML parsing — only extract `name` from the [package] section.
-            // A naïve scan of the whole file would match dependency entries like
-            // `name = "foo"` that appear before [package] in some editors.
-            let mut in_package_section = false;
-            for line in content.lines() {
-                let trimmed = line.trim();
-                // Track section headers
-                if trimmed.starts_with('[') {
-                    in_package_section = trimmed == "[package]";
-                    continue;
-                }
-                if in_package_section {
-                    if let Some(rest) = trimmed.strip_prefix("name") {
-                        if let Some(value) = rest.trim().strip_prefix('=') {
-                            let name = value.trim().trim_matches('"').trim_matches('\'');
-                            if !name.is_empty() {
-                                return Ok(name.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Err(crate::error::Error::Other(
-            "No package name found".to_string(),
-        ))
+        let cargo_toml_path = ModuleResolver::find_cargo_toml(file_path)
+            .ok_or_else(|| crate::error::Error::Other("No Cargo.toml found".into()))?;
+            
+        let manifest = cargo_toml::Manifest::from_path(&cargo_toml_path)
+            .map_err(|e| crate::error::Error::Other(format!("Failed to parse Cargo.toml: {e}")))?;
+            
+        manifest.package
+            .map(|p| p.name)
+            .ok_or_else(|| crate::error::Error::Other("No [package] section found".into()))
     }
 
     /// Find the config file path for a given file
