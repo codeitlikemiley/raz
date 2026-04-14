@@ -15,7 +15,7 @@ else
     echo -e "${GREEN}Running in dry-run mode. Use --execute to actually publish.${NC}"
 fi
 
-echo "Publishing windrunner-core..."
+echo "Publishing cargo-runner-core..."
 cd crates/core
 cargo publish $DRY_RUN --allow-dirty
 cd ../..

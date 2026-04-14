@@ -1,5 +1,5 @@
 [package]
-name = "cargo-windrunner"
+name = "cargo-runner-cli"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -16,11 +16,11 @@ name = "cargo_runner"
 path = "src/lib.rs"
 
 [[bin]]
-name = "cargo-windrunner"
+name = "cargo-runner-cli"
 path = "src/main.rs"
 
 [dependencies]
-windrunner-core = { version = "0.2.0", path = "../core", package = "windrunner-core" }
+cargo-runner-core = { version = "0.2.0", path = "../core" }
 anyhow = { workspace = true }
 clap = { version = "4.5", features = ["derive", "cargo"] }
 serde = { workspace = true }

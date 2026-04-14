@@ -1,5 +1,5 @@
 [package]
-name = "windrunner-core"
+name = "cargo-runner-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
