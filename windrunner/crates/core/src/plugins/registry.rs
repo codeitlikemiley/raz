@@ -7,7 +7,7 @@ use crate::{
 use std::{cmp::Reverse, path::Path, sync::Arc};
 
 pub trait PrimaryPlugin: Send + Sync {
-    fn id(&self) -> &'static str;
+    fn id(&self) -> &str;
     fn default_priority(&self) -> i32;
     fn matches(&self, ctx: &ProjectContext) -> bool;
     fn discover_targets(&self, ctx: &ProjectContext, line: Option<u32>) -> Result<Vec<TargetRef>>;
@@ -15,7 +15,7 @@ pub trait PrimaryPlugin: Send + Sync {
 }
 
 pub trait OverlayPlugin: Send + Sync {
-    fn id(&self) -> &'static str;
+    fn id(&self) -> &str;
     fn default_priority(&self) -> i32;
     fn matches(&self, primary_id: &str, ctx: &ProjectContext, target: &TargetRef) -> bool;
     fn augment_command(

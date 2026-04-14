@@ -308,15 +308,6 @@ pub enum Commands {
 impl Commands {
     /// Execute the command
     pub fn execute(self) -> Result<()> {
-        use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/cargo-runner-execute.log")
-        {
-            writeln!(f, "DEBUG Commands::execute called with: {self:?}").ok();
-        }
-
         match self {
             Commands::Runnables {
                 filepath,
@@ -347,16 +338,6 @@ impl Commands {
             }
             Commands::Context { filepath, json } => context_command(filepath.as_deref(), json),
             Commands::Run { filepath, dry_run } => {
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .append(true)
-                    .open("/tmp/cargo-runner-execute.log")
-                {
-                    writeln!(
-                        f,
-                        "DEBUG calling run_command with filepath={filepath:?}, dry_run={dry_run}"
-                    )
-                    .ok();
-                }
                 let fp = resolve_filepath_arg(filepath)?;
                 run_command(&fp, dry_run)
             }

@@ -15,11 +15,8 @@ impl CustomOverlayPlugin {
 }
 
 impl OverlayPlugin for CustomOverlayPlugin {
-    fn id(&self) -> &'static str {
-        // OverlayPlugin trait returns &'static str.
-        // For custom dynamic plugins, we might return a static leak of the ID or return an empty string since we match generically later.
-        // Wait, Box::leak can leak a static string.
-        Box::leak(self.id.clone().into_boxed_str())
+    fn id(&self) -> &str {
+        &self.id
     }
 
     fn default_priority(&self) -> i32 {

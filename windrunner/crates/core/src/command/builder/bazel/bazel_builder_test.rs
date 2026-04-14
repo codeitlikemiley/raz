@@ -239,7 +239,7 @@ mod tests {
             "tests",
         );
 
-        let mut config = Config {
+        let config = Config {
             bazel: Some(BazelConfig {
                 test_framework: Some(BazelFramework {
                     command: Some("bazelisk".to_string()),
