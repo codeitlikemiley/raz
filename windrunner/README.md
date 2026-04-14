@@ -19,9 +19,8 @@ windrunner/
 | **CommandBuilder** | `crates/core/src/command/builder/mod.rs` | Unified command constructor. Now requires explicit `FileType` propagation from runners, avoiding ambiguous internal detection files logic. |
 | **CommandTemplate** | `crates/core/src/command/template/` | DSL-based template engine (`{target}`, `{test_filter}`, etc.) |
 | **BazelCommandBuilder** | `crates/core/src/command/builder/bazel/` | Bazel command generation via `CommandTemplate::parse().render()` |
-| **UnifiedRunner** | `crates/core/src/runners/unified_runner.rs` | Build-system & framework-aware dispatch |
-| **DioxusRunner** | `crates/core/src/runners/dioxus_runner.rs` | Dioxus-specific `dx` command runner |
-| **LeptosRunner** | `crates/core/src/runners/leptos_runner.rs` | Leptos-specific `cargo-leptos` runner |
+| **UnifiedRunner Facade** | `crates/core/src/runners/unified_runner.rs` | Thin facade delegating logic. |
+| **Runners Infrastructure** | `crates/core/src/runners/` | Sub-modules like `build_system_detector`, `file_command`, and `package_resolver` to modularize execution dispatch. |
 | **Config** | `crates/core/src/config/` | v2 schema: `BazelConfig`, `BazelOverride`, `Override` |
 
 ---
@@ -159,7 +158,7 @@ cargo runner override <filepath> -- <tokens...>
 | `-` | Remove the entire override |
 | other | Appended as `extra_args` |
 
-> **Environment Variables**: Overrides like `KEY=value` reliably populate the `extra_env` record. For Bazel targets, these are accurately transformed strictly into `--action_env=KEY=value` (and `--test_env=KEY=value` for valid subcommands). For Cargo, these correctly attach to the `CargoCommand` execution environment across nested workspace crates.
+> **Environment Variables**: Overrides like `KEY=value` reliably populate the `extra_env` record. For Bazel targets, these are accurately transformed strictly into `--action_env=KEY=value` (and `--test_env=KEY=value` for valid subcommands). For Cargo, these correctly attach to the `Command` execution environment across nested workspace crates.
 
 #### Dioxus examples
 
@@ -236,19 +235,19 @@ cargo runner override src/main.rs -- -
 
 ## Build System & Framework Detection
 
-`UnifiedRunner` checks for framework-specific CLIs first, then falls back to build-system detection:
+`UnifiedRunner` uses a Plugin Registry to allow overrides (framework overlays) before falling back to generic build-system detection:
 
 ```
-┌─ Framework detection (highest priority) ──────────────────────┐
-│  Dioxus.toml in ancestor dirs    →  DioxusRunner  (dx CLI)    │
-│  "leptos" in Cargo.toml          →  LeptosRunner  (cargo-leptos)
+┌─ Framework Overlays (highest priority) ───────────────────────┐
+│  Dioxus.toml in ancestor dirs    →  DioxusOverlayPlugin       │
+│  "leptos" in Cargo.toml          →  LeptosOverlayPlugin       │
 └───────────────────────────────────────────────────────────────┘
-         │ (no framework detected)
+         │ (no plugin claimed the path)
          ▼
 ┌─ Build system detection ──────────────────────────────────────┐
 │  MODULE.bazel present            →  BazelRunner               │
 │  Cargo.toml present              →  CargoRunner               │
-│  (none)                          →  RustcRunner (standalone)   │
+│  (none)                          →  RustcPrimaryPlugin        │
 └───────────────────────────────────────────────────────────────┘
 ```
 
