@@ -45,14 +45,16 @@ impl Config {
             merger.load_configs_for_path(&cwd)?;
         }
 
-        // The merger will automatically pick up PROJECT_ROOT config from env var
-        Ok(merger.get_merged_config())
+        let mut cfg = merger.get_merged_config();
+        cfg.normalize();
+        Ok(cfg)
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
         let contents = std::fs::read_to_string(path)?;
-        let config = serde_json::from_str(&contents)
+        let mut config: Config = serde_json::from_str(&contents)
             .map_err(|e| Error::ConfigError(format!("Failed to parse config: {e}")))?;
+        config.normalize();
         Ok(config)
     }
 
@@ -199,5 +201,13 @@ mod tests {
 
         let override_config2 = config.get_override_for(&identity2);
         assert!(override_config2.is_none());
+    }
+}
+
+impl Config {
+    pub fn normalize(&mut self) {
+        if let Some(bazel) = &mut self.bazel {
+            bazel.normalize();
+        }
     }
 }

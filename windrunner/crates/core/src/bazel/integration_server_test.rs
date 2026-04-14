@@ -654,7 +654,7 @@ fn main() {
         };
 
         // Create a config with target
-        let config = Config {
+        let mut config = Config {
             bazel: Some(crate::config::BazelConfig {
                 binary_target: Some("//:build_script_build".to_string()),
                 ..Default::default()

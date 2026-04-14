@@ -354,21 +354,25 @@ impl BazelCommandBuilder {
                 }
             }
         }
-        // Check for legacy configuration first
+        // Check for modern framework configuration first
         if let Some(config) = bazel_config {
-            if is_test && config.test_target.is_some() {
-                return config.test_target.clone().unwrap();
-            } else if !is_test && config.binary_target.is_some() {
-                return config.binary_target.clone().unwrap();
+            if is_test {
+                if let Some(target) = config.test_framework.as_ref().and_then(|f| f.target.as_ref()) {
+                    return target.clone();
+                }
+            } else if let Some(target) = config.binary_framework.as_ref().and_then(|f| f.target.as_ref()) {
+                return target.clone();
             }
         }
 
         // Use configured defaults if available
         if let Some(config) = bazel_config {
-            if is_test && config.default_test_target.is_some() {
-                return config.default_test_target.clone().unwrap();
-            } else if !is_test && config.default_binary_target.is_some() {
-                return config.default_binary_target.clone().unwrap();
+            if is_test {
+                if let Some(target) = &config.default_test_target {
+                    return target.clone();
+                }
+            } else if let Some(target) = &config.default_binary_target {
+                return target.clone();
             }
         }
 
