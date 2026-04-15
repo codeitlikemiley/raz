@@ -7,7 +7,6 @@ pub mod target_analyzer;
 pub mod target_finder;
 
 #[cfg(test)]
-mod debug_integration_test;
 #[cfg(test)]
 mod integration_server_test;
 #[cfg(test)]
