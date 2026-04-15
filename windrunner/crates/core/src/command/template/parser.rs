@@ -58,7 +58,7 @@ impl TemplateParser {
         }
 
         if depth != 0 {
-            return Err(Error::Other("Unclosed placeholder in template".to_string()));
+            return Err(Error::TemplateError("Unclosed placeholder in template"));
         }
 
         Self::parse_placeholder_content(&content)

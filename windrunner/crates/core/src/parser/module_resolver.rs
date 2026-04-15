@@ -113,7 +113,7 @@ impl ModuleResolver {
         // Get the path relative to src/
         let path_str = file_path
             .to_str()
-            .ok_or_else(|| Error::ParseError("Invalid file path".to_string()))?;
+            .ok_or(Error::InvalidPath("Invalid file path"))?;
 
         // Check for /src/ or if path starts with src/
         let (src_index, offset) = if let Some(idx) = path_str.find("/src/") {
@@ -205,15 +205,12 @@ impl ModuleResolver {
         let contents = std::fs::read_to_string(cargo_toml_path)?;
 
         // Use cargo_toml crate for proper parsing
-        let manifest = cargo_toml::Manifest::from_str(&contents)
-            .map_err(|e| Error::ParseError(format!("Failed to parse Cargo.toml: {e}")))?;
+        let manifest = cargo_toml::Manifest::from_str(&contents).map_err(Error::CargoTomlParse)?;
 
         manifest
             .package
             .as_ref()
-            .ok_or_else(|| {
-                Error::ParseError("No [package] section found in Cargo.toml".to_string())
-            })
+            .ok_or(Error::NoPackageSection)
             .map(|pkg| pkg.name.clone())
     }
 

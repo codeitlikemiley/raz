@@ -44,9 +44,9 @@ impl CommandBuilderImpl for DocTestCommandBuilder {
                 }
             }
             _ => {
-                return Err(crate::error::Error::ParseError(
-                    "Expected DocTest runnable".to_string(),
-                ));
+                return Err(crate::error::Error::UnsupportedRunnable {
+                    context: "Expected DocTest runnable",
+                });
             }
         };
 

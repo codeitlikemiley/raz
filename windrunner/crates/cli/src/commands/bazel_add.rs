@@ -46,7 +46,7 @@ pub fn bazel_add_command(
     let crate_name = extract_crate_name(&cargo_content).unwrap_or_else(|| {
         target_dir
             .file_name()
-            .unwrap()
+            .expect("target_dir must have a file name")
             .to_string_lossy()
             .to_string()
     });

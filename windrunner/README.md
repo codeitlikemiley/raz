@@ -8,7 +8,7 @@ The core build engine for the `raz` monorepo. Handles command generation, build-
 windrunner/
 └── crates/
     ├── core/          ← cargo-runner-core  (command engine, config, runners)
-    └── cli/           ← cargo-runner-cli   (CLI front-end)
+    └── cli/           ← cargo-runner-cli   (CLI front-end, fully modularized)
 ```
 
 ### Key subsystems
@@ -22,6 +22,14 @@ windrunner/
 | **UnifiedRunner Facade** | `crates/core/src/runners/unified_runner.rs` | Thin facade delegating logic. |
 | **Runners Infrastructure** | `crates/core/src/runners/` | Sub-modules like `build_system_detector`, `file_command`, and `package_resolver` to modularize execution dispatch. |
 | **Config** | `crates/core/src/config/` | v2 schema: `BazelConfig`, `BazelOverride`, `Override` |
+| **Error Handling** | `crates/core/src/error.rs` | Strongly-typed `thiserror` variants defining distinct error conditions without generic string wrappers. |
+| **CLI Modules** | `crates/cli/src/{commands,config,display,utils}/` | Fully decoupled CLI routing. Each subcommand lives in its own module. |
+
+### Stability & Idiomatic Rust
+The windrunner codebase is designed with strict resilience:
+- **Zero Runtime Panics**: Extensive audits removed `.unwrap()` and `.expect()` calls in favor of propagating explicit results via `anyhow::Context` and the strongly-typed `crate::error::Error` variants.
+- **Optimized Lifetimes**: Minimized heap allocations by pruning unnecessary `.clone()` occurrences across AST parsing and command generation.
+- **Clippy Enforced**: Maintained under strict `cargo clippy --workspace` zero-warning standards for both libraries and test modules.
 
 ---
 

@@ -39,9 +39,7 @@ impl UnifiedRunner {
 
         let ctx = ProjectContext::from_path(&runnable.file_path, Arc::clone(&self.config));
         let target = TargetRef::from_runnable("rust", runnable.clone());
-        let command = self
-            .plugins
-            .build_command_for_target(&ctx, &target)?;
+        let command = self.plugins.build_command_for_target(&ctx, &target)?;
 
         tracing::debug!(
             "UnifiedRunner::build_command: final command={}",
@@ -140,11 +138,13 @@ impl UnifiedRunner {
                     })
                     .collect();
 
-                return Err(crate::error::Error::Other(format!(
-                    "No runnable found at line {}. Available runnables at lines: {}",
-                    line_num + 1,
-                    available_lines.join(", ")
-                )));
+                return Err(crate::error::Error::NoRunnableAtLine {
+                    line: line_num + 1,
+                    available: available_lines
+                        .iter()
+                        .filter_map(|s| s.parse::<u32>().ok())
+                        .collect(),
+                });
             }
         } else {
             // Get any runnable in the file

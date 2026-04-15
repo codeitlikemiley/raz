@@ -265,7 +265,10 @@ impl BinaryCommandBuilder {
         is_default_run: bool,
     ) -> Result<()> {
         // First check if we have an explicit binary name in the runnable
-        if let crate::types::RunnableKind::Binary { bin_name: Some(name) } = &runnable.kind {
+        if let crate::types::RunnableKind::Binary {
+            bin_name: Some(name),
+        } = &runnable.kind
+        {
             tracing::debug!("Using explicit bin_name: {}", name);
             args.push("--bin".to_string());
             args.push(name.clone());
@@ -286,10 +289,7 @@ impl BinaryCommandBuilder {
                 // This handles the case where there are multiple binaries in the project
                 if is_default_run {
                     if let Some(pkg) = package {
-                        tracing::debug!(
-                            "Adding --bin {} (main.rs with package name)",
-                            pkg
-                        );
+                        tracing::debug!("Adding --bin {} (main.rs with package name)", pkg);
                         args.push("--bin".to_string());
                         args.push(pkg.to_string());
                     } else {

@@ -42,9 +42,7 @@ impl CommandBuilderImpl for RustcCommandBuilder {
             RunnableKind::Benchmark { bench_name } => {
                 builder.build_benchmark_command(runnable, bench_name, config, file_type)
             }
-            _ => Err(crate::error::Error::ParseError(
-                "Unsupported runnable type for rustc".to_string(),
-            )),
+            _ => Err(crate::error::Error::UnsupportedRunnable { context: "rustc" }),
         }
     }
 }
@@ -105,7 +103,7 @@ impl RustcCommandBuilder {
         exec_args.push("--exact".to_string());
 
         if !exec_args.is_empty() {
-                command.exec_args = Some(exec_args);
+            command.exec_args = Some(exec_args);
         }
 
         // Apply exec configuration (stored in env for later use)
@@ -236,7 +234,7 @@ impl RustcCommandBuilder {
         exec_args.push("--exact".to_string());
 
         if !exec_args.is_empty() {
-                command.exec_args = Some(exec_args);
+            command.exec_args = Some(exec_args);
         }
 
         // Apply exec configuration (stored in env for later use)
@@ -679,7 +677,7 @@ impl RustcCommandBuilder {
             .file_stem()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string())
-            .ok_or_else(|| crate::error::Error::ParseError("Invalid file name".to_string()))
+            .ok_or(crate::error::Error::InvalidFileName)
     }
 
     fn get_override<'a>(

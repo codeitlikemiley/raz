@@ -12,7 +12,6 @@ pub struct FunctionIdentity {
     pub file_type: Option<FileType>,
 }
 
-
 macro_rules! match_opt_field {
     ($self:ident, $other:ident, $field:ident) => {
         if let Some(ref my_val) = $self.$field {

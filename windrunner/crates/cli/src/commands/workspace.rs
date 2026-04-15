@@ -102,7 +102,7 @@ pub fn resolve_module_path_to_file(
         0 => Err(anyhow::anyhow!(
             "No file found for module path: {module_path}"
         )),
-        1 => Ok(matches.into_iter().next().unwrap()),
+        1 => Ok(matches.into_iter().next().expect("Length is 1")),
         _ => {
             let paths = matches
                 .into_iter()

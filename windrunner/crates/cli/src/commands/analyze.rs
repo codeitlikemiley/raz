@@ -129,7 +129,7 @@ fn analyze_module_path_command(
             "No file found for module path: {module_path}"
         )),
         1 => {
-            let path = matches.into_iter().next().unwrap();
+            let path = matches.into_iter().next().expect("Checked len == 1");
             print_formatted_analysis(
                 &mut runner,
                 path.to_str().unwrap_or_default(),
@@ -258,7 +258,7 @@ fn matches_symbol_filter(runnable: &Runnable, query: Option<&str>, exact: bool) 
         return false;
     };
 
-    let query = normalize_query(query.unwrap());
+    let query = normalize_query(query.expect("Query is verified is_some"));
     let candidate = normalize_query(&symbol_name);
     if exact {
         candidate == query

@@ -86,12 +86,10 @@ impl RuleExtractor {
     /// Extract a rule call from a call node
     fn extract_rule_call(node: &Node, ast: &StarlarkAst) -> Result<Option<RuleCall>> {
         // Get the function name
-        let function_node = node.child_by_field_name("function");
-        if function_node.is_none() {
+        let Some(function_node) = node.child_by_field_name("function") else {
             return Ok(None);
-        }
+        };
 
-        let function_node = function_node.unwrap();
         let rule_type = ast.node_text(&function_node);
 
         // Only process known rule types (this list can be expanded)

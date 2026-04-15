@@ -3,8 +3,8 @@
 use super::common::CargoBuilderHelper;
 use crate::{
     command::{
-        builder::{CommandBuilderImpl, ConfigAccess},
         Command,
+        builder::{CommandBuilderImpl, ConfigAccess},
     },
     config::Config,
     error::Result,

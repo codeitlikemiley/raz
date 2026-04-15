@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::{env, fs, path::{Path, PathBuf}};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 use tracing::info;
 use walkdir::WalkDir;
 
@@ -146,7 +149,9 @@ pub fn init_command(
             continue;
         }
 
-        let project_dir = cargo_toml.parent().unwrap();
+        let project_dir = cargo_toml
+            .parent()
+            .context("Expected Cargo.toml to have a parent directory")?;
         let config_path = project_dir.join(".cargo-runner.json");
 
         if config_path.exists() && !force {
@@ -172,9 +177,7 @@ pub fn init_command(
     println!("\n✅ Initialization complete!");
     println!("   • Created {created} config files");
     if skipped > 0 {
-        println!(
-            "   • Skipped {skipped} existing configs (use --force to overwrite)"
-        );
+        println!("   • Skipped {skipped} existing configs (use --force to overwrite)");
     }
 
     println!("\n📌 To use PROJECT_ROOT in your current shell:");
@@ -601,11 +604,10 @@ fn parse_workspace_members(cargo_toml_path: &std::path::Path) -> Result<Vec<Stri
             for ch in members_line_buf.chars() {
                 match ch {
                     '"' => {
-                        if in_quote
-                            && !current.is_empty() {
-                                members.push(current.clone());
-                                current.clear();
-                            }
+                        if in_quote && !current.is_empty() {
+                            members.push(current.clone());
+                            current.clear();
+                        }
                         in_quote = !in_quote;
                     }
                     _ if in_quote => current.push(ch),

@@ -81,11 +81,8 @@ impl PluginRegistry {
                 self.effective_priority(plugin.id(), plugin.default_priority(), ctx)
             })
             .map(|plugin| plugin.as_ref())
-            .ok_or_else(|| {
-                Error::Other(format!(
-                    "No primary plugin detected for {}",
-                    ctx.file_path.display()
-                ))
+            .ok_or_else(|| Error::NoPrimaryPlugin {
+                path: ctx.file_path.clone(),
             })
     }
 

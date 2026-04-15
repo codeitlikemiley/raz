@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, io, path::PathBuf, process::{self, ExitStatus}};
+use std::{
+    collections::HashMap,
+    io,
+    path::PathBuf,
+    process::{self, ExitStatus},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandStrategy {
@@ -15,7 +20,7 @@ pub struct Command {
     pub program: String,
     pub args: Vec<String>,
     pub working_dir: Option<PathBuf>,
-    pub env: BTreeMap<String, String>,
+    pub env: HashMap<String, String>,
     pub test_filter: Option<String>,
     /// Rustc-specific: args to pass to the compiled binary during execution
     pub exec_args: Option<Vec<String>>,
@@ -32,7 +37,7 @@ impl Command {
             program: program.into(),
             args,
             working_dir: None,
-            env: BTreeMap::new(),
+            env: HashMap::new(),
             test_filter: None,
             exec_args: None,
             pipe_command: None,
@@ -175,10 +180,63 @@ impl Command {
         }
     }
 
+    fn build_process(&self, program: &str, add_args: bool) -> process::Command {
+        let mut cmd = process::Command::new(program);
+        if add_args {
+            cmd.args(&self.args);
+        }
+        if let Some(ref dir) = self.working_dir {
+            cmd.current_dir(dir);
+        }
+        for (key, value) in &self.env {
+            cmd.env(key, value);
+        }
+        cmd
+    }
+
+    fn apply_test_args_to_shell_cmd(&self, shell_cmd: &mut String) {
+        if self.args.contains(&"--test".to_string()) {
+            if let Some(exec_args) = &self.exec_args {
+                for arg in exec_args {
+                    if arg != "{bench_name}" && arg != "{test_name}" {
+                        shell_cmd.push_str(&format!(" {arg}"));
+                    }
+                }
+            }
+            if let Some(ref test_filter) = self.test_filter {
+                shell_cmd.push_str(&format!(" {test_filter}"));
+            }
+            if let Some(extra_args) = &self.test_binary_args {
+                for arg in extra_args {
+                    shell_cmd.push_str(&format!(" {arg}"));
+                }
+            }
+        }
+    }
+
+    fn apply_test_args_to_run_cmd(&self, run_cmd: &mut process::Command) {
+        if self.args.contains(&"--test".to_string()) {
+            if let Some(exec_args) = &self.exec_args {
+                for arg in exec_args {
+                    if arg != "{bench_name}" && arg != "{test_name}" {
+                        run_cmd.arg(arg);
+                    }
+                }
+            }
+            if let Some(ref test_filter) = self.test_filter {
+                run_cmd.arg(test_filter);
+            }
+            if let Some(extra_args) = &self.test_binary_args {
+                for arg in extra_args {
+                    run_cmd.arg(arg);
+                }
+            }
+        }
+    }
+
     pub fn execute(&self) -> io::Result<ExitStatus> {
         match self.strategy {
             CommandStrategy::Rustc => {
-                // Extract the output filename from args (after -o flag)
                 let mut output_name = None;
                 for i in 0..self.args.len() {
                     if self.args[i] == "-o" && i + 1 < self.args.len() {
@@ -187,30 +245,13 @@ impl Command {
                     }
                 }
 
-                // First compile with rustc
-                let mut rustc_cmd = process::Command::new("rustc");
-                rustc_cmd.args(&self.args);
-
-                // Set working directory if specified
-                if let Some(ref dir) = self.working_dir {
-                    rustc_cmd.current_dir(dir);
-                }
-
-                // Set environment variables
-                for (key, value) in &self.env {
-                    tracing::debug!("Setting env: {}={}", key, value);
-                    rustc_cmd.env(key, value);
-                }
-
-                // Compile
+                let mut rustc_cmd = self.build_process("rustc", true);
                 let compile_status = rustc_cmd.status()?;
                 if !compile_status.success() {
                     return Ok(compile_status);
                 }
 
-                // If compilation succeeded and we have an output name, run it
                 if let Some(output) = output_name {
-                    // Check if output is an absolute path
                     let exec_path = if output.starts_with('/') || output.starts_with("./") {
                         output.to_string()
                     } else {
@@ -218,84 +259,20 @@ impl Command {
                     };
 
                     let mut run_cmd = if self.pipe_command.is_some() {
-                        // If we have a pipe command, we need to use shell
-                        let mut cmd = process::Command::new("sh");
+                        let mut cmd = self.build_process("sh", false);
                         cmd.arg("-c");
                         cmd
                     } else {
-                        process::Command::new(exec_path.clone())
+                        self.build_process(&exec_path, false)
                     };
 
-                    // Build args based on whether we're using shell or not
                     if let Some(pipe_to) = &self.pipe_command {
-                        // Build the full shell command
                         let mut shell_cmd = exec_path;
-
-                        // Add test args if this is a test command
-                        if self.args.contains(&"--test".to_string()) {
-                            // Check if we have exec phase args (like --bench)
-                            if let Some(exec_args) = &self.exec_args {
-                                // Add exec args BEFORE the test filter
-                                for arg in exec_args {
-                                    if arg != "{bench_name}" && arg != "{test_name}" {
-                                        shell_cmd.push_str(&format!(" {arg}"));
-                                    }
-                                }
-                            }
-
-                            if let Some(ref test_filter) = self.test_filter {
-                                shell_cmd.push_str(&format!(" {test_filter}"));
-                            }
-
-                            // Add extra test binary args if present
-                            if let Some(extra_args) = &self.test_binary_args {
-                                // No separator needed for test binaries - args are mixed with test names
-                                for arg in extra_args {
-                                    shell_cmd.push_str(&format!(" {arg}"));
-                                }
-                            }
-                        }
-
-                        // Add the pipe command
+                        self.apply_test_args_to_shell_cmd(&mut shell_cmd);
                         shell_cmd.push_str(&format!(" | {pipe_to}"));
-
-                        // Set the shell command as argument
                         run_cmd.arg(shell_cmd);
                     } else {
-                        // Normal execution without shell
-                        if self.args.contains(&"--test".to_string()) {
-                            // Check if we have exec phase args (like --bench)
-                            if let Some(exec_args) = &self.exec_args {
-                                // Add exec args BEFORE the test filter
-                                for arg in exec_args {
-                                    if arg != "{bench_name}" && arg != "{test_name}" {
-                                        run_cmd.arg(arg);
-                                    }
-                                }
-                            }
-
-                            if let Some(ref test_filter) = self.test_filter {
-                                run_cmd.arg(test_filter);
-                            }
-
-                            // Add extra test binary args if present
-                            if let Some(extra_args) = &self.test_binary_args {
-                                // No separator needed for test binaries - args are mixed with test names
-                                for arg in extra_args {
-                                    run_cmd.arg(arg);
-                                }
-                            }
-                        }
-                    }
-
-                    // Set working directory if specified
-                    if let Some(ref dir) = self.working_dir {
-                        run_cmd.current_dir(dir);
-                    }
-
-                    // Set environment variables
-                    for (key, value) in &self.env {
-                        run_cmd.env(key, value);
+                        self.apply_test_args_to_run_cmd(&mut run_cmd);
                     }
 
                     run_cmd.status()
@@ -303,57 +280,11 @@ impl Command {
                     Ok(compile_status)
                 }
             }
-            CommandStrategy::Shell => {
-                let mut cmd = process::Command::new(&self.program);
-                cmd.args(&self.args);
-
-                // Set working directory if specified
-                if let Some(ref dir) = self.working_dir {
-                    cmd.current_dir(dir);
-                }
-
-                // Set environment variables
-                for (key, value) in &self.env {
-                    tracing::debug!("Setting env: {}={}", key, value);
-                    cmd.env(key, value);
-                }
-
-                cmd.status()
-            }
+            CommandStrategy::Shell => self.build_process(&self.program, true).status(),
             CommandStrategy::CargoScript | CommandStrategy::Cargo => {
-                let mut cmd = process::Command::new("cargo");
-                cmd.args(&self.args);
-
-                // Set working directory if specified
-                if let Some(ref dir) = self.working_dir {
-                    cmd.current_dir(dir);
-                }
-
-                // Set environment variables
-                for (key, value) in &self.env {
-                    tracing::debug!("Setting env: {}={}", key, value);
-                    cmd.env(key, value);
-                }
-
-                cmd.status()
+                self.build_process("cargo", true).status()
             }
-            CommandStrategy::Bazel => {
-                let mut cmd = process::Command::new("bazel");
-                cmd.args(&self.args);
-
-                // Set working directory if specified
-                if let Some(ref dir) = self.working_dir {
-                    cmd.current_dir(dir);
-                }
-
-                // Set environment variables
-                for (key, value) in &self.env {
-                    tracing::debug!("Setting env: {}={}", key, value);
-                    cmd.env(key, value);
-                }
-
-                cmd.status()
-            }
+            CommandStrategy::Bazel => self.build_process("bazel", true).status(),
         }
     }
 }

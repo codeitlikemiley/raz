@@ -149,13 +149,20 @@ pub fn override_command(
     // Always add file_path for precise matching
     matcher.insert(
         "file_path".to_string(),
-        json!(resolved_path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid file path string"))?),
+        json!(
+            resolved_path
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid file path string"))?
+        ),
     );
 
     override_config.insert("match".to_string(), Value::Object(matcher));
 
     // Parse override arguments (token-based: @dx.serve, +nightly, etc.)
-    let mut parsed_args = cargo_runner_core::config::override_manager::OverrideManager::parse_override_args(&override_args);
+    let mut parsed_args =
+        cargo_runner_core::config::override_manager::OverrideManager::parse_override_args(
+            &override_args,
+        );
 
     // Named flags (--command, --subcommand, --channel) take precedence
     if let Some(cmd) = &flag_command {
@@ -662,7 +669,10 @@ fn create_file_level_override(
     override_args: Vec<String>,
 ) -> Result<()> {
     // Parse the override arguments - this returns a Map with the parsed configuration
-    let mut override_config = cargo_runner_core::config::override_manager::OverrideManager::parse_override_args(&override_args);
+    let mut override_config =
+        cargo_runner_core::config::override_manager::OverrideManager::parse_override_args(
+            &override_args,
+        );
 
     // Named flags take precedence
     if let Some(cmd) = &flag_command {
@@ -759,7 +769,10 @@ fn create_file_level_override(
     };
 
     // Add the override to the config
-    cargo_runner_core::config::override_manager::OverrideManager::add_override_to_existing_config(&config_path, override_entry.clone())?;
+    cargo_runner_core::config::override_manager::OverrideManager::add_override_to_existing_config(
+        &config_path,
+        override_entry.clone(),
+    )?;
 
     println!("\n✅ File-level override created successfully!");
     println!("   📍 Config: {}", config_path.display());
@@ -817,4 +830,3 @@ fn create_file_level_override(
 
     Ok(())
 }
-

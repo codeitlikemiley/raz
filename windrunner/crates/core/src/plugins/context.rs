@@ -69,7 +69,6 @@ const MANIFEST_NAMES: &[&str] = &[
 fn collect_manifests(start: &Path) -> BTreeMap<String, PathBuf> {
     let mut manifests = BTreeMap::new();
 
-
     for ancestor in start.ancestors() {
         for name in MANIFEST_NAMES {
             if manifests.contains_key(*name) {
@@ -87,7 +86,10 @@ fn collect_manifests(start: &Path) -> BTreeMap<String, PathBuf> {
 
 fn find_project_root(start: &Path) -> Option<PathBuf> {
     for ancestor in start.ancestors() {
-        if MANIFEST_NAMES.iter().any(|name| ancestor.join(name).exists()) {
+        if MANIFEST_NAMES
+            .iter()
+            .any(|name| ancestor.join(name).exists())
+        {
             return Some(ancestor.to_path_buf());
         }
     }

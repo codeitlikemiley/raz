@@ -92,8 +92,6 @@ impl<'a> CommandBuilder<'a> {
         self
     }
 
-
-
     /// Build the command
     pub fn build(self) -> Result<Command> {
         let file_type = self.file_type;
@@ -127,9 +125,9 @@ impl<'a> CommandBuilder<'a> {
         // Standalone routing optimization
         if file_type == FileType::Standalone {
             if matches!(self.runnable.kind, RunnableKind::DocTest { .. }) {
-                return Err(crate::error::Error::ParseError(
-                    "Doc tests are not supported in standalone files".to_string(),
-                ));
+                return Err(crate::error::Error::UnsupportedRunnable {
+                    context: "standalone files doctest",
+                });
             }
             if matches!(self.runnable.kind, RunnableKind::SingleFileScript { .. }) {
                 return SingleFileScriptBuilder::build(
@@ -165,14 +163,12 @@ impl<'a> CommandBuilder<'a> {
                 &config,
                 file_type,
             ),
-            (FileType::CargoProject, RunnableKind::Test { .. }) => {
-                TestCommandBuilder::build(
-                    self.runnable,
-                    self.package_name.as_deref(),
-                    &config,
-                    file_type,
-                )
-            }
+            (FileType::CargoProject, RunnableKind::Test { .. }) => TestCommandBuilder::build(
+                self.runnable,
+                self.package_name.as_deref(),
+                &config,
+                file_type,
+            ),
             (FileType::CargoProject, RunnableKind::Binary { .. }) => {
                 tracing::debug!(
                     "Routing to BinaryCommandBuilder for package {:?}",

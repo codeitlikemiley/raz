@@ -47,6 +47,4 @@ impl BazelCommandBuilder {
 
         Ok(command)
     }
-
-
 }

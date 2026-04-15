@@ -88,16 +88,16 @@ impl CommandRunner for RustcRunner {
     fn validate_command(&self, command: &Self::Command) -> Result<()> {
         // Rustc-specific validation
         if command.args.is_empty() {
-            return Err(crate::error::Error::Other(
-                "Rustc command has no arguments".to_string(),
+            return Err(crate::error::Error::Validation(
+                "Rustc command has no arguments",
             ));
         }
 
         // Ensure it's a rustc command
         match &command.strategy {
             CommandStrategy::Rustc => Ok(()),
-            _ => Err(crate::error::Error::Other(
-                "Expected Rustc command type".to_string(),
+            _ => Err(crate::error::Error::Validation(
+                "Expected Rustc command type",
             )),
         }
     }

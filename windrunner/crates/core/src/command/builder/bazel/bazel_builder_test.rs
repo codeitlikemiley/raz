@@ -198,7 +198,7 @@ mod tests {
 
         // Should set working directory to workspace root
         assert!(command.working_dir.is_some());
-        let working_dir = PathBuf::from(command.working_dir.unwrap());
+        let working_dir = command.working_dir.unwrap();
         assert_eq!(working_dir, temp_dir.path());
     }
 

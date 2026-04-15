@@ -1,10 +1,6 @@
 //! Common utilities shared by all runners
 
-use crate::{
-    error::Result,
-    parser::module_resolver::ModuleResolver,
-    types::Runnable,
-};
+use crate::{error::Result, parser::module_resolver::ModuleResolver, types::Runnable};
 use std::path::Path;
 use tracing::debug;
 
@@ -64,5 +60,10 @@ pub fn resolve_module_path_single(
     package_name: Option<&str>,
     detector: &mut crate::patterns::RunnableDetector,
 ) -> Result<()> {
-    resolve_module_paths(std::slice::from_mut(runnable), file_path, package_name, detector)
+    resolve_module_paths(
+        std::slice::from_mut(runnable),
+        file_path,
+        package_name,
+        detector,
+    )
 }

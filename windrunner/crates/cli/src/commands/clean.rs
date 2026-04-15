@@ -131,9 +131,6 @@ mod tests {
     fn expand_tilde_nested_path() {
         let result = expand_tilde("~/a/b/c/d");
         let home = std::env::var("HOME").unwrap();
-        assert_eq!(
-            result,
-            std::path::PathBuf::from(format!("{home}/a/b/c/d"))
-        );
+        assert_eq!(result, std::path::PathBuf::from(format!("{home}/a/b/c/d")));
     }
 }

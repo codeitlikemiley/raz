@@ -380,8 +380,7 @@ fn deps_expr(local_deps: &[String]) -> String {
 /// This ensures `build-sync` is idempotent — targets already in the managed
 /// block are treated the same as hand-authored ones and are never duplicated.
 fn names_outside_managed_block(content: &str) -> std::collections::HashSet<String> {
-    let re = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#)
-        .expect("Valid regex");
+    let re = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#).expect("Valid regex");
     re.captures_iter(content)
         .map(|c| c[1].to_string())
         .collect()
@@ -480,7 +479,8 @@ pub(crate) fn infer_targets(
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() && path.join("main.rs").exists() {
-                    let stem = path.file_name()
+                    let stem = path
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("unknown")
                         .to_string();
@@ -558,7 +558,8 @@ pub(crate) fn infer_targets(
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() && path.join("main.rs").exists() {
-                    let stem = path.file_name()
+                    let stem = path
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("unknown")
                         .to_string();
@@ -749,7 +750,8 @@ fn scan_rs_dir_with_main_check<F>(
             continue;
         }
 
-        let stem = path.file_stem()
+        let stem = path
+            .file_stem()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();

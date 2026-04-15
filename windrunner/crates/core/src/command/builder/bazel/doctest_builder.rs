@@ -1,10 +1,10 @@
 use super::*;
+use crate::RunnableKind;
+use crate::bazel::BazelTargetFinder;
 use crate::command::Command;
 use crate::config::{BazelConfig, Config};
 use crate::error::Result;
 use crate::types::{FileType, Runnable};
-use crate::RunnableKind;
-use crate::bazel::BazelTargetFinder;
 
 impl BazelCommandBuilder {
     pub(crate) fn build_doc_test_command(
@@ -87,11 +87,9 @@ impl BazelCommandBuilder {
         }
 
         // No rust_doc_test target found
-        Err(crate::error::Error::ParseError(
-            "No rust_doc_test target found in BUILD file. To run doc tests in Bazel, add a rust_doc_test target.".to_string()
-        ))
+        Err(crate::error::Error::MissingBazelTarget {
+            file: runnable.file_path.clone(),
+            hint: "To run doc tests in Bazel, add a rust_doc_test target",
+        })
     }
-
-
-
 }

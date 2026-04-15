@@ -13,23 +13,22 @@ impl StarlarkParser {
     pub fn new() -> Result<Self> {
         let mut parser = Parser::new();
         let language = tree_sitter_starlark::LANGUAGE;
-        parser.set_language(&language.into()).map_err(|e| {
-            crate::error::Error::ParseError(format!("Failed to set Starlark language: {e}"))
-        })?;
+        parser
+            .set_language(&language.into())
+            .map_err(crate::error::Error::TreeSitterLanguage)?;
 
         Ok(Self { parser })
     }
 
     /// Parse BUILD file content into an AST
     pub fn parse_build_file(&mut self, content: &str) -> Result<StarlarkAst> {
-        let tree = self.parser.parse(content, None).ok_or_else(|| {
-            crate::error::Error::ParseError("Failed to parse BUILD file".to_string())
-        })?;
+        let tree = self
+            .parser
+            .parse(content, None)
+            .ok_or(crate::error::Error::BuildFileParse)?;
 
         if tree.root_node().has_error() {
-            return Err(crate::error::Error::ParseError(
-                "BUILD file contains syntax errors".to_string(),
-            ));
+            return Err(crate::error::Error::BuildFileParse);
         }
 
         Ok(StarlarkAst {

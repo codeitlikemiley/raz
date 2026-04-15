@@ -245,6 +245,61 @@ impl BazelConfig {
     }
 }
 
+impl BazelConfig {
+    /// Normalizes the configuration by migrating legacy fields into their respective frameworks.
+    pub fn normalize(&mut self) {
+        if self.test_target.is_some()
+            || self.extra_test_args.is_some()
+            || self.extra_test_binary_args.is_some()
+            || self.extra_env.is_some()
+        {
+            let mut fw = self.test_framework.take().unwrap_or_default();
+            if let Some(target) = self.test_target.take() {
+                if fw.target.is_none() {
+                    fw.target = Some(target);
+                }
+            }
+            if let Some(args) = self.extra_test_args.take() {
+                if fw.extra_args.is_none() {
+                    fw.extra_args = Some(args);
+                }
+            }
+            if let Some(tb_args) = self.extra_test_binary_args.take() {
+                if fw.test_args.is_none() {
+                    fw.test_args = Some(tb_args);
+                }
+            }
+            if let Some(env) = self.extra_env.clone() {
+                if fw.extra_env.is_none() {
+                    fw.extra_env = Some(env);
+                }
+            }
+            self.test_framework = Some(fw);
+        }
+
+        if self.binary_target.is_some() || self.extra_run_args.is_some() || self.extra_env.is_some()
+        {
+            let mut fw = self.binary_framework.take().unwrap_or_default();
+            if let Some(target) = self.binary_target.take() {
+                if fw.target.is_none() {
+                    fw.target = Some(target);
+                }
+            }
+            if let Some(args) = self.extra_run_args.take() {
+                if fw.extra_args.is_none() {
+                    fw.extra_args = Some(args);
+                }
+            }
+            if let Some(env) = self.extra_env.take() {
+                if fw.extra_env.is_none() {
+                    fw.extra_env = Some(env);
+                }
+            }
+            self.binary_framework = Some(fw);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,41 +378,5 @@ mod tests {
             base.binary_framework.as_ref().unwrap().command,
             Some("bazelisk".to_string())
         );
-    }
-}
-
-impl BazelConfig {
-    /// Normalizes the configuration by migrating legacy fields into their respective frameworks.
-    pub fn normalize(&mut self) {
-        if self.test_target.is_some() || self.extra_test_args.is_some() || self.extra_test_binary_args.is_some() || self.extra_env.is_some() {
-            let mut fw = self.test_framework.take().unwrap_or_default();
-            if let Some(target) = self.test_target.take() {
-                if fw.target.is_none() { fw.target = Some(target); }
-            }
-            if let Some(args) = self.extra_test_args.take() {
-                if fw.extra_args.is_none() { fw.extra_args = Some(args); }
-            }
-            if let Some(tb_args) = self.extra_test_binary_args.take() {
-                if fw.test_args.is_none() { fw.test_args = Some(tb_args); }
-            }
-            if let Some(env) = self.extra_env.clone() {
-                if fw.extra_env.is_none() { fw.extra_env = Some(env); }
-            }
-            self.test_framework = Some(fw);
-        }
-
-        if self.binary_target.is_some() || self.extra_run_args.is_some() || self.extra_env.is_some() {
-            let mut fw = self.binary_framework.take().unwrap_or_default();
-            if let Some(target) = self.binary_target.take() {
-                if fw.target.is_none() { fw.target = Some(target); }
-            }
-            if let Some(args) = self.extra_run_args.take() {
-                if fw.extra_args.is_none() { fw.extra_args = Some(args); }
-            }
-            if let Some(env) = self.extra_env.take() {
-                if fw.extra_env.is_none() { fw.extra_env = Some(env); }
-            }
-            self.binary_framework = Some(fw);
-        }
     }
 }

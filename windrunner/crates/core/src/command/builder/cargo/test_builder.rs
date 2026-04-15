@@ -218,10 +218,7 @@ impl TestCommandBuilder {
         }
 
         // Build the expected file-level prefix: tests::<file_stem>
-        let file_stem = file_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let file_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let prefix = format!("tests::{file_stem}");
 
         if module_path == prefix {

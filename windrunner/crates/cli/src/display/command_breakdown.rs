@@ -187,7 +187,11 @@ pub fn parse_cargo_command(
                 i += 1;
             }
         } else if arg.starts_with("--package=") {
-            package = Some(arg.strip_prefix("--package=").unwrap().to_string());
+            package = Some(
+                arg.strip_prefix("--package=")
+                    .expect("starts_with checked")
+                    .to_string(),
+            );
         } else if arg.starts_with('-') {
             // Skip the value if this is a known flag that takes a value
             if matches!(

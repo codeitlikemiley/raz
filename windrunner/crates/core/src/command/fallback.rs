@@ -136,9 +136,10 @@ pub fn generate_fallback_command(
     } else {
         // Check if this might be a standalone Rust file
         if file_path.extension().and_then(|s| s.to_str()) == Some("rs")
-            && is_standalone_rust_file(file_path) {
-                return generate_rustc_command(file_path);
-            }
+            && is_standalone_rust_file(file_path)
+        {
+            return generate_rustc_command(file_path);
+        }
 
         Ok(None)
     }
@@ -200,7 +201,7 @@ fn create_synthetic_runnable(
     let project_root = file_path
         .ancestors()
         .find(|p| p.join("Cargo.toml").exists());
-        
+
     // Create a dummy scope for the synthetic runnable
     let scope = Scope {
         kind: ScopeKind::Function,
@@ -519,7 +520,8 @@ fn generate_rustc_command(file_path: &Path) -> Result<Option<Command>> {
                 crate::types::FileType::CargoProject
             };
             let command =
-                crate::command::builder::CommandBuilder::for_runnable(&runnable, file_type).build()?;
+                crate::command::builder::CommandBuilder::for_runnable(&runnable, file_type)
+                    .build()?;
 
             return Ok(Some(command));
         }
@@ -557,7 +559,8 @@ fn generate_rustc_command(file_path: &Path) -> Result<Option<Command>> {
     } else {
         crate::types::FileType::CargoProject
     };
-    let command = crate::command::builder::CommandBuilder::for_runnable(&runnable, file_type).build()?;
+    let command =
+        crate::command::builder::CommandBuilder::for_runnable(&runnable, file_type).build()?;
 
     Ok(Some(command))
 }

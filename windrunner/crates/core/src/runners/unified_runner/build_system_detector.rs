@@ -1,11 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::{
-    build_system::BuildSystem,
-    error::Result,
-    plugins::ProjectContext,
-};
+use crate::{build_system::BuildSystem, error::Result, plugins::ProjectContext};
 
 use super::UnifiedRunner;
 
@@ -108,10 +104,7 @@ impl UnifiedRunner {
             }
         }
 
-        Err(crate::error::Error::Other(format!(
-            "No build system detected for path: {}",
-            path.display()
-        )))
+        Err(crate::error::Error::NoBuildSystem(path.to_path_buf()))
     }
 
     /// Detect build system with fallback to standalone rustc

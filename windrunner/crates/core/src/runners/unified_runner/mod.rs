@@ -7,12 +7,7 @@ mod project_command;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{
-    build_system::BuildSystem,
-    config::Config,
-    error::Result,
-    plugins::PluginRegistry,
-};
+use crate::{build_system::BuildSystem, config::Config, error::Result, plugins::PluginRegistry};
 
 use super::{bazel_runner::BazelRunner, cargo_runner::CargoRunner, traits::CommandRunner};
 
@@ -60,11 +55,7 @@ impl UnifiedRunner {
         self.runners
             .get(build_system)
             .map(|r| r.as_ref())
-            .ok_or_else(|| {
-                crate::error::Error::Other(format!(
-                    "No runner available for build system: {build_system:?}"
-                ))
-            })
+            .ok_or_else(|| crate::error::Error::NoRunner(format!("{build_system:?}")))
     }
 
     /// Get the current configuration

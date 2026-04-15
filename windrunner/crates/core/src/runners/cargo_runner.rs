@@ -37,7 +37,12 @@ impl CommandRunner for CargoRunner {
         if !runnables.is_empty() {
             // Get package name from Cargo.toml
             let package_name = get_cargo_package_name(file_path);
-            resolve_module_paths(&mut runnables, file_path, package_name.as_deref(), &mut detector)?;
+            resolve_module_paths(
+                &mut runnables,
+                file_path,
+                package_name.as_deref(),
+                &mut detector,
+            )?;
         }
 
         Ok(runnables)
@@ -48,7 +53,12 @@ impl CommandRunner for CargoRunner {
         if let Some(mut runnable) = detector.get_best_runnable_at_line(file_path, line)? {
             // Resolve module path for the runnable
             let package_name = get_cargo_package_name(file_path);
-            resolve_module_path_single(&mut runnable, file_path, package_name.as_deref(), &mut detector)?;
+            resolve_module_path_single(
+                &mut runnable,
+                file_path,
+                package_name.as_deref(),
+                &mut detector,
+            )?;
             Ok(Some(runnable))
         } else {
             Ok(None)
@@ -80,9 +90,7 @@ impl CommandRunner for CargoRunner {
     fn validate_command(&self, command: &Self::Command) -> Result<()> {
         // Basic validation - ensure command has required components
         if command.args.is_empty() {
-            return Err(crate::error::Error::Other(
-                "Command has no arguments".to_string(),
-            ));
+            return Err(crate::error::Error::Validation("Command has no arguments"));
         }
 
         // Could add more validation here based on cargo rules
@@ -108,7 +116,7 @@ impl RunnerCommand for Command {
         self.working_dir.as_ref().map(Path::new)
     }
 
-    fn env_vars(&self) -> &std::collections::BTreeMap<String, String> {
+    fn env_vars(&self) -> &std::collections::HashMap<String, String> {
         &self.env
     }
 

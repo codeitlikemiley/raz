@@ -246,9 +246,9 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
 
                 Ok(command)
             }
-            _ => Err(crate::error::Error::ParseError(
-                "Unsupported runnable type for single file script".to_string(),
-            )),
+            _ => Err(crate::error::Error::UnsupportedRunnable {
+                context: "single file script",
+            }),
         }
     }
 }
@@ -256,7 +256,7 @@ impl CommandBuilderImpl for SingleFileScriptBuilder {
 impl SingleFileScriptBuilder {
     fn extract_shebang(&self, file_path: &std::path::Path) -> Result<String> {
         let content = std::fs::read_to_string(file_path)
-            .map_err(|e| crate::error::Error::ParseError(format!("Failed to read file: {e}")))?;
+            .map_err(|e| crate::error::Error::IoError(std::io::Error::other(e)))?;
 
         if let Some(first_line) = content.lines().next() {
             if is_single_file_script_shebang(first_line) {
@@ -356,12 +356,7 @@ impl SingleFileScriptBuilder {
         }
     }
 
-    fn apply_common_config(
-        &self,
-        command: &mut Command,
-        config: &Config,
-        file_type: FileType,
-    ) {
+    fn apply_common_config(&self, command: &mut Command, config: &Config, file_type: FileType) {
         // Apply environment variables based on file type
         if let Some(extra_env) = self.get_extra_env(config, file_type) {
             for (key, value) in extra_env {

@@ -1,9 +1,9 @@
 use super::*;
+use crate::RunnableKind;
 use crate::command::Command;
 use crate::config::{BazelConfig, Config};
 use crate::error::Result;
 use crate::types::{FileType, Runnable};
-use crate::RunnableKind;
 
 impl BazelCommandBuilder {
     pub(crate) fn build_test_command(
@@ -41,10 +41,10 @@ impl BazelCommandBuilder {
         };
 
         if target.is_empty() {
-            return Err(crate::error::Error::ParseError(format!(
-                "No Bazel target found for file: {}. Make sure it is declared in a BUILD.bazel rule, or run it outside a Bazel workspace.",
-                runnable.file_path.display()
-            )));
+            return Err(crate::error::Error::MissingBazelTarget {
+                file: runnable.file_path.clone(),
+                hint: "Make sure it is declared in a BUILD.bazel rule",
+            });
         }
 
         // Build the test filter
@@ -68,7 +68,6 @@ impl BazelCommandBuilder {
 
         Ok(command)
     }
-
 
     pub(crate) fn build_module_tests_command(
         &self,
@@ -111,10 +110,10 @@ impl BazelCommandBuilder {
         };
 
         if target.is_empty() {
-            return Err(crate::error::Error::ParseError(format!(
-                "No Bazel target found for file: {}. Make sure it is declared in a BUILD.bazel rule, or run it outside a Bazel workspace.",
-                runnable.file_path.display()
-            )));
+            return Err(crate::error::Error::MissingBazelTarget {
+                file: runnable.file_path.clone(),
+                hint: "Make sure it is declared in a BUILD.bazel rule",
+            });
         }
 
         // Build module filter (no exact matching for module tests)
@@ -141,6 +140,4 @@ impl BazelCommandBuilder {
 
         Ok(command)
     }
-
-
 }

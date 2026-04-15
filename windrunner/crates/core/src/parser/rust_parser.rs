@@ -15,14 +15,12 @@ impl RustParser {
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_rust::LANGUAGE.into())
-            .map_err(|e| Error::TreeSitterError(format!("Failed to set language: {e}")))?;
+            .map_err(Error::TreeSitterLanguage)?;
         Ok(Self { parser })
     }
 
     pub fn parse(&mut self, source: &str) -> Result<tree_sitter::Tree> {
-        self.parser
-            .parse(source, None)
-            .ok_or_else(|| Error::ParseError("Failed to parse source code".to_string()))
+        self.parser.parse(source, None).ok_or(Error::SourceParse)
     }
 
     pub fn get_scopes(&mut self, source: &str, file_path: &Path) -> Result<Vec<Scope>> {

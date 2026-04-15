@@ -62,10 +62,10 @@ impl BazelCommandBuilder {
         };
 
         if target.is_empty() {
-            return Err(crate::error::Error::ParseError(format!(
-                "No Bazel target found for file: {}. Make sure it is declared in a BUILD.bazel rule, or run it outside a Bazel workspace.",
-                runnable.file_path.display()
-            )));
+            return Err(crate::error::Error::MissingBazelTarget {
+                file: runnable.file_path.clone(),
+                hint: "Make sure it is declared in a BUILD.bazel rule",
+            });
         }
 
         // Build the command
@@ -77,6 +77,4 @@ impl BazelCommandBuilder {
 
         Ok(command)
     }
-
-
 }

@@ -52,15 +52,15 @@ impl Config {
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
         let contents = std::fs::read_to_string(path)?;
-        let mut config: Config = serde_json::from_str(&contents)
-            .map_err(|e| Error::ConfigError(format!("Failed to parse config: {e}")))?;
+        let mut config: Config =
+            serde_json::from_str(&contents).map_err(|e| Error::ConfigParse(e.to_string()))?;
         config.normalize();
         Ok(config)
     }
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
         let contents = serde_json::to_string_pretty(self)
-            .map_err(|e| Error::ConfigError(format!("Failed to serialize config: {e}")))?;
+            .map_err(|e| Error::ConfigParse(format!("Failed to serialize config: {e}")))?;
         std::fs::write(path, contents)?;
         Ok(())
     }
@@ -98,6 +98,14 @@ impl Config {
             }
 
             current = current.parent()?;
+        }
+    }
+}
+
+impl Config {
+    pub fn normalize(&mut self) {
+        if let Some(bazel) = &mut self.bazel {
+            bazel.normalize();
         }
     }
 }
@@ -201,13 +209,5 @@ mod tests {
 
         let override_config2 = config.get_override_for(&identity2);
         assert!(override_config2.is_none());
-    }
-}
-
-impl Config {
-    pub fn normalize(&mut self) {
-        if let Some(bazel) = &mut self.bazel {
-            bazel.normalize();
-        }
     }
 }

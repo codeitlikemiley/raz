@@ -135,19 +135,22 @@ fn file_type_for_runnable(runnable: &Runnable) -> FileType {
 }
 
 fn runnable_from_target(target: &TargetRef) -> Result<&Runnable> {
-    target.runnable.as_ref().ok_or_else(|| {
-        Error::Other(format!(
-            "Target '{}' does not carry a runnable",
-            target.label
-        ))
-    })
+    target
+        .runnable
+        .as_ref()
+        .ok_or_else(|| Error::TargetNotRunnable {
+            label: target.label.to_string(),
+        })
 }
 
 fn to_spec(command: Command) -> CommandSpec {
     CommandSpec::from(command)
 }
 
-fn identity_for_override(runnable: &Runnable, ctx: &ProjectContext) -> crate::types::FunctionIdentity {
+fn identity_for_override(
+    runnable: &Runnable,
+    ctx: &ProjectContext,
+) -> crate::types::FunctionIdentity {
     crate::types::FunctionIdentity {
         package: ctx.config.cargo.as_ref().and_then(|c| c.package.clone()),
         module_path: if runnable.module_path.is_empty() {
@@ -182,8 +185,10 @@ impl crate::plugins::registry::PrimaryPlugin for BazelPrimaryPlugin {
         };
 
         for ancestor in file_dir.ancestors() {
-            let is_workspace_root = ancestor.join("MODULE.bazel").exists() || ancestor.join("WORKSPACE").exists();
-            let has_build_file = ancestor.join("BUILD.bazel").exists() || ancestor.join("BUILD").exists();
+            let is_workspace_root =
+                ancestor.join("MODULE.bazel").exists() || ancestor.join("WORKSPACE").exists();
+            let has_build_file =
+                ancestor.join("BUILD.bazel").exists() || ancestor.join("BUILD").exists();
 
             if is_workspace_root {
                 // If we reach the workspace root and it has a BUILD file, we only match
@@ -191,7 +196,8 @@ impl crate::plugins::registry::PrimaryPlugin for BazelPrimaryPlugin {
                 // Otherwise, it's likely an ad-hoc or standard rust file at the root.
                 if has_build_file {
                     if let Ok(mut finder) = crate::bazel::BazelTargetFinder::new() {
-                        if let Ok(targets) = finder.find_targets_for_file(&ctx.file_path, ancestor) {
+                        if let Ok(targets) = finder.find_targets_for_file(&ctx.file_path, ancestor)
+                        {
                             return !targets.is_empty();
                         }
                     }

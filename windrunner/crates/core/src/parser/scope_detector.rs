@@ -57,7 +57,7 @@ impl ScopeDetector {
     fn determine_file_type(&self, file_path: &Path) -> Result<FileScope> {
         let path_str = file_path
             .to_str()
-            .ok_or_else(|| Error::ParseError("Invalid file path".to_string()))?;
+            .ok_or(Error::InvalidPath("Invalid file path"))?;
         let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         // Check well-known patterns first
@@ -159,17 +159,16 @@ impl ScopeDetector {
         // Get project root
         let project_root = cargo_toml_path
             .parent()
-            .ok_or_else(|| Error::ParseError("Cannot determine project root".to_string()))?;
+            .ok_or(Error::InvalidPath("Cannot determine project root"))?;
 
         // Parse Cargo.toml
-        let manifest = Manifest::from_path(&cargo_toml_path)
-            .map_err(|e| Error::ParseError(format!("Failed to parse Cargo.toml: {e}")))?;
+        let manifest = Manifest::from_path(&cargo_toml_path).map_err(Error::CargoTomlParse)?;
 
         // Get relative path from project root
         let relative_path = file_path.strip_prefix(project_root).unwrap_or(file_path);
         let relative_str = relative_path
             .to_str()
-            .ok_or_else(|| Error::ParseError("Invalid relative path".to_string()))?;
+            .ok_or(Error::InvalidPath("Invalid relative path"))?;
 
         // Check [[bin]] entries
         for bin in &manifest.bin {
@@ -281,11 +280,14 @@ impl ScopeDetector {
     ) -> Result<()> {
         let name_node = node
             .child_by_field_name("name")
-            .ok_or_else(|| Error::ParseError("Function without name".to_string()))?;
+            .ok_or(Error::MissingEntityName { entity: "Function" })?;
 
         let name = name_node
             .utf8_text(source.as_bytes())
-            .map_err(|e| Error::ParseError(format!("Invalid UTF-8 in function name: {e}")))?
+            .map_err(|e| Error::InvalidUtf8Name {
+                entity: "Function",
+                err: e,
+            })?
             .to_string();
 
         // Get extended scope info
@@ -331,11 +333,14 @@ impl ScopeDetector {
     ) -> Result<()> {
         let name_node = node
             .child_by_field_name("name")
-            .ok_or_else(|| Error::ParseError("Module without name".to_string()))?;
+            .ok_or(Error::MissingEntityName { entity: "Module" })?;
 
         let name = name_node
             .utf8_text(source.as_bytes())
-            .map_err(|e| Error::ParseError(format!("Invalid UTF-8 in module name: {e}")))?
+            .map_err(|e| Error::InvalidUtf8Name {
+                entity: "Module",
+                err: e,
+            })?
             .to_string();
 
         // Get extended scope info for modules too (e.g., #[cfg(test)])
@@ -370,11 +375,14 @@ impl ScopeDetector {
     ) -> Result<()> {
         let name_node = node
             .child_by_field_name("name")
-            .ok_or_else(|| Error::ParseError("Struct without name".to_string()))?;
+            .ok_or(Error::MissingEntityName { entity: "Struct" })?;
 
         let name = name_node
             .utf8_text(source.as_bytes())
-            .map_err(|e| Error::ParseError(format!("Invalid UTF-8 in struct name: {e}")))?
+            .map_err(|e| Error::InvalidUtf8Name {
+                entity: "Struct",
+                err: e,
+            })?
             .to_string();
 
         // Get extended scope info
@@ -409,11 +417,14 @@ impl ScopeDetector {
     ) -> Result<()> {
         let name_node = node
             .child_by_field_name("name")
-            .ok_or_else(|| Error::ParseError("Enum without name".to_string()))?;
+            .ok_or(Error::MissingEntityName { entity: "Enum" })?;
 
         let name = name_node
             .utf8_text(source.as_bytes())
-            .map_err(|e| Error::ParseError(format!("Invalid UTF-8 in enum name: {e}")))?
+            .map_err(|e| Error::InvalidUtf8Name {
+                entity: "Enum",
+                err: e,
+            })?
             .to_string();
 
         // Get extended scope info
@@ -448,11 +459,14 @@ impl ScopeDetector {
     ) -> Result<()> {
         let name_node = node
             .child_by_field_name("name")
-            .ok_or_else(|| Error::ParseError("Union without name".to_string()))?;
+            .ok_or(Error::MissingEntityName { entity: "Union" })?;
 
         let name = name_node
             .utf8_text(source.as_bytes())
-            .map_err(|e| Error::ParseError(format!("Invalid UTF-8 in union name: {e}")))?
+            .map_err(|e| Error::InvalidUtf8Name {
+                entity: "Union",
+                err: e,
+            })?
             .to_string();
 
         // Get extended scope info

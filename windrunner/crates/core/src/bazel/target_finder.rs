@@ -24,8 +24,7 @@ impl BazelTargetFinder {
     pub fn find_targets_in_build_file(&mut self, build_file: &Path) -> Result<Vec<BazelTarget>> {
         tracing::debug!("find_targets_in_build_file: {:?}", build_file);
 
-        let content =
-            fs::read_to_string(build_file).map_err(crate::error::Error::IoError)?;
+        let content = fs::read_to_string(build_file).map_err(crate::error::Error::IoError)?;
 
         let ast = self.parser.parse_build_file(&content)?;
         let rules = RuleExtractor::extract_rules(&ast)?;
@@ -72,9 +71,9 @@ impl BazelTargetFinder {
         tracing::debug!("Found {} total targets in BUILD file", all_targets.len());
 
         // Get the relative path from the BUILD file directory
-        let build_dir = build_file.parent().ok_or_else(|| {
-            crate::error::Error::ParseError("Invalid BUILD file path".to_string())
-        })?;
+        let build_dir = build_file
+            .parent()
+            .ok_or(crate::error::Error::InvalidPath("Invalid BUILD file path"))?;
         tracing::debug!("BUILD directory: {:?}", build_dir);
 
         let relative_path = file_path.strip_prefix(build_dir).map_err(|e| {
@@ -84,11 +83,11 @@ impl BazelTargetFinder {
                 build_dir,
                 e
             );
-            crate::error::Error::ParseError("File not under BUILD directory".to_string())
+            crate::error::Error::NotInBuildDirectory
         })?;
         let relative_str = relative_path
             .to_str()
-            .ok_or_else(|| crate::error::Error::ParseError("Invalid file path".to_string()))?;
+            .ok_or(crate::error::Error::InvalidPath("Invalid file path"))?;
         tracing::debug!("Relative path from BUILD: {}", relative_str);
 
         // Filter targets that include this source file
@@ -272,7 +271,7 @@ impl BazelTargetFinder {
     fn find_build_file(&self, file_path: &Path, workspace_root: &Path) -> Result<PathBuf> {
         let mut current_dir = file_path
             .parent()
-            .ok_or_else(|| crate::error::Error::ParseError("Invalid file path".to_string()))?;
+            .ok_or(crate::error::Error::InvalidPath("Invalid file path"))?;
 
         tracing::debug!(
             "find_build_file: starting from {:?}, workspace_root={:?}",
@@ -296,15 +295,13 @@ impl BazelTargetFinder {
             // Stop at workspace root
             if current_dir == workspace_root {
                 tracing::debug!("Reached workspace root without finding BUILD file");
-                return Err(crate::error::Error::ParseError(
-                    "No BUILD file found".to_string(),
-                ));
+                return Err(crate::error::Error::NoBuildFile);
             }
 
             // Go up one directory
-            current_dir = current_dir.parent().ok_or_else(|| {
-                crate::error::Error::ParseError("Reached filesystem root".to_string())
-            })?;
+            current_dir = current_dir
+                .parent()
+                .ok_or(crate::error::Error::FsRootReached)?;
             tracing::debug!("Moving up to {:?}", current_dir);
         }
     }
@@ -416,10 +413,9 @@ impl BazelTargetFinder {
                 let dir_pattern = parts[0];
                 let file_pattern = parts[1];
 
-                if file_path.starts_with(&format!("{dir_pattern}/"))
-                    && file_pattern == "*.rs" {
-                        return file_path.ends_with(".rs");
-                    }
+                if file_path.starts_with(&format!("{dir_pattern}/")) && file_pattern == "*.rs" {
+                    return file_path.ends_with(".rs");
+                }
             }
         }
 

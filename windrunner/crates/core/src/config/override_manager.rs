@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 pub struct OverrideManager;
 
@@ -67,7 +67,10 @@ impl OverrideManager {
                     i += 1;
                     extra_test_binary_args.push(args[i].clone());
                 }
-            } else if arg.chars().take_while(|&c| c != '=').all(|c| c.is_uppercase() || c == '_')
+            } else if arg
+                .chars()
+                .take_while(|&c| c != '=')
+                .all(|c| c.is_uppercase() || c == '_')
                 && arg.contains('=')
             {
                 let parts: Vec<&str> = arg.splitn(2, '=').collect();
@@ -81,19 +84,25 @@ impl OverrideManager {
         }
 
         if let Some(cmd) = command {
-            if !remove_command { result.insert("command".to_string(), json!(cmd)); }
+            if !remove_command {
+                result.insert("command".to_string(), json!(cmd));
+            }
         } else if remove_command {
             result.insert("remove_command".to_string(), json!(true));
         }
 
         if let Some(sub) = subcommand {
-            if !remove_subcommand { result.insert("subcommand".to_string(), json!(sub)); }
+            if !remove_subcommand {
+                result.insert("subcommand".to_string(), json!(sub));
+            }
         } else if remove_subcommand {
             result.insert("remove_subcommand".to_string(), json!(true));
         }
 
         if let Some(ch) = channel {
-            if !remove_channel { result.insert("channel".to_string(), json!(ch)); }
+            if !remove_channel {
+                result.insert("channel".to_string(), json!(ch));
+            }
         } else if remove_channel {
             result.insert("remove_channel".to_string(), json!(true));
         }
@@ -115,7 +124,10 @@ impl OverrideManager {
         }
 
         if !extra_test_binary_args.is_empty() && !remove_test_args {
-            result.insert("extra_test_binary_args".to_string(), json!(extra_test_binary_args));
+            result.insert(
+                "extra_test_binary_args".to_string(),
+                json!(extra_test_binary_args),
+            );
         } else if remove_test_args {
             result.insert("remove_test_args".to_string(), json!(true));
         }
@@ -134,11 +146,14 @@ impl OverrideManager {
                 .with_context(|| format!("Failed to parse config from {}", config_path.display()))?
         } else {
             let mut new_config = Map::new();
-            new_config.insert("cargo".to_string(), json!({
-                "extra_args": [],
-                "extra_env": {},
-                "extra_test_binary_args": []
-            }));
+            new_config.insert(
+                "cargo".to_string(),
+                json!({
+                    "extra_args": [],
+                    "extra_env": {},
+                    "extra_test_binary_args": []
+                }),
+            );
             new_config.insert("overrides".to_string(), json!([]));
             new_config
         };

@@ -85,7 +85,6 @@ impl UnifiedRunner {
             // Check if it's a library, binary, test, etc.
             let _file_name = file_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
             Ok(crate::types::FileType::CargoProject)
-
         } else {
             // Standalone file
             Ok(crate::types::FileType::Standalone)
@@ -94,15 +93,16 @@ impl UnifiedRunner {
 
     /// Get the package name for a file path
     pub fn get_package_name_str(&self, file_path: &Path) -> Result<String> {
-        let cargo_toml_path = ModuleResolver::find_cargo_toml(file_path)
-            .ok_or_else(|| crate::error::Error::Other("No Cargo.toml found".into()))?;
-            
+        let cargo_toml_path =
+            ModuleResolver::find_cargo_toml(file_path).ok_or(crate::error::Error::NoCargoToml)?;
+
         let manifest = cargo_toml::Manifest::from_path(&cargo_toml_path)
-            .map_err(|e| crate::error::Error::Other(format!("Failed to parse Cargo.toml: {e}")))?;
-            
-        manifest.package
+            .map_err(crate::error::Error::CargoTomlParse)?;
+
+        manifest
+            .package
             .map(|p| p.name)
-            .ok_or_else(|| crate::error::Error::Other("No [package] section found".into()))
+            .ok_or(crate::error::Error::NoPackageSection)
     }
 
     /// Find the config file path for a given file

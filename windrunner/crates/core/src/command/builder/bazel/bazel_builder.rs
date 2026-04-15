@@ -65,9 +65,7 @@ impl CommandBuilderImpl for BazelCommandBuilder {
             RunnableKind::DocTest { .. } => {
                 builder.build_doc_test_command(runnable, bazel_config, config, file_type)
             }
-            _ => Err(crate::error::Error::ParseError(
-                "Unsupported runnable type for bazel".to_string(),
-            )),
+            _ => Err(crate::error::Error::UnsupportedRunnable { context: "bazel" }),
         }
     }
 }
@@ -357,10 +355,18 @@ impl BazelCommandBuilder {
         // Check for modern framework configuration first
         if let Some(config) = bazel_config {
             if is_test {
-                if let Some(target) = config.test_framework.as_ref().and_then(|f| f.target.as_ref()) {
+                if let Some(target) = config
+                    .test_framework
+                    .as_ref()
+                    .and_then(|f| f.target.as_ref())
+                {
                     return target.clone();
                 }
-            } else if let Some(target) = config.binary_framework.as_ref().and_then(|f| f.target.as_ref()) {
+            } else if let Some(target) = config
+                .binary_framework
+                .as_ref()
+                .and_then(|f| f.target.as_ref())
+            {
                 return target.clone();
             }
         }
@@ -629,7 +635,10 @@ impl BazelCommandBuilder {
 
     /// Get Bazel package path from linked project path
     /// e.g. /Users/uriah/Code/yoyo/combos/frontend/Cargo.toml -> //combos/frontend
-    pub(crate) fn get_bazel_package_from_linked_project(&self, linked_project: &Path) -> Option<String> {
+    pub(crate) fn get_bazel_package_from_linked_project(
+        &self,
+        linked_project: &Path,
+    ) -> Option<String> {
         // Find PROJECT_ROOT to determine the base path
         let project_root = if let Ok(root) = std::env::var("PROJECT_ROOT") {
             PathBuf::from(root)
@@ -754,7 +763,11 @@ impl BazelCommandBuilder {
 
                 // Merge environment variables
                 if let Some(env) = &ov.extra_env {
-                    let insert_pos = command.args.iter().position(|r| r == "--").unwrap_or(command.args.len());
+                    let insert_pos = command
+                        .args
+                        .iter()
+                        .position(|r| r == "--")
+                        .unwrap_or(command.args.len());
                     let mut flags_to_insert = Vec::new();
                     let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
                     for (key, value) in env {
@@ -767,15 +780,23 @@ impl BazelCommandBuilder {
                     command.args.splice(insert_pos..insert_pos, flags_to_insert);
                 }
             }
-            
+
             // Fallback: If there was no bazel extra_env override, try falling back to cargo extra_env
             // This is critical because `cargo runner override` places overrides in the cargo section by default
             // when the file is not definitively part of a Bazel target.
-            let bazel_has_env = override_.bazel.as_ref().and_then(|b| b.extra_env.as_ref()).is_some();
+            let bazel_has_env = override_
+                .bazel
+                .as_ref()
+                .and_then(|b| b.extra_env.as_ref())
+                .is_some();
             if !bazel_has_env {
                 if let Some(cargo_config) = &override_.cargo {
                     if let Some(env) = &cargo_config.extra_env {
-                        let insert_pos = command.args.iter().position(|r| r == "--").unwrap_or(command.args.len());
+                        let insert_pos = command
+                            .args
+                            .iter()
+                            .position(|r| r == "--")
+                            .unwrap_or(command.args.len());
                         let mut flags_to_insert = Vec::new();
                         let subcommand = command.args.first().map(|s| s.as_str()).unwrap_or("");
                         for (key, value) in env {

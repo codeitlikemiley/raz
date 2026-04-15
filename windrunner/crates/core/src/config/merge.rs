@@ -234,13 +234,25 @@ impl ConfigMerger {
         }
 
         // Merge extra_args with deduplication
-        merge_vec_dedup(&mut base.extra_args, override_config.extra_args, force_replace);
+        merge_vec_dedup(
+            &mut base.extra_args,
+            override_config.extra_args,
+            force_replace,
+        );
 
         // Merge extra_test_binary_args with deduplication
-        merge_vec_dedup(&mut base.extra_test_binary_args, override_config.extra_test_binary_args, force_replace);
+        merge_vec_dedup(
+            &mut base.extra_test_binary_args,
+            override_config.extra_test_binary_args,
+            force_replace,
+        );
 
         // Merge env
-        merge_env(&mut base.extra_env, override_config.extra_env, force_replace);
+        merge_env(
+            &mut base.extra_env,
+            override_config.extra_env,
+            force_replace,
+        );
 
         // Merge test_framework
         if override_config.test_framework.is_some() {
@@ -342,7 +354,11 @@ impl ConfigMerger {
         merge_vec_dedup(&mut base.extra_args, override_phase.extra_args, false);
 
         // Merge extra_test_binary_args with deduplication
-        merge_vec_dedup(&mut base.extra_test_binary_args, override_phase.extra_test_binary_args, false);
+        merge_vec_dedup(
+            &mut base.extra_test_binary_args,
+            override_phase.extra_test_binary_args,
+            false,
+        );
     }
 
     fn merge_single_file_script_config(
@@ -352,13 +368,25 @@ impl ConfigMerger {
         force_replace: bool,
     ) {
         // Merge extra_args with deduplication
-        merge_vec_dedup(&mut base.extra_args, override_config.extra_args, force_replace);
+        merge_vec_dedup(
+            &mut base.extra_args,
+            override_config.extra_args,
+            force_replace,
+        );
 
         // Merge env
-        merge_env(&mut base.extra_env, override_config.extra_env, force_replace);
+        merge_env(
+            &mut base.extra_env,
+            override_config.extra_env,
+            force_replace,
+        );
 
         // Merge extra_test_binary_args with deduplication
-        merge_vec_dedup(&mut base.extra_test_binary_args, override_config.extra_test_binary_args, force_replace);
+        merge_vec_dedup(
+            &mut base.extra_test_binary_args,
+            override_config.extra_test_binary_args,
+            force_replace,
+        );
     }
 
     /// Merge override arrays, handling force_replace per override
@@ -472,11 +500,7 @@ impl ConfigMerger {
 }
 
 /// Merge `incoming` into `base` with deduplication. If `force`, replace entirely.
-fn merge_vec_dedup(
-    base: &mut Option<Vec<String>>,
-    incoming: Option<Vec<String>>,
-    force: bool,
-) {
+fn merge_vec_dedup(base: &mut Option<Vec<String>>, incoming: Option<Vec<String>>, force: bool) {
     let Some(new_items) = incoming else { return };
     match (force, base.as_mut()) {
         (true, _) | (_, None) => *base = Some(new_items),
